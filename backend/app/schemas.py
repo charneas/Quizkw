@@ -142,3 +142,89 @@ class WheelSpinResponse(BaseModel):
     effect_type: str
     value: Optional[int] = None
     message: str
+
+# Memory Grid Schemas
+class GridCellStatusEnum(str, Enum):
+    hidden = "hidden"
+    revealed = "revealed"
+    matched = "matched"
+
+class MemoryGridBase(BaseModel):
+    grid_size: int = Field(..., ge=2, le=8)
+
+class MemoryGridCreate(MemoryGridBase):
+    pass
+
+class MemoryGrid(MemoryGridBase):
+    id: int
+    game_session_id: int
+    current_turn: int
+    is_completed: bool
+    
+    class Config:
+        from_attributes = True
+
+class GridCellBase(BaseModel):
+    row: int
+    col: int
+
+class GridCell(GridCellBase):
+    id: int
+    memory_grid_id: int
+    status: GridCellStatusEnum
+    matched_by_team_id: Optional[int] = None
+    question: Optional[Question] = None
+    
+    class Config:
+        from_attributes = True
+
+class MemoryGridRoundBase(BaseModel):
+    memory_grid_id: int
+
+class MemoryGridRoundCreate(MemoryGridRoundBase):
+    pass
+
+class MemoryGridRound(MemoryGridRoundBase):
+    id: int
+    game_session_id: int
+    current_team_id: Optional[int] = None
+    selected_cells: List[dict] = []
+    is_active: bool
+    
+    class Config:
+        from_attributes = True
+
+class MemoryGridStateResponse(BaseModel):
+    memory_grid: MemoryGrid
+    cells: List[GridCell]
+
+class SelectCellRequest(BaseModel):
+    round_id: int
+    team_id: int
+    cell_id: int
+
+class SelectCellResponse(BaseModel):
+    status: str
+    cell: Optional[GridCell] = None
+    remaining_selections: Optional[int] = None
+    points_awarded: Optional[int] = None
+    team_score: Optional[int] = None
+    matched_cells: Optional[List[int]] = None
+    message: Optional[str] = None
+
+class StartMemoryGridRoundResponse(BaseModel):
+    round_id: int
+    message: str
+
+class AnswerCellRequest(BaseModel):
+    round_id: int
+    team_id: int
+    cell_id: int
+    is_correct: bool
+
+class AnswerCellResponse(BaseModel):
+    status: str
+    is_correct: bool
+    points_awarded: int
+    team_score: int
+    cell_type: str

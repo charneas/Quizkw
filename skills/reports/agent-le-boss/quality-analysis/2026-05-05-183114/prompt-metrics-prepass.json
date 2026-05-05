@@ -1,0 +1,441 @@
+{
+  "scanner": "prompt-craft-prepass",
+  "script": "prepass-prompt-metrics.py",
+  "version": "1.0.0",
+  "skill_path": "c:\\Users\\sebas\\Quizkw\\skills\\agent-le-boss",
+  "timestamp": "2026-05-05T16:32:47.760418+00:00",
+  "status": "info",
+  "is_memory_agent": true,
+  "skill_md_summary": {
+    "line_count": 110,
+    "token_estimate": 958,
+    "overview_lines": 22,
+    "table_count": 0,
+    "table_lines": 0,
+    "fenced_block_count": 1,
+    "fenced_block_lines": 1,
+    "section_count": 19
+  },
+  "prompt_health": {
+    "total_prompts": 6,
+    "prompts_with_config_header": 0,
+    "prompts_with_progression": 0
+  },
+  "aggregate": {
+    "total_files_scanned": 7,
+    "total_token_estimate": 2153,
+    "total_waste_patterns": 0,
+    "total_back_references": 0,
+    "total_suggestive_loading": 0,
+    "total_wall_of_text": 0
+  },
+  "resource_sizes": {},
+  "files": [
+    {
+      "file": "SKILL.md",
+      "line_count": 110,
+      "token_estimate": 958,
+      "sections": [
+        {
+          "level": 2,
+          "title": "Overview",
+          "line": 10
+        },
+        {
+          "level": 3,
+          "title": "Identit\u00e9 de Base",
+          "line": 14
+        },
+        {
+          "level": 3,
+          "title": "Lois Fondamentales",
+          "line": 18
+        },
+        {
+          "level": 3,
+          "title": "V\u00e9rit\u00e9 Sacr\u00e9e",
+          "line": 25
+        },
+        {
+          "level": 3,
+          "title": "Mission Sp\u00e9cifique",
+          "line": 29
+        },
+        {
+          "level": 2,
+          "title": "Activation",
+          "line": 33
+        },
+        {
+          "level": 3,
+          "title": "\u00c9tape 1 : Charger la Configuration",
+          "line": 35
+        },
+        {
+          "level": 3,
+          "title": "\u00c9tape 2 : Initialiser le Sanctuaire (Premi\u00e8re Activation)",
+          "line": 39
+        },
+        {
+          "level": 3,
+          "title": "\u00c9tape 3 : Charger l'Identit\u00e9",
+          "line": 46
+        },
+        {
+          "level": 3,
+          "title": "\u00c9tape 4 : Devenir Soi-M\u00eame",
+          "line": 55
+        },
+        {
+          "level": 3,
+          "title": "\u00c9tape 5 : Accueillir le Propri\u00e9taire",
+          "line": 59
+        },
+        {
+          "level": 2,
+          "title": "Mode Autonome (`--headless`)",
+          "line": 63
+        },
+        {
+          "level": 2,
+          "title": "Capacit\u00e9s",
+          "line": 71
+        },
+        {
+          "level": 3,
+          "title": "D\u00e9veloppement de Fonctionnalit\u00e9s",
+          "line": 73
+        },
+        {
+          "level": 3,
+          "title": "Refactorisation du Code",
+          "line": 79
+        },
+        {
+          "level": 3,
+          "title": "D\u00e9bogage et R\u00e9solution de Probl\u00e8mes",
+          "line": 85
+        },
+        {
+          "level": 3,
+          "title": "Documentation Technique",
+          "line": 91
+        },
+        {
+          "level": 3,
+          "title": "Tests Automatis\u00e9s",
+          "line": 97
+        },
+        {
+          "level": 2,
+          "title": "Fermeture de Session",
+          "line": 103
+        }
+      ],
+      "table_count": 0,
+      "table_lines": 0,
+      "fenced_block_count": 1,
+      "fenced_block_lines": 1,
+      "waste_patterns": [],
+      "back_references": [],
+      "suggestive_loading": [],
+      "has_config_header": false,
+      "has_progression": false,
+      "wall_of_text": [],
+      "overview_lines": 22,
+      "is_skill_md": true
+    },
+    {
+      "file": "references/debug-issues.md",
+      "line_count": 20,
+      "token_estimate": 168,
+      "sections": [
+        {
+          "level": 2,
+          "title": "Ce que cette Capacit\u00e9 Accomplit",
+          "line": 3
+        },
+        {
+          "level": 2,
+          "title": "\u00c0 quoi Ressemble le Succ\u00e8s",
+          "line": 7
+        },
+        {
+          "level": 2,
+          "title": "Int\u00e9gration de la M\u00e9moire",
+          "line": 14
+        },
+        {
+          "level": 2,
+          "title": "Apr\u00e8s la Session",
+          "line": 18
+        }
+      ],
+      "table_count": 0,
+      "table_lines": 0,
+      "fenced_block_count": 0,
+      "fenced_block_lines": 0,
+      "waste_patterns": [],
+      "back_references": [],
+      "suggestive_loading": [],
+      "has_config_header": false,
+      "has_progression": false,
+      "wall_of_text": [],
+      "is_skill_md": false,
+      "prompt_frontmatter": {
+        "has_frontmatter": false,
+        "fields": {},
+        "missing_fields": [
+          "name",
+          "description",
+          "menu-code"
+        ]
+      }
+    },
+    {
+      "file": "references/develop-feature.md",
+      "line_count": 20,
+      "token_estimate": 196,
+      "sections": [
+        {
+          "level": 2,
+          "title": "Ce que cette Capacit\u00e9 Accomplit",
+          "line": 3
+        },
+        {
+          "level": 2,
+          "title": "\u00c0 quoi Ressemble le Succ\u00e8s",
+          "line": 7
+        },
+        {
+          "level": 2,
+          "title": "Int\u00e9gration de la M\u00e9moire",
+          "line": 14
+        },
+        {
+          "level": 2,
+          "title": "Apr\u00e8s la Session",
+          "line": 18
+        }
+      ],
+      "table_count": 0,
+      "table_lines": 0,
+      "fenced_block_count": 0,
+      "fenced_block_lines": 0,
+      "waste_patterns": [],
+      "back_references": [],
+      "suggestive_loading": [],
+      "has_config_header": false,
+      "has_progression": false,
+      "wall_of_text": [],
+      "is_skill_md": false,
+      "prompt_frontmatter": {
+        "has_frontmatter": false,
+        "fields": {},
+        "missing_fields": [
+          "name",
+          "description",
+          "menu-code"
+        ]
+      }
+    },
+    {
+      "file": "references/document-code.md",
+      "line_count": 20,
+      "token_estimate": 175,
+      "sections": [
+        {
+          "level": 2,
+          "title": "Ce que cette Capacit\u00e9 Accomplit",
+          "line": 3
+        },
+        {
+          "level": 2,
+          "title": "\u00c0 quoi Ressemble le Succ\u00e8s",
+          "line": 7
+        },
+        {
+          "level": 2,
+          "title": "Int\u00e9gration de la M\u00e9moire",
+          "line": 14
+        },
+        {
+          "level": 2,
+          "title": "Apr\u00e8s la Session",
+          "line": 18
+        }
+      ],
+      "table_count": 0,
+      "table_lines": 0,
+      "fenced_block_count": 0,
+      "fenced_block_lines": 0,
+      "waste_patterns": [],
+      "back_references": [],
+      "suggestive_loading": [],
+      "has_config_header": false,
+      "has_progression": false,
+      "wall_of_text": [],
+      "is_skill_md": false,
+      "prompt_frontmatter": {
+        "has_frontmatter": false,
+        "fields": {},
+        "missing_fields": [
+          "name",
+          "description",
+          "menu-code"
+        ]
+      }
+    },
+    {
+      "file": "references/first-breath.md",
+      "line_count": 27,
+      "token_estimate": 315,
+      "sections": [
+        {
+          "level": 2,
+          "title": "Questions de Configuration",
+          "line": 5
+        },
+        {
+          "level": 3,
+          "title": "Votre Style de D\u00e9veloppement",
+          "line": 7
+        },
+        {
+          "level": 3,
+          "title": "Standards de Qualit\u00e9",
+          "line": 11
+        },
+        {
+          "level": 3,
+          "title": "Projet Quizkw",
+          "line": 15
+        },
+        {
+          "level": 3,
+          "title": "Outils et Pr\u00e9f\u00e9rences",
+          "line": 19
+        },
+        {
+          "level": 2,
+          "title": "Pr\u00eat \u00e0 Commencer",
+          "line": 23
+        }
+      ],
+      "table_count": 0,
+      "table_lines": 0,
+      "fenced_block_count": 0,
+      "fenced_block_lines": 0,
+      "waste_patterns": [],
+      "back_references": [],
+      "suggestive_loading": [],
+      "has_config_header": false,
+      "has_progression": false,
+      "wall_of_text": [],
+      "is_skill_md": false,
+      "prompt_frontmatter": {
+        "has_frontmatter": false,
+        "fields": {},
+        "missing_fields": [
+          "name",
+          "description",
+          "menu-code"
+        ]
+      }
+    },
+    {
+      "file": "references/refactor-code.md",
+      "line_count": 21,
+      "token_estimate": 168,
+      "sections": [
+        {
+          "level": 2,
+          "title": "Ce que cette Capacit\u00e9 Accomplit",
+          "line": 3
+        },
+        {
+          "level": 2,
+          "title": "\u00c0 quoi Ressemble le Succ\u00e8s",
+          "line": 7
+        },
+        {
+          "level": 2,
+          "title": "Int\u00e9gration de la M\u00e9moire",
+          "line": 15
+        },
+        {
+          "level": 2,
+          "title": "Apr\u00e8s la Session",
+          "line": 19
+        }
+      ],
+      "table_count": 0,
+      "table_lines": 0,
+      "fenced_block_count": 0,
+      "fenced_block_lines": 0,
+      "waste_patterns": [],
+      "back_references": [],
+      "suggestive_loading": [],
+      "has_config_header": false,
+      "has_progression": false,
+      "wall_of_text": [],
+      "is_skill_md": false,
+      "prompt_frontmatter": {
+        "has_frontmatter": false,
+        "fields": {},
+        "missing_fields": [
+          "name",
+          "description",
+          "menu-code"
+        ]
+      }
+    },
+    {
+      "file": "references/write-tests.md",
+      "line_count": 21,
+      "token_estimate": 173,
+      "sections": [
+        {
+          "level": 2,
+          "title": "Ce que cette Capacit\u00e9 Accomplit",
+          "line": 3
+        },
+        {
+          "level": 2,
+          "title": "\u00c0 quoi Ressemble le Succ\u00e8s",
+          "line": 7
+        },
+        {
+          "level": 2,
+          "title": "Int\u00e9gration de la M\u00e9moire",
+          "line": 15
+        },
+        {
+          "level": 2,
+          "title": "Apr\u00e8s la Session",
+          "line": 19
+        }
+      ],
+      "table_count": 0,
+      "table_lines": 0,
+      "fenced_block_count": 0,
+      "fenced_block_lines": 0,
+      "waste_patterns": [],
+      "back_references": [],
+      "suggestive_loading": [],
+      "has_config_header": false,
+      "has_progression": false,
+      "wall_of_text": [],
+      "is_skill_md": false,
+      "prompt_frontmatter": {
+        "has_frontmatter": false,
+        "fields": {},
+        "missing_fields": [
+          "name",
+          "description",
+          "menu-code"
+        ]
+      }
+    }
+  ]
+}

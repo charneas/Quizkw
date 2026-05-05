@@ -1,0 +1,267 @@
+{
+  "scanner": "structure-capabilities-prepass",
+  "script": "prepass-structure-capabilities.py",
+  "version": "1.0.0",
+  "skill_path": "c:\\Users\\sebas\\Quizkw\\skills\\agent-le-boss",
+  "timestamp": "2026-05-05T16:32:38.725592+00:00",
+  "status": "warning",
+  "metadata": {
+    "frontmatter": {
+      "name": "agent-le-boss",
+      "description": "D\u00e9veloppeur cr\u00e9atif qui transforme vos sp\u00e9cifications en code Python robuste pour Quizkw. Use when the user asks to talk to Le Boss or requests the D\u00e9veloppeur Fant\u00f4me."
+    },
+    "sections": [
+      {
+        "level": 2,
+        "title": "Overview",
+        "line": 10
+      },
+      {
+        "level": 3,
+        "title": "Identit\u00e9 de Base",
+        "line": 14
+      },
+      {
+        "level": 3,
+        "title": "Lois Fondamentales",
+        "line": 18
+      },
+      {
+        "level": 3,
+        "title": "V\u00e9rit\u00e9 Sacr\u00e9e",
+        "line": 25
+      },
+      {
+        "level": 3,
+        "title": "Mission Sp\u00e9cifique",
+        "line": 29
+      },
+      {
+        "level": 2,
+        "title": "Activation",
+        "line": 33
+      },
+      {
+        "level": 3,
+        "title": "\u00c9tape 1 : Charger la Configuration",
+        "line": 35
+      },
+      {
+        "level": 3,
+        "title": "\u00c9tape 2 : Initialiser le Sanctuaire (Premi\u00e8re Activation)",
+        "line": 39
+      },
+      {
+        "level": 3,
+        "title": "\u00c9tape 3 : Charger l'Identit\u00e9",
+        "line": 46
+      },
+      {
+        "level": 3,
+        "title": "\u00c9tape 4 : Devenir Soi-M\u00eame",
+        "line": 55
+      },
+      {
+        "level": 3,
+        "title": "\u00c9tape 5 : Accueillir le Propri\u00e9taire",
+        "line": 59
+      },
+      {
+        "level": 2,
+        "title": "Mode Autonome (`--headless`)",
+        "line": 63
+      },
+      {
+        "level": 2,
+        "title": "Capacit\u00e9s",
+        "line": 71
+      },
+      {
+        "level": 3,
+        "title": "D\u00e9veloppement de Fonctionnalit\u00e9s",
+        "line": 73
+      },
+      {
+        "level": 3,
+        "title": "Refactorisation du Code",
+        "line": 79
+      },
+      {
+        "level": 3,
+        "title": "D\u00e9bogage et R\u00e9solution de Probl\u00e8mes",
+        "line": 85
+      },
+      {
+        "level": 3,
+        "title": "Documentation Technique",
+        "line": 91
+      },
+      {
+        "level": 3,
+        "title": "Tests Automatis\u00e9s",
+        "line": 97
+      },
+      {
+        "level": 2,
+        "title": "Fermeture de Session",
+        "line": 103
+      }
+    ],
+    "is_memory_agent": true
+  },
+  "prompt_details": [
+    {
+      "file": "debug-issues.md",
+      "has_config_header": false,
+      "has_progression": false
+    },
+    {
+      "file": "develop-feature.md",
+      "has_config_header": false,
+      "has_progression": false
+    },
+    {
+      "file": "document-code.md",
+      "has_config_header": false,
+      "has_progression": false
+    },
+    {
+      "file": "first-breath.md",
+      "has_config_header": false,
+      "has_progression": false
+    },
+    {
+      "file": "refactor-code.md",
+      "has_config_header": false,
+      "has_progression": false
+    },
+    {
+      "file": "write-tests.md",
+      "has_config_header": false,
+      "has_progression": false
+    }
+  ],
+  "memory_paths": [
+    "memory/agent-le-boss/BOND.md",
+    "memory/agent-le-boss/CAPABILITIES.md",
+    "memory/agent-le-boss/CREED.md",
+    "memory/agent-le-boss/MEMORY.md",
+    "memory/agent-le-boss/PERSONA.md"
+  ],
+  "issues": [
+    {
+      "file": "SKILL.md",
+      "line": 1,
+      "severity": "high",
+      "category": "sections",
+      "issue": "Missing ## The Three Laws section (required for memory agent bootloader)"
+    },
+    {
+      "file": "SKILL.md",
+      "line": 1,
+      "severity": "high",
+      "category": "sections",
+      "issue": "Missing ## The Sacred Truth section (required for memory agent bootloader)"
+    },
+    {
+      "file": "SKILL.md",
+      "line": 1,
+      "severity": "high",
+      "category": "sections",
+      "issue": "Missing ## On Activation section (required for memory agent bootloader)"
+    },
+    {
+      "file": "debug-issues.md",
+      "line": 1,
+      "severity": "medium",
+      "category": "config-header",
+      "issue": "No config header with language variables found"
+    },
+    {
+      "file": "debug-issues.md",
+      "line": 20,
+      "severity": "high",
+      "category": "progression",
+      "issue": "No progression condition keywords found"
+    },
+    {
+      "file": "develop-feature.md",
+      "line": 1,
+      "severity": "medium",
+      "category": "config-header",
+      "issue": "No config header with language variables found"
+    },
+    {
+      "file": "develop-feature.md",
+      "line": 20,
+      "severity": "high",
+      "category": "progression",
+      "issue": "No progression condition keywords found"
+    },
+    {
+      "file": "document-code.md",
+      "line": 1,
+      "severity": "medium",
+      "category": "config-header",
+      "issue": "No config header with language variables found"
+    },
+    {
+      "file": "document-code.md",
+      "line": 20,
+      "severity": "high",
+      "category": "progression",
+      "issue": "No progression condition keywords found"
+    },
+    {
+      "file": "first-breath.md",
+      "line": 1,
+      "severity": "medium",
+      "category": "config-header",
+      "issue": "No config header with language variables found"
+    },
+    {
+      "file": "first-breath.md",
+      "line": 27,
+      "severity": "high",
+      "category": "progression",
+      "issue": "No progression condition keywords found"
+    },
+    {
+      "file": "refactor-code.md",
+      "line": 1,
+      "severity": "medium",
+      "category": "config-header",
+      "issue": "No config header with language variables found"
+    },
+    {
+      "file": "refactor-code.md",
+      "line": 21,
+      "severity": "high",
+      "category": "progression",
+      "issue": "No progression condition keywords found"
+    },
+    {
+      "file": "write-tests.md",
+      "line": 1,
+      "severity": "medium",
+      "category": "config-header",
+      "issue": "No config header with language variables found"
+    },
+    {
+      "file": "write-tests.md",
+      "line": 21,
+      "severity": "high",
+      "category": "progression",
+      "issue": "No progression condition keywords found"
+    }
+  ],
+  "summary": {
+    "total_issues": 15,
+    "by_severity": {
+      "critical": 0,
+      "high": 9,
+      "medium": 6,
+      "low": 0
+    }
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "scanner": "path-standards",
+  "script": "scan-path-standards.py",
+  "version": "3.0.0",
+  "skill_path": "c:\\Users\\sebas\\Quizkw\\skills\\agent-le-boss",
+  "timestamp": "2026-05-05T16:32:08.494416+00:00",
+  "files_scanned": [
+    "assets\\BOND-template.md",
+    "assets\\CAPABILITIES-template.md",
+    "assets\\CREED-template.md",
+    "assets\\MEMORY-template.md",
+    "assets\\PERSONA-template.md",
+    "assets\\PULSE-template.md",
+    "references\\debug-issues.md",
+    "references\\develop-feature.md",
+    "references\\document-code.md",
+    "references\\first-breath.md",
+    "references\\refactor-code.md",
+    "references\\write-tests.md",
+    "SKILL.md"
+  ],
+  "status": "pass",
+  "findings": [],
+  "assessments": {},
+  "summary": {
+    "total_findings": 0,
+    "by_severity": {
+      "critical": 0,
+      "high": 0,
+      "medium": 0,
+      "low": 0
+    },
+    "by_category": {
+      "double_prefix": 0,
+      "bare_bmad": 0,
+      "absolute_path": 0,
+      "relative_prefix": 0,
+      "cross_dir_dot_slash": 0,
+      "memory_path": 0,
+      "frontmatter": 0,
+      "structure": 0
+    },
+    "assessment": "Path standards scan complete"
+  }
+}

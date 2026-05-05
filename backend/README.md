@@ -76,6 +76,7 @@ Ce script créera :
 - `GET /games/{code}` - Récupérer une session
 - `POST /games/{code}/teams/` - Créer une équipe
 - `POST /games/{code}/start` - Démarrer le jeu
+- `POST /games/{code}/advance-to-phase3` - Passer à la phase 3 (manche finale)
 
 ### Questions et réponses
 - `GET /questions/random` - Obtenir une question aléatoire
@@ -84,6 +85,13 @@ Ce script créera :
 ### Fonctionnalités avancées
 - `POST /tokens/use` - Utiliser un jeton
 - `POST /wheel/spin` - Tourner la roue de bonus/malus
+
+### Phase 3 - Grille Mémoire (Manche Finale)
+- `POST /games/{code}/memory-grid/create` - Créer une grille mémoire 7x5
+- `POST /games/{code}/memory-grid/start` - Démarrer un tour de grille mémoire
+- `GET /memory-grid/{memory_grid_id}/state` - Obtenir l'état de la grille
+- `POST /memory-grid/reveal-cell` - Révéler une cellule dans la grille
+- `POST /memory-grid/answer-cell` - Répondre à une cellule révélée
 
 ## Règles implémentées
 

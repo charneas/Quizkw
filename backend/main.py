@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db, engine
 from app import models, schemas
 from app.models import Base
+from app.memory_grid import MemoryGridManager, MemoryGrid, GridCell, MemoryGridRound, GridCellStatus
 
 # Créer les tables de la base de données
 Base.metadata.create_all(bind=engine)
@@ -283,6 +284,118 @@ def spin_wheel(wheel_spin: schemas.WheelSpinRequest, db: Session = Depends(get_d
             "value": 3,
             "message": f"Résultat {spin_result}: Bonus de 3 points!"
         }
+
+# Phase 3 - Memory Grid Endpoints
+@app.post("/games/{code}/memory-grid/create", response_model=schemas.MemoryGrid)
+def create_memory_grid(code: str, db: Session = Depends(get_db)):
+    """
+    Créer une grille mémoire pour la manche 3 (7x5 grid)
+    """
+    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
+    
+    # Vérifier que le jeu est à la manche 3
+    if game.current_round != models.RoundType.MANCHE_3:
+        raise HTTPException(status_code=400, detail="La grille mémoire est seulement disponible en manche 3")
+    
+    manager = MemoryGridManager(db)
+    memory_grid = manager.create_memory_grid(game.id, rows=7, cols=5)
+    
+    return memory_grid
+
+@app.post("/games/{code}/memory-grid/start", response_model=schemas.StartMemoryGridRoundResponse)
+def start_memory_grid_round(code: str, db: Session = Depends(get_db)):
+    """
+    Démarrer un tour de grille mémoire
+    """
+    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
+    
+    # Vérifier qu'il y a une grille mémoire active
+    memory_grid = db.query(MemoryGrid).filter(
+        MemoryGrid.game_session_id == game.id,
+        MemoryGrid.is_completed == False
+    ).first()
+    
+    if not memory_grid:
+        raise HTTPException(status_code=404, detail="Aucune grille mémoire active trouvée")
+    
+    manager = MemoryGridManager(db)
+    round_obj = manager.start_memory_grid_round(game.id, memory_grid.id)
+    
+    return {
+        "round_id": round_obj.id,
+        "message": "Tour de grille mémoire démarré"
+    }
+
+@app.get("/memory-grid/{memory_grid_id}/state", response_model=schemas.MemoryGridStateResponse)
+def get_memory_grid_state(memory_grid_id: int, db: Session = Depends(get_db)):
+    """
+    Obtenir l'état actuel de la grille mémoire
+    """
+    manager = MemoryGridManager(db)
+    grid_state = manager.get_grid_state(memory_grid_id)
+    
+    if not grid_state:
+        raise HTTPException(status_code=404, detail="Grille mémoire non trouvée")
+    
+    return grid_state
+
+@app.post("/memory-grid/reveal-cell")
+def reveal_cell(reveal_request: schemas.SelectCellRequest, db: Session = Depends(get_db)):
+    """
+    Révéler une cellule dans la grille mémoire
+    """
+    manager = MemoryGridManager(db)
+    result = manager.reveal_cell(reveal_request.round_id, reveal_request.team_id, reveal_request.cell_id)
+    
+    if not result:
+        raise HTTPException(status_code=404, detail="Erreur lors de la révélation de la cellule")
+    
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    
+    return result
+
+@app.post("/memory-grid/answer-cell")
+def answer_cell(answer_request: schemas.AnswerCellRequest, db: Session = Depends(get_db)):
+    """
+    Répondre à une cellule révélée dans la grille mémoire
+    """
+    manager = MemoryGridManager(db)
+    result = manager.answer_cell(answer_request.round_id, answer_request.team_id, answer_request.cell_id, answer_request.is_correct)
+    
+    if not result:
+        raise HTTPException(status_code=404, detail="Erreur lors de la réponse à la cellule")
+    
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    
+    return result
+
+@app.post("/games/{code}/advance-to-phase3")
+def advance_to_phase3(code: str, db: Session = Depends(get_db)):
+    """
+    Passer à la phase 3 (manche finale avec grille mémoire)
+    """
+    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
+    
+    # Vérifier que le jeu est actif et peut passer à la phase 3
+    if not game.is_active:
+        raise HTTPException(status_code=400, detail="Le jeu n'est pas actif")
+    
+    # Avancer à la manche 3
+    game.current_round = models.RoundType.MANCHE_3
+    db.commit()
+    
+    return {
+        "message": "Passage à la manche 3 (grille mémoire) réussi",
+        "current_round": game.current_round.value
+    }
 
 if __name__ == "__main__":
     import uvicorn

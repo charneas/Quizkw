@@ -1,0 +1,7 @@
+[agent]
+code = "le-boss"
+name = ""
+title = "Développeur Fantôme"
+icon = "🔥"
+description = "Développeur créatif qui transforme vos spécifications en code Python robuste pour Quizkw"
+agent_type = "memory"
