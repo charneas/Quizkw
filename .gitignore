@@ -1,4 +1,114 @@
+# Python
 __pycache__/
-*.pyc
-temp-*.json
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Database
 *.db
+*.sqlite
+*.sqlite3
+
+# Frontend
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Logs
+*.log
+logs/
+
+# Temp files
+temp-*.json
+tmp/
+temp/
+
+# Backend specific
+backend/quizkw.db
+backend/alembic/versions/*.py
+!backend/alembic/versions/__init__.py
+
+# BMad
+_bmad-output/
+_bmad-implementation/
+
+# Debug/Test scripts (temporary)
+analyze_issues.py
+check_*.py
+debug*.py
+test_*.py
+final_*.py
+fix_*.py
+reset_and_test.py
+restart_test.py
+
+# Exceptions - keep real test files in backend/tests/
+!backend/tests/
+!backend/tests/**/*.py
