@@ -1,0 +1,11 @@
+# Project Rules
+
+## Shell / CLI
+
+- The default shell is PowerShell (not cmd.exe).
+- In PowerShell, chain commands with `;` (semicolon), NOT `&&`.
+  - ✅ `Set-Location c:\path\to\dir; python script.py`
+  - ❌ `cd /d c:\path\to\dir && python script.py` (cmd syntax, won't work)
+  - ❌ `cd /d c:\path\to\dir & python script.py` (`&` is not allowed bare in PowerShell)
+- When running Python one-liners, avoid nested quote conflicts. Prefer running a temp script file or use only one type of quotes in the command.
+- For changing directory + running a command, prefer: `Set-Location <path>; <command>` or run the command directly with full paths.

@@ -1,7 +1,8 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional
 from datetime import datetime
 from enum import Enum
+import json
 
 # Enums pour la validation des données
 class DifficultyEnum(str, Enum):
@@ -35,6 +36,26 @@ class Question(QuestionBase):
     id: int
     created_at: datetime
     
+    @field_validator('wrong_answers', mode='before')
+    @classmethod
+    def parse_wrong_answers(cls, v):
+        """Parse wrong_answers from JSON string if needed"""
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except json.JSONDecodeError:
+                # If it's not valid JSON, try to handle it as a string representation
+                if v.startswith('[') and v.endswith(']'):
+                    # Try to fix common issues
+                    v = v.replace("'", '"')
+                    try:
+                        return json.loads(v)
+                    except json.JSONDecodeError:
+                        pass
+                # Return as single item list if parsing fails
+                return [v]
+        return v
+    
     class Config:
         from_attributes = True
 
@@ -46,7 +67,7 @@ class PlayerCreate(PlayerBase):
 
 class Player(PlayerBase):
     id: int
-    team_id: int
+    team_id: Optional[int] = None
     
     class Config:
         from_attributes = True
@@ -81,8 +102,8 @@ class Token(TokenBase):
         from_attributes = True
 
 class GameSessionBase(BaseModel):
-    total_players: int = Field(..., ge=2, le=12)
-    players_per_team: int = Field(..., ge=2, le=3)
+    total_players: int = Field(..., ge=1, le=16)
+    players_per_team: int = Field(..., ge=1, le=3)
 
 class GameSessionCreate(GameSessionBase):
     pass
@@ -228,3 +249,106 @@ class AnswerCellResponse(BaseModel):
     points_awarded: int
     team_score: int
     cell_type: str
+
+# Round 2 Enums
+class ThemeCategoryEnum(str, Enum):
+    serious = "serious"
+    pop_culture = "pop_culture"
+    whimsical = "whimsical"
+
+class QualificationStatusEnum(str, Enum):
+    playing = "playing"
+    qualified = "qualified"
+    eliminated = "eliminated"
+    finalist = "finalist"
+
+# Round 2 Schemas
+class ThemeBase(BaseModel):
+    name: str
+    category: ThemeCategoryEnum
+    difficulty_level: int = Field(..., ge=1, le=10)
+    description: Optional[str] = None
+
+class ThemeCreate(ThemeBase):
+    pass
+
+class Theme(ThemeBase):
+    id: int
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+class PlayerRound2StatsBase(BaseModel):
+    player_id: int
+    game_session_id: int
+    theme_id: Optional[int] = None
+    score: int = 0
+    questions_answered: int = 0
+    correct_answers: int = 0
+    current_question_index: int = 0
+    qualification_status: QualificationStatusEnum = QualificationStatusEnum.playing
+
+class PlayerRound2StatsCreate(PlayerRound2StatsBase):
+    pass
+
+class PlayerRound2Stats(PlayerRound2StatsBase):
+    id: int
+    theme_selected_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
+
+class ThemeSelectionRequest(BaseModel):
+    player_id: int
+    theme_id: int
+
+class ThemeSelectionResponse(BaseModel):
+    theme: Theme
+    player_stats: PlayerRound2Stats
+    message: str
+
+class Round2QuestionRequest(BaseModel):
+    player_id: int
+
+class Round2QuestionResponse(BaseModel):
+    question: Question
+    question_number: int
+    difficulty: int
+    options: List[str]
+    time_limit: int = 30
+
+class Round2AnswerRequest(BaseModel):
+    player_id: int
+    question_id: int
+    player_answer: str
+
+class Round2AnswerResponse(BaseModel):
+    is_correct: bool
+    points_awarded: int
+    player_score: int
+    correct_answer: str
+    next_question_available: bool
+
+class TournamentProgress(BaseModel):
+    phase: str  # "16_players", "8_qualified", "4_finalists"
+    players_total: int
+    players_remaining: int
+    players_eliminated: int
+    top_players: List[dict]
+
+class IntermediateLeaderboardResponse(BaseModel):
+    qualified_players: List[PlayerRound2Stats]
+    eliminated_players: List[PlayerRound2Stats]
+    cutoff_score: int
+    message: str
+
+class Round2AdvanceRequest(BaseModel):
+    game_session_id: int
+
+class Round2AdvanceResponse(BaseModel):
+    new_phase: str
+    qualified_count: int
+    eliminated_count: int
+    message: str

@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply text-white font-sans;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-primary-600 hover:bg-primary-700 text-white font-bold py-3 px-6 rounded-lg transition-all duration-200 transform hover:scale-105 active:scale-95;
+  }
+
+  .btn-secondary {
+    @apply bg-game-card hover:bg-slate-600 text-white font-bold py-3 px-6 rounded-lg border border-slate-500 transition-all duration-200;
+  }
+
+  .btn-danger {
+    @apply bg-game-danger hover:bg-red-600 text-white font-bold py-3 px-6 rounded-lg transition-all duration-200;
+  }
+
+  .btn-success {
+    @apply bg-game-success hover:bg-emerald-600 text-white font-bold py-3 px-6 rounded-lg transition-all duration-200;
+  }
+
+  .card {
+    @apply bg-game-card rounded-xl p-6 shadow-lg border border-slate-700;
+  }
+
+  .input-field {
+    @apply w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-3 text-white placeholder-slate-400 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 transition-colors;
+  }
+}

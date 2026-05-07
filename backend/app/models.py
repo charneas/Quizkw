@@ -30,7 +30,12 @@ class Question(Base):
     points = Column(Integer, nullable=False)  # 2, 4, ou 6 points selon difficulté
     correct_answer = Column(String, nullable=False)
     wrong_answers = Column(String)  # Stocker les mauvaises réponses en JSON
+    theme_id = Column(Integer, ForeignKey("themes.id"), nullable=True)
+    question_number = Column(Integer)  # 1-10 pour Round 2 (difficulty progressive)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relations
+    theme = relationship("Theme", back_populates="questions")
 
 class GameSession(Base):
     __tablename__ = "game_sessions"
@@ -67,7 +72,7 @@ class Player(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
-    team_id = Column(Integer, ForeignKey("teams.id"))
+    team_id = Column(Integer, ForeignKey("teams.id"), nullable=True)
     
     # Relations
     team = relationship("Team", back_populates="players")
@@ -111,3 +116,53 @@ class Answer(Base):
     # Relations
     question = relationship("Question")
     team = relationship("Team")
+
+# Enum pour les catégories de thèmes
+class ThemeCategory(enum.Enum):
+    SERIOUS = "serious"
+    POP_CULTURE = "pop_culture"
+    WHIMSICAL = "whimsical"
+
+# Enum pour le statut de qualification
+class QualificationStatus(enum.Enum):
+    PLAYING = "playing"
+    QUALIFIED = "qualified"
+    ELIMINATED = "eliminated"
+    FINALIST = "finalist"
+
+class Theme(Base):
+    __tablename__ = "themes"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False, unique=True)
+    category = Column(SQLEnum(ThemeCategory), nullable=False)
+    difficulty_level = Column(Integer, nullable=False)  # 1-10 average
+    description = Column(String)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relations
+    questions = relationship("Question", back_populates="theme")
+    player_stats = relationship("PlayerRound2Stats", back_populates="theme")
+
+class PlayerRound2Stats(Base):
+    __tablename__ = "player_round2_stats"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    player_id = Column(Integer, ForeignKey("players.id"), nullable=False)
+    game_session_id = Column(Integer, ForeignKey("game_sessions.id"), nullable=False)
+    theme_id = Column(Integer, ForeignKey("themes.id"))
+    score = Column(Integer, default=0)
+    questions_answered = Column(Integer, default=0)
+    correct_answers = Column(Integer, default=0)
+    current_question_index = Column(Integer, default=0)  # 0-9 (10 questions)
+    qualification_status = Column(SQLEnum(QualificationStatus), default=QualificationStatus.PLAYING)
+    theme_selected_at = Column(DateTime(timezone=True))
+    completed_at = Column(DateTime(timezone=True))
+    
+    # Relations
+    player = relationship("Player")
+    game_session = relationship("GameSession")
+    theme = relationship("Theme", back_populates="player_stats")
+
+# Mise à jour de GameSession pour la progression 16→8→4
+# Ajout de champs pour suivre le tournoi
