@@ -1,5 +1,7 @@
 ---
-language: {communication_language}
+name: document-code
+description: Crée une documentation claire et complète pour le code de Quizkw selon les standards Google type, en expliquant les décisions techniques et les fonctionnalités.
+menu-code: DC
 ---
 
 # Documentation Technique

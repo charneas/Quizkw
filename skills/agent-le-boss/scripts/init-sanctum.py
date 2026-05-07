@@ -8,6 +8,8 @@ Script d'initialisation du sanctuaire pour l'agent Le Boss.
 Crée la structure de mémoire et copie les templates dans le sanctuaire.
 """
 
+import argparse
+import json
 import os
 import shutil
 import sys
@@ -22,7 +24,8 @@ TEMPLATE_FILES = [
     "BOND-template.md",
     "MEMORY-template.md",
     "CAPABILITIES-template.md",
-    "PULSE-template.md"
+    "PULSE-template.md",
+    "INDEX-template.md"
 ]
 EVOLVABLE = False
 
@@ -86,17 +89,72 @@ Aucune session enregistrée.
     print(f"📍 Emplacement : {sanctum_path}")
 
 def main():
-    if len(sys.argv) != 3:
-        print("Usage: python3 init-sanctum.py <project-root> <skill-path>")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description="Initialise le sanctuaire pour l'agent Le Boss",
+        epilog="Exemple: python init-sanctum.py /chemin/vers/projet /chemin/vers/skill"
+    )
+    parser.add_argument(
+        "project_root",
+        help="Racine du projet (contenant _bmad/)"
+    )
+    parser.add_argument(
+        "skill_path", 
+        help="Chemin vers le répertoire du skill (skills/agent-le-boss)"
+    )
+    parser.add_argument(
+        "--json", "-j",
+        action="store_true",
+        help="Sortie au format JSON"
+    )
+    parser.add_argument(
+        "--dry-run", "-d",
+        action="store_true",
+        help="Simule l'initialisation sans créer de fichiers"
+    )
     
-    project_root = sys.argv[1]
-    skill_path = sys.argv[2]
+    args = parser.parse_args()
     
     try:
-        create_sanctum_structure(project_root, skill_path)
+        if args.dry_run:
+            print(f"Simulation: Initialisation du sanctuaire pour {SKILL_NAME}")
+            print(f"Project root: {args.project_root}")
+            print(f"Skill path: {args.skill_path}")
+            print(f"Templates: {len(TEMPLATE_FILES)} fichiers")
+            print(f"Skill-only files: {SKILL_ONLY_FILES}")
+            result = {
+                "status": "dry_run",
+                "skill_name": SKILL_NAME,
+                "project_root": args.project_root,
+                "skill_path": args.skill_path,
+                "templates_count": len(TEMPLATE_FILES),
+                "skill_only_files": SKILL_ONLY_FILES
+            }
+        else:
+            create_sanctum_structure(args.project_root, args.skill_path)
+            result = {
+                "status": "success",
+                "skill_name": SKILL_NAME,
+                "sanctum_path": str(Path(args.project_root) / "_bmad" / "memory" / SKILL_NAME),
+                "templates_copied": len(TEMPLATE_FILES),
+                "directories_created": 4  # logs, references, boundaries, learned
+            }
+        
+        if args.json:
+            print(json.dumps(result, indent=2))
+        elif not args.dry_run:
+            print(f"\n✅ Sanctuaire initialisé avec succès !")
+            print(f"📍 Emplacement : {Path(args.project_root) / '_bmad' / 'memory' / SKILL_NAME}")
+            
     except Exception as e:
-        print(f"❌ Erreur lors de l'initialisation : {e}")
+        error_result = {
+            "status": "error",
+            "skill_name": SKILL_NAME,
+            "error": str(e)
+        }
+        if args.json:
+            print(json.dumps(error_result, indent=2))
+        else:
+            print(f"❌ Erreur lors de l'initialisation : {e}")
         sys.exit(1)
 
 if __name__ == "__main__":

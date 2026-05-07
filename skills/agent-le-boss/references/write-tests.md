@@ -1,5 +1,7 @@
 ---
-language: {communication_language}
+name: write-tests
+description: Développe des tests complets pour assurer la qualité du code de Quizkw, en couvrant les cas d'usage principaux, les cas limites et les scénarios d'erreur.
+menu-code: WT
 ---
 
 # Tests Automatisés

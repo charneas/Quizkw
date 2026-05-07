@@ -1,5 +1,7 @@
 ---
-language: {communication_language}
+name: develop-feature
+description: Transforme vos spécifications en code Python fonctionnel pour Quizkw, avec une attention particulière à la qualité, la documentation et les tests.
+menu-code: DF
 ---
 
 # Développement de Fonctionnalités

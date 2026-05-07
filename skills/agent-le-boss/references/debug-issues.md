@@ -1,5 +1,7 @@
 ---
-language: {communication_language}
+name: debug-issues
+description: Identifie et corrige les bugs dans le code de Quizkw, en utilisant une approche méthodique pour localiser et résoudre les problèmes.
+menu-code: DI
 ---
 
 # Débogage et Résolution de Problèmes

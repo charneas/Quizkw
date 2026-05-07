@@ -1,5 +1,7 @@
 ---
-language: {communication_language}
+name: refactor-code
+description: Améliore la structure du code existant de Quizkw tout en préservant sa fonctionnalité, en se concentrant sur la maintenabilité et la qualité.
+menu-code: RC
 ---
 
 # Refactorisation du Code
