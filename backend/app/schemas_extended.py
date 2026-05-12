@@ -1,7 +1,7 @@
 """
 Extensions de schémas Pydantic pour Memory Grid - Round 3
 """
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Dict, Any
 from enum import Enum
 from datetime import datetime
@@ -54,7 +54,7 @@ class ThemeSelectionRequest(BaseModel):
     """Requête pour sélectionner 3 thèmes."""
     player_id: int
     game_session_id: int
-    theme_ids: List[int] = Field(..., min_items=3, max_items=3)
+    theme_ids: List[int] = Field(..., min_length=3, max_length=3)
 
 class ThemeSelectionResponse(BaseModel):
     """Réponse de sélection de thème."""

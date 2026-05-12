@@ -205,13 +205,10 @@ class TestMemoryGridRound3API:
     def test_select_team_color_success(self):
         """[P1] POST /teams/{team_id}/select-color - Sélection couleur réussie"""
         team = self.teams[0]
-        request_data = {
-            "color": "#FF5733"
-        }
         
         response = self.client.post(
             f"/teams/{team.id}/select-color",
-            json=request_data
+            params={"color": "red"}
         )
         
         assert response.status_code == 200
@@ -220,24 +217,24 @@ class TestMemoryGridRound3API:
         assert data["success"] == True
         assert "team_id" in data
         assert data["team_id"] == team.id
-        assert "selected_color" in data
-        assert data["selected_color"] == "#FF5733"
+        assert "color" in data
+        assert data["color"] == "red"
         
         # Vérifier en base
         updated_team = self.db_session.query(Team).filter(Team.id == team.id).first()
-        assert updated_team.color == "#FF5733"
+        assert updated_team.color == "red"
 
     def test_select_team_color_duplicate(self):
         """[P1] POST /teams/{team_id}/select-color - Couleur déjà prise"""
         # Team 1 prend une couleur
         team1 = self.teams[0]
-        self.client.post(f"/teams/{team1.id}/select-color", json={"color": "#FF5733"})
+        self.client.post(f"/teams/{team1.id}/select-color", params={"color": "red"})
         
         # Team 2 essaie de prendre la même couleur
         team2 = self.teams[1]
         response = self.client.post(
             f"/teams/{team2.id}/select-color",
-            json={"color": "#FF5733"}
+            params={"color": "red"}
         )
         
         assert response.status_code == 400
@@ -248,16 +245,16 @@ class TestMemoryGridRound3API:
     def test_select_team_color_invalid_color(self):
         """[P2] POST /teams/{team_id}/select-color - Couleur invalide"""
         team = self.teams[0]
-        request_data = {
-            "color": "NOTACOLOR"
-        }
         
         response = self.client.post(
             f"/teams/{team.id}/select-color",
-            json=request_data
+            params={"color": "NOTACOLOR"}
         )
         
-        assert response.status_code == 422  # Validation error
+        assert response.status_code == 400  # ValueError from manager
+        data = response.json()
+        assert "detail" in data
+        assert "invalid color" in data["detail"].lower()
     
     def test_create_memory_grid_missing_game(self):
         """[P2] POST /games/{code}/memory-grid/create-with-themes - Jeu inexistant"""

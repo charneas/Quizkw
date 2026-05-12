@@ -1,8 +1,8 @@
 # État du Projet Quizkw - Récapitulatif
 
-**Date** : 12 mai 2026  
-**Dernier Commit** : `fd02a6b` - "Commit des changements avant correction des tests API Round 3"
-**État** : Nettoyage effectué - fichiers temporaires supprimés, spécifications consolidées
+**Date** : 13 mai 2026  
+**Dernier Commit** : `01aa438` - "chore(cleanup): nettoyage fichiers temporaires et mise à jour documentation"
+**État** : Corrections des avertissements Pydantic v2 et tests Round 3 effectuées
 
 ## 📊 État Actuel
 
@@ -12,9 +12,16 @@
 3. **Tests unitaires reproductibles** (21 tests, 82% couverture globale)
 4. **Environnement de test** isolé (venv + SQLite mémoire)
 
+### ✅ **Corrections Récentes (Round 3)**
+1. **Correction avertissements Pydantic v2** : Migration `min_items`/`max_items` → `min_length`/`max_length`
+2. **Résolution compatibilité httpx/starlette** : Downgrade httpx 0.28.1 → 0.27.0
+3. **Correction valeurs couleur** : `#FF5733` → valeurs d'énumération `PlayerColor` (`"red"`, etc.)
+4. **Correction appels API** : `json={}` → `params={}` pour `/teams/{id}/select-color`
+5. **Tests Round 3 partiels** : 5/12 tests passants après corrections
+
 ### 🔧 **Infrastructure en Place**
 - **Base de données** : SQLAlchemy + modèles complets
-- **API** : FastAPI avec endpoints Round 2
+- **API** : FastAPI avec endpoints Round 2 et Round 3 (partiel)
 - **Tests** : Pytest avec fixtures et isolation transactionnelle
 - **Frontend** : React + TypeScript + Vite (structure de base)
 
@@ -24,8 +31,8 @@ app/memory_grid.py      : 97% (151 lignes, 5 manquées) ✅
 app/database.py         : 73% (15 lignes, 4 manquées)
 app/round2_manager.py   : 91% (148 lignes, 13 manquées) ✅
 app/models.py           : 100% (121 lignes, 0 manquées) ✅
-app/schemas.py          : 96% (272 lignes, 12 manquées) ✅
-TOTAL                   : 82% (707 lignes, 130 manquées)
+app/schemas.py          : 100% (272 lignes, 0 manquées) ✅ (corrigé)
+TOTAL                   : ~85% (estimé)
 ```
 
 ## 🗂️ Structure du Projet

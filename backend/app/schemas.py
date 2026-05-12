@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 from typing import List, Optional
 from datetime import datetime
 from enum import Enum
@@ -368,7 +368,7 @@ class ColorSelectionResponse(BaseModel):
 
 class ThemeSelectionRequestRound3(BaseModel):
     team_id: int
-    theme_ids: List[int] = Field(..., min_items=3, max_items=3)
+    theme_ids: List[int] = Field(..., min_length=3, max_length=3)
 
 class ThemeSelectionResponseRound3(BaseModel):
     success: bool
