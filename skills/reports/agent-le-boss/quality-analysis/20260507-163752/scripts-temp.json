@@ -1,0 +1,94 @@
+{
+  "scanner": "scripts",
+  "script": "scan-scripts.py",
+  "version": "2.0.0",
+  "skill_path": "skills\\agent-le-boss",
+  "timestamp": "2026-05-07T14:39:42.522236+00:00",
+  "status": "warning",
+  "findings": [
+    {
+      "file": "scripts/init-sanctum.py",
+      "line": 1,
+      "severity": "medium",
+      "category": "agentic-design",
+      "title": "No argparse found \u2014 script lacks --help self-documentation",
+      "detail": "",
+      "action": "Add argparse with description and argument help text"
+    },
+    {
+      "file": "scripts/init-sanctum.py",
+      "line": 1,
+      "severity": "medium",
+      "category": "agentic-design",
+      "title": "No json.dumps found \u2014 output may not be structured JSON",
+      "detail": "",
+      "action": "Use json.dumps for structured output parseable by workflows"
+    },
+    {
+      "file": "scripts/init-sanctum.py",
+      "line": 1,
+      "severity": "medium",
+      "category": "tests",
+      "title": "No unit test found for init-sanctum.py",
+      "detail": "",
+      "action": "Create scripts/tests/test-init-sanctum.py with test cases"
+    },
+    {
+      "file": "scripts/tests/",
+      "line": 0,
+      "severity": "high",
+      "category": "tests",
+      "title": "scripts/tests/ directory does not exist \u2014 no unit tests",
+      "detail": "",
+      "action": "Create scripts/tests/ with test files for each script"
+    },
+    {
+      "file": "scripts/init-sanctum.py",
+      "line": 0,
+      "severity": "high",
+      "category": "lint-setup",
+      "title": "uv not found on PATH \u2014 cannot run ruff for Python linting",
+      "detail": "",
+      "action": "Install uv: https://docs.astral.sh/uv/getting-started/installation/"
+    }
+  ],
+  "assessments": {
+    "lint_summary": {
+      "tools_used": [],
+      "files_linted": 1,
+      "lint_issues": 0
+    },
+    "script_summary": {
+      "total_scripts": 1,
+      "by_type": {
+        "python": 1,
+        "shell": 0,
+        "node": 0,
+        "other": 0
+      },
+      "scripts": {
+        "python": [
+          "init-sanctum.py"
+        ]
+      },
+      "missing_tests": [
+        "init-sanctum.py"
+      ]
+    }
+  },
+  "summary": {
+    "total_findings": 5,
+    "by_severity": {
+      "critical": 0,
+      "high": 2,
+      "medium": 3,
+      "low": 0
+    },
+    "by_category": {
+      "agentic-design": 2,
+      "tests": 2,
+      "lint-setup": 1
+    },
+    "assessment": ""
+  }
+}

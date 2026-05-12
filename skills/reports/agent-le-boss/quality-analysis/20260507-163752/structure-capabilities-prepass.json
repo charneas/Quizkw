@@ -1,0 +1,90 @@
+{
+  "scanner": "structure-capabilities-prepass",
+  "script": "prepass-structure-capabilities.py",
+  "version": "1.0.0",
+  "skill_path": "skills\\agent-le-boss",
+  "timestamp": "2026-05-07T14:39:59.673723+00:00",
+  "status": "pass",
+  "metadata": {
+    "frontmatter": {
+      "name": "agent-le-boss",
+      "description": "D\u00e9veloppeur cr\u00e9atif qui transforme vos sp\u00e9cifications en code Python robuste pour Quizkw. Use when the user asks to talk to Le Boss or requests the D\u00e9veloppeur Fant\u00f4me."
+    },
+    "sections": [
+      {
+        "level": 2,
+        "title": "The Three Laws",
+        "line": 10
+      },
+      {
+        "level": 2,
+        "title": "The Sacred Truth",
+        "line": 17
+      },
+      {
+        "level": 2,
+        "title": "Mission",
+        "line": 21
+      },
+      {
+        "level": 2,
+        "title": "On Activation",
+        "line": 25
+      },
+      {
+        "level": 2,
+        "title": "Capacit\u00e9s",
+        "line": 29
+      },
+      {
+        "level": 2,
+        "title": "Mode Autonome (`--headless`)",
+        "line": 37
+      }
+    ],
+    "is_memory_agent": true
+  },
+  "prompt_details": [
+    {
+      "file": "debug-issues.md",
+      "has_config_header": true,
+      "has_progression": true
+    },
+    {
+      "file": "develop-feature.md",
+      "has_config_header": true,
+      "has_progression": true
+    },
+    {
+      "file": "document-code.md",
+      "has_config_header": true,
+      "has_progression": true
+    },
+    {
+      "file": "first-breath.md",
+      "has_config_header": true,
+      "has_progression": true
+    },
+    {
+      "file": "refactor-code.md",
+      "has_config_header": true,
+      "has_progression": true
+    },
+    {
+      "file": "write-tests.md",
+      "has_config_header": true,
+      "has_progression": true
+    }
+  ],
+  "memory_paths": [],
+  "issues": [],
+  "summary": {
+    "total_issues": 0,
+    "by_severity": {
+      "critical": 0,
+      "high": 0,
+      "medium": 0,
+      "low": 0
+    }
+  }
+}

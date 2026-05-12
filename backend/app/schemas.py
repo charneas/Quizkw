@@ -169,9 +169,10 @@ class GridCellStatusEnum(str, Enum):
     hidden = "hidden"
     revealed = "revealed"
     matched = "matched"
+    answered = "answered"
 
 class MemoryGridBase(BaseModel):
-    grid_size: int = Field(..., ge=2, le=8)
+    grid_size: int = Field(default=5, ge=2, le=8)
 
 class MemoryGridCreate(MemoryGridBase):
     pass
@@ -352,3 +353,50 @@ class Round2AdvanceResponse(BaseModel):
     qualified_count: int
     eliminated_count: int
     message: str
+
+# Round 3 Memory Grid Enhancement Schemas
+
+class ColorSelectionRequest(BaseModel):
+    team_id: int
+    color: str
+
+class ColorSelectionResponse(BaseModel):
+    success: bool
+    team_id: int
+    color: str
+    message: str
+
+class ThemeSelectionRequestRound3(BaseModel):
+    team_id: int
+    theme_ids: List[int] = Field(..., min_items=3, max_items=3)
+
+class ThemeSelectionResponseRound3(BaseModel):
+    success: bool
+    team_id: int
+    theme_ids: List[int]
+    message: str
+
+class MemoryGridRound3StateResponse(BaseModel):
+    memory_grid_id: int
+    rows: int
+    cols: int
+    current_turn: int
+    current_round: int = Field(1, ge=1, le=5)
+    is_completed: bool
+    cells: List[dict]
+    teams: List[dict]
+
+class RoundStatusResponse(BaseModel):
+    round_number: int = Field(..., ge=1, le=5)
+    current_team_turn: Optional[int] = None
+    teams: List[dict]
+    time_remaining: Optional[int] = None
+    sudden_death_mode: bool = False
+
+class GameResultResponse(BaseModel):
+    winning_team_id: Optional[int] = None
+    winning_team_name: Optional[str] = None
+    scores: List[dict]  # [{team_id, team_name, score, color, stolen_cells}]
+    total_rounds: int
+    sudden_death_rounds: int = 0
+    completion_time: Optional[datetime] = None

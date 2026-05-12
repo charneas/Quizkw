@@ -1,0 +1,244 @@
+{
+  "timestamp": "2026-05-07T14:54:36.103294+00:00",
+  "skill_path": "C:\\Users\\sebas\\Quizkw\\skills\\agent-le-boss",
+  "is_memory_agent": true,
+  "skill_md": {
+    "exists": true,
+    "content_lines": 21,
+    "sections": [
+      "The Three Laws",
+      "The Sacred Truth",
+      "Mission",
+      "On Activation",
+      "Capacit\u00c3\u00a9s",
+      "Mode Autonome (`--headless`)"
+    ]
+  },
+  "template_inventory": {
+    "INDEX-template.md": {
+      "exists": true,
+      "sections": [
+        "Structure du Sanctuaire",
+        "Fichiers de Base",
+        "R\u00c3\u00a9pertoires Sp\u00c3\u00a9cialis\u00c3\u00a9s",
+        "Derni\u00c3\u00a8re Session",
+        "Statistiques du Sanctuaire",
+        "Navigation Rapide",
+        "Sessions R\u00c3\u00a9centes",
+        "D\u00c3\u00a9cisions Importantes",
+        "Probl\u00c3\u00a8mes Actifs",
+        "Maintenance"
+      ],
+      "content_lines": 35
+    },
+    "PERSONA-template.md": {
+      "exists": true,
+      "sections": [
+        "Titre",
+        "Style de Communication",
+        "Prompt de Vibe",
+        "Identit\u00c3\u00a9 \u00c3\u2030volutive"
+      ],
+      "content_lines": 9
+    },
+    "CREED-template.md": {
+      "exists": true,
+      "sections": [
+        "The Sacred Truth",
+        "Mission",
+        "Core Values",
+        "Standing Orders",
+        "Philosophy",
+        "Boundaries",
+        "Anti-Patterns",
+        "Dominion"
+      ],
+      "content_lines": 31
+    },
+    "BOND-template.md": {
+      "exists": true,
+      "sections": [
+        "Comment Ils Pensent Cr\u00c3\u00a9ativement",
+        "Leur Codebase et Langages",
+        "Leur Style d'\u00c3\u2030criture Technique",
+        "Leurs Standards de Qualit\u00c3\u00a9",
+        "Leur Projet Quizkw",
+        "Leur Relation avec le D\u00c3\u00a9veloppement",
+        "Leurs Pr\u00c3\u00a9f\u00c3\u00a9rences Techniques"
+      ],
+      "content_lines": 15
+    },
+    "MEMORY-template.md": {
+      "exists": true,
+      "sections": [
+        "Historique des Sessions",
+        "D\u00c3\u00a9cisions Techniques",
+        "Probl\u00c3\u00a8mes R\u00c3\u00a9solus",
+        "Patterns de Code",
+        "Notes d'Am\u00c3\u00a9lioration"
+      ],
+      "content_lines": 11
+    },
+    "CAPABILITIES-template.md": {
+      "exists": true,
+      "sections": [
+        "Capacit\u00c3\u00a9s Int\u00c3\u00a9gr\u00c3\u00a9es",
+        "Capacit\u00c3\u00a9s Apprises"
+      ],
+      "content_lines": 11
+    },
+    "PULSE-template.md": {
+      "exists": true,
+      "optional": true,
+      "sections": [
+        "Comportement par D\u00c3\u00a9faut",
+        "T\u00c3\u00a2ches Nomm\u00c3\u00a9es",
+        "Fr\u00c3\u00a9quence",
+        "Heures Calmes",
+        "Priorit\u00c3\u00a9s"
+      ],
+      "content_lines": 24
+    }
+  },
+  "creed_sections": {
+    "The Sacred Truth": true,
+    "Mission": true,
+    "Core Values": true,
+    "Standing Orders": true,
+    "Philosophy": true,
+    "Boundaries": true,
+    "Anti-Patterns": true,
+    "Dominion": true
+  },
+  "first_breath": {
+    "exists": true,
+    "style": "configuration",
+    "sections": [
+      "Save As You Go",
+      "Discovery",
+      "Votre Style de D\u00c3\u00a9veloppement",
+      "Standards de Qualit\u00c3\u00a9",
+      "Projet Quizkw",
+      "Outils et Pr\u00c3\u00a9f\u00c3\u00a9rences",
+      "Urgency",
+      "Conditions de Progression",
+      "Wrapping Up"
+    ],
+    "section_checks": {
+      "Save As You Go": true,
+      "Discovery": true,
+      "Urgency": true,
+      "Wrapping Up": true
+    }
+  },
+  "capabilities": [
+    {
+      "file": "debug-issues.md",
+      "has_name": false,
+      "has_code": false,
+      "has_description": false,
+      "sections": [
+        "Ce que cette Capacit\u00c3\u00a9 Accomplit",
+        "\u00c3\u20ac quoi Ressemble le Succ\u00c3\u00a8s",
+        "Conditions de Progression",
+        "Int\u00c3\u00a9gration de la M\u00c3\u00a9moire",
+        "Apr\u00c3\u00a8s la Session"
+      ],
+      "has_memory_integration": false,
+      "has_after_session": false,
+      "has_success": false
+    },
+    {
+      "file": "develop-feature.md",
+      "has_name": false,
+      "has_code": false,
+      "has_description": false,
+      "sections": [
+        "Ce que cette Capacit\u00c3\u00a9 Accomplit",
+        "\u00c3\u20ac quoi Ressemble le Succ\u00c3\u00a8s",
+        "Conditions de Progression",
+        "Int\u00c3\u00a9gration de la M\u00c3\u00a9moire",
+        "Apr\u00c3\u00a8s la Session"
+      ],
+      "has_memory_integration": false,
+      "has_after_session": false,
+      "has_success": false
+    },
+    {
+      "file": "document-code.md",
+      "has_name": false,
+      "has_code": false,
+      "has_description": false,
+      "sections": [
+        "Ce que cette Capacit\u00c3\u00a9 Accomplit",
+        "\u00c3\u20ac quoi Ressemble le Succ\u00c3\u00a8s",
+        "Conditions de Progression",
+        "Int\u00c3\u00a9gration de la M\u00c3\u00a9moire",
+        "Apr\u00c3\u00a8s la Session"
+      ],
+      "has_memory_integration": false,
+      "has_after_session": false,
+      "has_success": false
+    },
+    {
+      "file": "refactor-code.md",
+      "has_name": false,
+      "has_code": false,
+      "has_description": false,
+      "sections": [
+        "Ce que cette Capacit\u00c3\u00a9 Accomplit",
+        "\u00c3\u20ac quoi Ressemble le Succ\u00c3\u00a8s",
+        "Conditions de Progression",
+        "Int\u00c3\u00a9gration de la M\u00c3\u00a9moire",
+        "Apr\u00c3\u00a8s la Session"
+      ],
+      "has_memory_integration": false,
+      "has_after_session": false,
+      "has_success": false
+    },
+    {
+      "file": "write-tests.md",
+      "has_name": false,
+      "has_code": false,
+      "has_description": false,
+      "sections": [
+        "Ce que cette Capacit\u00c3\u00a9 Accomplit",
+        "\u00c3\u20ac quoi Ressemble le Succ\u00c3\u00a8s",
+        "Conditions de Progression",
+        "Int\u00c3\u00a9gration de la M\u00c3\u00a9moire",
+        "Apr\u00c3\u00a8s la Session"
+      ],
+      "has_memory_integration": false,
+      "has_after_session": false,
+      "has_success": false
+    }
+  ],
+  "init_script": {
+    "exists": true,
+    "skill_name": "agent-le-boss",
+    "template_files": [
+      "PERSONA-template.md",
+      "CREED-template.md",
+      "BOND-template.md",
+      "MEMORY-template.md",
+      "CAPABILITIES-template.md",
+      "PULSE-template.md"
+    ],
+    "skill_only_files": [],
+    "evolvable": false
+  },
+  "cross_checks": {
+    "skill_name_match": true,
+    "template_files_match": false
+  },
+  "findings": [
+    {
+      "severity": "high",
+      "file": "scripts/init-sanctum.py",
+      "message": "TEMPLATE_FILES does not match actual templates in assets/"
+    }
+  ],
+  "finding_count": 1,
+  "critical_count": 0,
+  "high_count": 1
+}

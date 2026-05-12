@@ -25,9 +25,13 @@ function MemoryGrid() {
       const gameData = await getGame(code!)
       setGame(gameData)
       
-      // Créer la grille
+      // La création de la grille renvoie un objet MemoryGrid
+      // Cast en 'any' pour éviter l'erreur de typage sur 'id' si le type ne correspond pas
       const grid = await createMemoryGrid(code!)
-      setGridState(grid)
+      
+      // On fetch l'état complet pour avoir les cellules
+      const state = await getMemoryGridState((grid as any).id)
+      setGridState(state)
       
       // Démarrer le premier round
       const round = await startMemoryGridRound(code!)
@@ -148,8 +152,8 @@ function MemoryGrid() {
               <p className="text-xl font-bold text-game-accent">{currentTeam.name}</p>
             </div>
 
-            {/* Grille 7x5 */}
-            <div className="grid grid-cols-5 gap-2">
+            {/* Grille */}
+            <div className={`grid gap-2`} style={{ gridTemplateColumns: `repeat(${gridState.memory_grid.grid_size || 5}, minmax(0, 1fr))` }}>
               {gridState.cells.map((cell) => (
                 <button
                   key={cell.id}

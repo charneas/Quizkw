@@ -1,0 +1,416 @@
+{
+  "scanner": "prompt-craft-prepass",
+  "script": "prepass-prompt-metrics.py",
+  "version": "1.0.0",
+  "skill_path": "skills\\agent-le-boss",
+  "timestamp": "2026-05-07T14:40:09.252825+00:00",
+  "status": "info",
+  "is_memory_agent": true,
+  "skill_md_summary": {
+    "line_count": 40,
+    "token_estimate": 343,
+    "overview_lines": 0,
+    "table_count": 0,
+    "table_lines": 0,
+    "fenced_block_count": 0,
+    "fenced_block_lines": 0,
+    "section_count": 6
+  },
+  "prompt_health": {
+    "total_prompts": 6,
+    "prompts_with_config_header": 6,
+    "prompts_with_progression": 6
+  },
+  "aggregate": {
+    "total_files_scanned": 7,
+    "total_token_estimate": 2375,
+    "total_waste_patterns": 0,
+    "total_back_references": 0,
+    "total_suggestive_loading": 0,
+    "total_wall_of_text": 0
+  },
+  "resource_sizes": {},
+  "files": [
+    {
+      "file": "SKILL.md",
+      "line_count": 40,
+      "token_estimate": 343,
+      "sections": [
+        {
+          "level": 2,
+          "title": "The Three Laws",
+          "line": 10
+        },
+        {
+          "level": 2,
+          "title": "The Sacred Truth",
+          "line": 17
+        },
+        {
+          "level": 2,
+          "title": "Mission",
+          "line": 21
+        },
+        {
+          "level": 2,
+          "title": "On Activation",
+          "line": 25
+        },
+        {
+          "level": 2,
+          "title": "Capacit\u00e9s",
+          "line": 29
+        },
+        {
+          "level": 2,
+          "title": "Mode Autonome (`--headless`)",
+          "line": 37
+        }
+      ],
+      "table_count": 0,
+      "table_lines": 0,
+      "fenced_block_count": 0,
+      "fenced_block_lines": 0,
+      "waste_patterns": [],
+      "back_references": [],
+      "suggestive_loading": [],
+      "has_config_header": false,
+      "has_progression": false,
+      "wall_of_text": [],
+      "overview_lines": 0,
+      "is_skill_md": true
+    },
+    {
+      "file": "references/debug-issues.md",
+      "line_count": 39,
+      "token_estimate": 302,
+      "sections": [
+        {
+          "level": 2,
+          "title": "Ce que cette Capacit\u00e9 Accomplit",
+          "line": 7
+        },
+        {
+          "level": 2,
+          "title": "\u00c0 quoi Ressemble le Succ\u00e8s",
+          "line": 11
+        },
+        {
+          "level": 2,
+          "title": "Conditions de Progression",
+          "line": 18
+        },
+        {
+          "level": 2,
+          "title": "Int\u00e9gration de la M\u00e9moire",
+          "line": 32
+        },
+        {
+          "level": 2,
+          "title": "Apr\u00e8s la Session",
+          "line": 36
+        }
+      ],
+      "table_count": 0,
+      "table_lines": 0,
+      "fenced_block_count": 0,
+      "fenced_block_lines": 0,
+      "waste_patterns": [],
+      "back_references": [],
+      "suggestive_loading": [],
+      "has_config_header": true,
+      "has_progression": true,
+      "wall_of_text": [],
+      "is_skill_md": false,
+      "prompt_frontmatter": {
+        "has_frontmatter": true,
+        "fields": {},
+        "missing_fields": [
+          "name",
+          "description",
+          "menu-code"
+        ]
+      }
+    },
+    {
+      "file": "references/develop-feature.md",
+      "line_count": 36,
+      "token_estimate": 306,
+      "sections": [
+        {
+          "level": 2,
+          "title": "Ce que cette Capacit\u00e9 Accomplit",
+          "line": 7
+        },
+        {
+          "level": 2,
+          "title": "\u00c0 quoi Ressemble le Succ\u00e8s",
+          "line": 11
+        },
+        {
+          "level": 2,
+          "title": "Conditions de Progression",
+          "line": 18
+        },
+        {
+          "level": 2,
+          "title": "Int\u00e9gration de la M\u00e9moire",
+          "line": 29
+        },
+        {
+          "level": 2,
+          "title": "Apr\u00e8s la Session",
+          "line": 33
+        }
+      ],
+      "table_count": 0,
+      "table_lines": 0,
+      "fenced_block_count": 0,
+      "fenced_block_lines": 0,
+      "waste_patterns": [],
+      "back_references": [],
+      "suggestive_loading": [],
+      "has_config_header": true,
+      "has_progression": true,
+      "wall_of_text": [],
+      "is_skill_md": false,
+      "prompt_frontmatter": {
+        "has_frontmatter": true,
+        "fields": {},
+        "missing_fields": [
+          "name",
+          "description",
+          "menu-code"
+        ]
+      }
+    },
+    {
+      "file": "references/document-code.md",
+      "line_count": 39,
+      "token_estimate": 309,
+      "sections": [
+        {
+          "level": 2,
+          "title": "Ce que cette Capacit\u00e9 Accomplit",
+          "line": 7
+        },
+        {
+          "level": 2,
+          "title": "\u00c0 quoi Ressemble le Succ\u00e8s",
+          "line": 11
+        },
+        {
+          "level": 2,
+          "title": "Conditions de Progression",
+          "line": 18
+        },
+        {
+          "level": 2,
+          "title": "Int\u00e9gration de la M\u00e9moire",
+          "line": 32
+        },
+        {
+          "level": 2,
+          "title": "Apr\u00e8s la Session",
+          "line": 36
+        }
+      ],
+      "table_count": 0,
+      "table_lines": 0,
+      "fenced_block_count": 0,
+      "fenced_block_lines": 0,
+      "waste_patterns": [],
+      "back_references": [],
+      "suggestive_loading": [],
+      "has_config_header": true,
+      "has_progression": true,
+      "wall_of_text": [],
+      "is_skill_md": false,
+      "prompt_frontmatter": {
+        "has_frontmatter": true,
+        "fields": {},
+        "missing_fields": [
+          "name",
+          "description",
+          "menu-code"
+        ]
+      }
+    },
+    {
+      "file": "references/first-breath.md",
+      "line_count": 51,
+      "token_estimate": 503,
+      "sections": [
+        {
+          "level": 2,
+          "title": "Save As You Go",
+          "line": 9
+        },
+        {
+          "level": 2,
+          "title": "Discovery",
+          "line": 13
+        },
+        {
+          "level": 3,
+          "title": "Votre Style de D\u00e9veloppement",
+          "line": 15
+        },
+        {
+          "level": 3,
+          "title": "Standards de Qualit\u00e9",
+          "line": 19
+        },
+        {
+          "level": 3,
+          "title": "Projet Quizkw",
+          "line": 23
+        },
+        {
+          "level": 3,
+          "title": "Outils et Pr\u00e9f\u00e9rences",
+          "line": 27
+        },
+        {
+          "level": 2,
+          "title": "Urgency",
+          "line": 31
+        },
+        {
+          "level": 2,
+          "title": "Conditions de Progression",
+          "line": 35
+        },
+        {
+          "level": 2,
+          "title": "Wrapping Up",
+          "line": 46
+        }
+      ],
+      "table_count": 0,
+      "table_lines": 0,
+      "fenced_block_count": 0,
+      "fenced_block_lines": 0,
+      "waste_patterns": [],
+      "back_references": [],
+      "suggestive_loading": [],
+      "has_config_header": true,
+      "has_progression": true,
+      "wall_of_text": [],
+      "is_skill_md": false,
+      "prompt_frontmatter": {
+        "has_frontmatter": true,
+        "fields": {},
+        "missing_fields": [
+          "name",
+          "description",
+          "menu-code"
+        ]
+      }
+    },
+    {
+      "file": "references/refactor-code.md",
+      "line_count": 37,
+      "token_estimate": 292,
+      "sections": [
+        {
+          "level": 2,
+          "title": "Ce que cette Capacit\u00e9 Accomplit",
+          "line": 7
+        },
+        {
+          "level": 2,
+          "title": "\u00c0 quoi Ressemble le Succ\u00e8s",
+          "line": 11
+        },
+        {
+          "level": 2,
+          "title": "Conditions de Progression",
+          "line": 19
+        },
+        {
+          "level": 2,
+          "title": "Int\u00e9gration de la M\u00e9moire",
+          "line": 30
+        },
+        {
+          "level": 2,
+          "title": "Apr\u00e8s la Session",
+          "line": 34
+        }
+      ],
+      "table_count": 0,
+      "table_lines": 0,
+      "fenced_block_count": 0,
+      "fenced_block_lines": 0,
+      "waste_patterns": [],
+      "back_references": [],
+      "suggestive_loading": [],
+      "has_config_header": true,
+      "has_progression": true,
+      "wall_of_text": [],
+      "is_skill_md": false,
+      "prompt_frontmatter": {
+        "has_frontmatter": true,
+        "fields": {},
+        "missing_fields": [
+          "name",
+          "description",
+          "menu-code"
+        ]
+      }
+    },
+    {
+      "file": "references/write-tests.md",
+      "line_count": 40,
+      "token_estimate": 320,
+      "sections": [
+        {
+          "level": 2,
+          "title": "Ce que cette Capacit\u00e9 Accomplit",
+          "line": 7
+        },
+        {
+          "level": 2,
+          "title": "\u00c0 quoi Ressemble le Succ\u00e8s",
+          "line": 11
+        },
+        {
+          "level": 2,
+          "title": "Conditions de Progression",
+          "line": 19
+        },
+        {
+          "level": 2,
+          "title": "Int\u00e9gration de la M\u00e9moire",
+          "line": 33
+        },
+        {
+          "level": 2,
+          "title": "Apr\u00e8s la Session",
+          "line": 37
+        }
+      ],
+      "table_count": 0,
+      "table_lines": 0,
+      "fenced_block_count": 0,
+      "fenced_block_lines": 0,
+      "waste_patterns": [],
+      "back_references": [],
+      "suggestive_loading": [],
+      "has_config_header": true,
+      "has_progression": true,
+      "wall_of_text": [],
+      "is_skill_md": false,
+      "prompt_frontmatter": {
+        "has_frontmatter": true,
+        "fields": {},
+        "missing_fields": [
+          "name",
+          "description",
+          "menu-code"
+        ]
+      }
+    }
+  ]
+}

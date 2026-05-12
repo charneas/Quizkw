@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { getGame, createTeam, startGame } from '../services/api'
 import type { GameSession } from '../types'
+import DevHelper from '../components/DevHelper'
 
 function Lobby() {
   const { code } = useParams<{ code: string }>()
@@ -80,6 +81,7 @@ function Lobby() {
 
   return (
     <div className="min-h-screen p-4">
+      <DevHelper code={code!} />
       <div className="max-w-2xl mx-auto space-y-6">
         {/* Header */}
         <div className="text-center">
@@ -127,17 +129,16 @@ function Lobby() {
           )}
         </div>
 
-        {/* Ajouter une équipe */}
+        {/* Ajouter une équipe et des joueurs */}
         {game.teams.length < maxTeams && (
           <div className="card">
             <h2 className="text-xl font-semibold mb-4">➕ Ajouter une équipe</h2>
-            <div className="flex gap-3">
+            <div className="flex gap-3 mb-4">
               <input
                 type="text"
                 placeholder="Nom de l'équipe"
                 value={teamName}
                 onChange={(e) => setTeamName(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleCreateTeam()}
                 className="input-field"
               />
               <button
@@ -148,6 +149,10 @@ function Lobby() {
                 {creating ? '...' : 'Ajouter'}
               </button>
             </div>
+            
+            <p className="text-xs text-slate-400 mt-2">
+              Note: Pour démarrer, utilisez le bouton rouge "DEV: Fast Track" ci-dessus. Il créera automatiquement les joueurs nécessaires pour chaque équipe.
+            </p>
           </div>
         )}
 

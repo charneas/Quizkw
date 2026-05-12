@@ -8,7 +8,7 @@ import random
 import enum
 
 class PlayerColor(enum.Enum):
-    """Couleurs disponibles pour les joueurs dans la grille mémoire."""
+    """Couleurs disponibles pour les joueurs dans la grille mémoire (20 couleurs distinctes)."""
     RED = "red"
     BLUE = "blue"
     GREEN = "green"
@@ -21,6 +21,14 @@ class PlayerColor(enum.Enum):
     BROWN = "brown"
     GRAY = "gray"
     BLACK = "black"
+    MAGENTA = "magenta"
+    LIME = "lime"
+    INDIGO = "indigo"
+    NAVY = "navy"
+    OLIVE = "olive"
+    SILVER = "silver"
+    GOLD = "gold"
+    CORAL = "coral"
 
 class ThemeSelectionStatus(enum.Enum):
     """Statut de sélection de thème."""

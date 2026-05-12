@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import random
 import string
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.database import get_db, engine
 from app import models, schemas
@@ -125,7 +126,7 @@ def create_team(code: str, team_create: schemas.TeamCreate, db: Session = Depend
 @app.post("/games/{code}/start")
 def start_game(code: str, db: Session = Depends(get_db)):
     """
-    Démarrer une session de jeu
+    Démarrer une session de jeu (avec auto-fill des joueurs si nécessaire pour le développement)
     """
     game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
     if not game:
@@ -136,6 +137,15 @@ def start_game(code: str, db: Session = Depends(get_db)):
     if len(teams) < 2:
         raise HTTPException(status_code=400, detail="Au moins 2 équipes sont nécessaires pour démarrer")
     
+    # DEV FIX: Auto-remplir les joueurs si manquants
+    for team in teams:
+        count = db.query(models.Player).filter(models.Player.team_id == team.id).count()
+        if count < game.players_per_team:
+            for i in range(game.players_per_team - count):
+                p = models.Player(name=f"Player {team.name} {i+1}", team_id=team.id)
+                db.add(p)
+    db.commit()
+
     # Vérifier que chaque équipe a le bon nombre de joueurs
     for team in teams:
         players = db.query(models.Player).filter(models.Player.team_id == team.id).count()
@@ -183,7 +193,7 @@ def get_random_question(category: str = None, difficulty: schemas.DifficultyEnum
     if difficulty:
         query = query.filter(models.Question.difficulty == difficulty)
     
-    question = query.order_by(models.models.func.random()).first()
+    question = query.order_by(func.random()).first()
     
     if not question:
         raise HTTPException(status_code=404, detail="Aucune question trouvée")
@@ -422,6 +432,107 @@ def advance_to_phase3(code: str, db: Session = Depends(get_db)):
         "message": "Successfully advanced to round 3 (memory grid)",
         "current_round": game.current_round.value
     }
+
+# Round 3 Enhanced Memory Grid Endpoints
+@app.post("/games/{code}/memory-grid/create-with-themes", response_model=schemas.MemoryGrid)
+def create_memory_grid_with_themes(code: str, rows: int = 7, cols: int = 5, db: Session = Depends(get_db)):
+    """
+    Create memory grid for Round 3 with theme-based cell assignment.
+    Uses team.selected_theme_ids to assign 5 cells per team.
+    """
+    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
+    
+    # Verify game is in round 3
+    if game.current_round != models.RoundType.MANCHE_3:
+        raise HTTPException(status_code=400, detail="La grille mémoire avec thèmes est seulement disponible en manche 3")
+    
+    manager = MemoryGridManager(db)
+    try:
+        memory_grid = manager.create_memory_grid_with_themes(game.id, rows=rows, cols=cols)
+        return memory_grid
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/games/{code}/memory-grid/team-ranking")
+def get_team_ranking_from_round2(code: str, db: Session = Depends(get_db)):
+    """
+    Get team ranking based on Round 2 PlayerRound2Stats scores.
+    Returns list of team IDs sorted by total score (descending).
+    """
+    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Game session not found")
+    
+    manager = MemoryGridManager(db)
+    team_ranking = manager.get_team_ranking_from_round2(game.id)
+    
+    return {
+        "team_ranking": team_ranking,
+        "game_session_id": game.id
+    }
+
+@app.get("/memory-grid/{memory_grid_id}/current-team-turn")
+def get_current_team_turn(memory_grid_id: int, db: Session = Depends(get_db)):
+    """
+    Determine which team should play based on current turn and team ranking.
+    """
+    manager = MemoryGridManager(db)
+    
+    # Get memory grid
+    memory_grid = db.query(MemoryGrid).filter(MemoryGrid.id == memory_grid_id).first()
+    if not memory_grid:
+        raise HTTPException(status_code=404, detail="Memory grid not found")
+    
+    # Get team ranking for this game session
+    team_ranking = manager.get_team_ranking_from_round2(memory_grid.game_session_id)
+    if not team_ranking:
+        raise HTTPException(status_code=400, detail="No team ranking available")
+    
+    current_team_id = manager.get_current_team_turn(memory_grid_id, team_ranking)
+    
+    return {
+        "memory_grid_id": memory_grid_id,
+        "current_turn": memory_grid.current_turn,
+        "team_ranking": team_ranking,
+        "current_team_id": current_team_id
+    }
+
+@app.get("/games/{code}/available-colors")
+def get_available_colors(code: str, db: Session = Depends(get_db)):
+    """
+    Get available colors for selection in Round 3.
+    Returns list of PlayerColor enum values that are not already taken.
+    """
+    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Game session not found")
+    
+    manager = MemoryGridManager(db)
+    try:
+        available_colors = manager.get_available_colors(game.id)
+        return {
+            "available_colors": available_colors,
+            "game_session_id": game.id
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting available colors: {str(e)}")
+
+@app.post("/teams/{team_id}/select-color")
+def select_team_color(team_id: int, color: str, db: Session = Depends(get_db)):
+    """
+    Select a color for a team in Round 3.
+    Validates color is available and unique.
+    """
+    manager = MemoryGridManager(db)
+    try:
+        result = manager.select_team_color(team_id, color)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error selecting color: {str(e)}")
 
 # Round 2 Endpoints (16→8→4 Tournament)
 @app.get("/round2/{game_code}/themes")

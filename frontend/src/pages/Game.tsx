@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getGame, getRandomQuestion, submitAnswer, useToken, spinWheel } from '../services/api'
+import { getGame, getRandomQuestion, submitAnswer, useToken, spinWheel, advanceToPhase3, createMemoryGrid, startMemoryGridRound } from '../services/api'
 import type { GameSession, QuestionResponse, AnswerResponse, WheelSpinResponse, TokenType } from '../types'
 import Scoreboard from '../components/Scoreboard'
 import QuestionCard from '../components/QuestionCard'
 import TokenPanel from '../components/TokenPanel'
 import WheelModal from '../components/WheelModal'
+import DevHelper from '../components/DevHelper'
 
 function Game() {
   const { code } = useParams<{ code: string }>()
@@ -130,8 +131,22 @@ function Game() {
     }
   }
 
-  const handleAdvanceToPhase3 = () => {
-    navigate(`/game/${code}/memory-grid`)
+  const handleAdvanceToPhase3 = async () => {
+    try {
+      // 1. Advance to phase 3 backend
+      await advanceToPhase3(code!)
+      
+      // 2. Create memory grid
+      await createMemoryGrid(code!)
+      
+      // 3. Start memory grid tour
+      await startMemoryGridRound(code!)
+      
+      // 4. Navigate
+      navigate(`/game/${code}/memory-grid`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur lors de la transition vers la manche 3')
+    }
   }
 
   if (loading) {
@@ -158,6 +173,7 @@ function Game() {
 
   return (
     <div className="min-h-screen p-4">
+      <DevHelper code={code!} />
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
