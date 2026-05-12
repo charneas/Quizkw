@@ -58,14 +58,23 @@ def db_session(engine, tables):
 @pytest.fixture
 def test_client(db_session):
     """Client de test FastAPI avec base de données de test."""
+    # Stocker la session dans un contexte partagé
+    # pour qu'elle soit accessible depuis les tests
+    from app.database import get_db
+    
     def override_get_db():
         try:
             yield db_session
         finally:
+            # Ne pas fermer la session ici, elle sera fermée par la fixture db_session
             pass
     
     main_app.dependency_overrides[get_db] = override_get_db
     client = TestClient(main_app)
+    
+    # Stocker la session dans le client pour y accéder depuis les tests
+    client.db_session = db_session
+    
     yield client
     main_app.dependency_overrides.clear()
 

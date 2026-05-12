@@ -1,7 +1,8 @@
 # État du Projet Quizkw - Récapitulatif
 
-**Date** : 6 mai 2026  
-**Dernier Commit** : `921fb56` - "feat: add reproducible unit tests and testing infrastructure"
+**Date** : 12 mai 2026  
+**Dernier Commit** : `fd02a6b` - "Commit des changements avant correction des tests API Round 3"
+**État** : Nettoyage effectué - fichiers temporaires supprimés, spécifications consolidées
 
 ## 📊 État Actuel
 

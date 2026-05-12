@@ -329,6 +329,17 @@ class MemoryGridManager:
         Create memory grid for Round 3 with theme-based cell assignment.
         Uses team.selected_theme_ids to assign 5 cells per team based on selected themes.
         """
+        from app.models import GameSession, Difficulty
+        
+        # Get game session to verify player count
+        game = self.db.query(GameSession).filter(GameSession.id == game_session_id).first()
+        if not game:
+            raise ValueError("Game session not found")
+        
+        # Round 3 requires exactly 4 players
+        if game.total_players != 4:
+            raise ValueError(f"Round 3 requires exactly 4 players, found {game.total_players}")
+        
         memory_grid = MemoryGrid(
             game_session_id=game_session_id,
             rows=rows,
@@ -343,13 +354,19 @@ class MemoryGridManager:
         if not teams:
             raise ValueError("No teams found for this game session")
         
-        # Verify each team has selected 3 themes
+        # Verify each team has selected exactly 3 themes
+        import json
         for team in teams:
             if not team.selected_theme_ids:
                 raise ValueError(f"Team {team.id} ({team.name}) has not selected themes for Round 3")
+            
+            # Parse selected theme IDs
+            theme_ids = json.loads(team.selected_theme_ids) if isinstance(team.selected_theme_ids, str) else team.selected_theme_ids
+            
+            if not isinstance(theme_ids, list) or len(theme_ids) != 3:
+                raise ValueError(f"Team {team.id} ({team.name}) must have exactly 3 selected themes, found {len(theme_ids) if isinstance(theme_ids, list) else 'invalid format'}")
         
         # Get difficult questions (difficulty = HARD only for Round 3)
-        from app.models import Difficulty
         difficult_questions = self.db.query(Question).filter(
             Question.difficulty == Difficulty.HARD
         ).all()
@@ -357,7 +374,7 @@ class MemoryGridManager:
         total_cells = rows * cols
         if len(difficult_questions) < total_cells:
             raise ValueError(f"Not enough difficult questions for the memory grid. Need {total_cells}, have {len(difficult_questions)}")
-        
+
         # Shuffle questions
         random.shuffle(difficult_questions)
         
