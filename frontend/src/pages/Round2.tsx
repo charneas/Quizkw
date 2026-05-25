@@ -41,6 +41,7 @@ function Round2() {
   const [isWaitingForLeaderboard, setIsWaitingForLeaderboard] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [timeRemaining, setTimeRemaining] = useState<number | null>(null)
 
   useEffect(() => {
     if (code) initializeRound2()
@@ -81,35 +82,52 @@ function Round2() {
     }
 
     try {
-      const response = await selectTheme(code!, { theme_id: theme.id })
+      const response = await selectTheme(code!, { player_id: currentPlayer.id, theme_id: theme.id })
       setSelectedTheme(response.theme)
       setPlayerStats(response.player_stats)
       setError('')
       
       // Load first question
-      await loadNextQuestion()
+      await loadNextQuestion(response.player_stats)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error selecting theme')
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('An unknown error occurred while selecting the theme.');
+      }
     }
   }
 
-  const loadNextQuestion = async () => {
-    if (!playerStats || !currentPlayer) return
+  const loadNextQuestion = async (stats: PlayerRound2Stats) => {
+    if (!stats || !currentPlayer) return
     
     try {
       const question = await getRound2Question(code!, currentPlayer.id)
       setCurrentQuestion(question)
       setAnswerResult(null)
+      setTimeRemaining(question.time_limit)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error loading question')
     }
   }
+
+  // Timer countdown
+  useEffect(() => {
+    if (timeRemaining === null || timeRemaining <= 0 || answerResult) return
+
+    const timer = setInterval(() => {
+      setTimeRemaining(prev => (prev && prev > 0) ? prev - 1 : 0)
+    }, 1000)
+
+    return () => clearInterval(timer)
+  }, [timeRemaining, answerResult])
 
   const handleAnswerSubmit = async (answer: string) => {
     if (!currentQuestion || !playerStats || !currentPlayer) return
     
     try {
       const result = await submitRound2Answer(code!, {
+        player_id: currentPlayer.id,
         question_id: currentQuestion.question.id,
         player_answer: answer
       })
@@ -135,7 +153,7 @@ function Round2() {
   const handleNextQuestion = async () => {
     setAnswerResult(null)
     if (answerResult?.next_question_available) {
-      await loadNextQuestion()
+      await loadNextQuestion(playerStats!)
     } else {
       // Player has finished all questions
       setIsWaitingForLeaderboard(true)
@@ -242,7 +260,10 @@ function Round2() {
 
         {/* Tournament Progress */}
         {tournamentProgress && (
-          <TournamentProgressComponent progress={tournamentProgress} />
+          <TournamentProgressComponent 
+            progress={tournamentProgress} 
+            currentPlayerId={currentPlayer?.id}
+          />
         )}
 
         {/* Loading */}
@@ -255,8 +276,14 @@ function Round2() {
 
         {/* Error */}
         {error && (
-          <div className="bg-red-900 rounded-lg p-4 mb-4">
-            <p className="text-white">{error}</p>
+          <div className="bg-red-900 border-2 border-red-600 rounded-lg p-4 mb-4 animate-fade-in">
+            <div className="flex items-center">
+              <span className="text-2xl mr-3">⚠️</span>
+              <div>
+                <p className="text-white font-semibold mb-1">Error</p>
+                <p className="text-red-100">{error}</p>
+              </div>
+            </div>
           </div>
         )}
 
@@ -291,11 +318,33 @@ function Round2() {
               </div>
             </div>
 
+            {/* Timer Progress Bar */}
+            {timeRemaining !== null && (
+              <div className="mb-4">
+                <div className="flex justify-between items-center mb-2">
+                  <span className={`text-sm font-bold ${timeRemaining <= 5 ? 'text-red-400 animate-timer-pulse' : 'text-gray-300'}`}>
+                    ⏱ {timeRemaining}s remaining
+                  </span>
+                  <span className="text-sm text-gray-400">
+                    {currentQuestion.difficulty}/10 difficulty
+                  </span>
+                </div>
+                <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full transition-all duration-1000 ease-linear ${
+                      timeRemaining <= 5 ? 'bg-red-500' : timeRemaining <= 10 ? 'bg-yellow-500' : 'bg-green-500'
+                    }`}
+                    style={{ width: `${(timeRemaining / currentQuestion.time_limit) * 100}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {currentQuestion.options.map((option, index) => (
                 <button
                   key={index}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white p-4 rounded-lg text-center"
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white p-4 rounded-lg text-center transition-transform hover:scale-105"
                   onClick={() => handleAnswerSubmit(option)}
                 >
                   {option}
@@ -304,7 +353,6 @@ function Round2() {
             </div>
 
             <div className="mt-4 text-gray-300">
-              <p>Time limit: {currentQuestion.time_limit} seconds</p>
               <p>Current score: {playerStats?.score}</p>
               <p>Questions answered: {playerStats?.questions_answered}/10</p>
             </div>
@@ -313,8 +361,12 @@ function Round2() {
 
         {/* Answer Result */}
         {answerResult && (
-          <div className="bg-gray-800 rounded-lg p-6 mb-6">
-            <div className={`p-4 rounded-lg mb-4 ${answerResult.is_correct ? 'bg-green-900' : 'bg-red-900'}`}>
+          <div className="bg-gray-800 rounded-lg p-6 mb-6 animate-fade-in">
+            <div className={`p-4 rounded-lg mb-4 transition-all duration-300 ${
+              answerResult.is_correct 
+                ? 'bg-green-900 animate-success-pulse' 
+                : 'bg-red-900 animate-error-shake'
+            }`}>
               <h3 className="text-xl font-bold text-white">
                 {answerResult.is_correct ? '✅ Correct!' : '❌ Incorrect'}
               </h3>

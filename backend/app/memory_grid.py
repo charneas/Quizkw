@@ -4,6 +4,7 @@ from app.models import Base, Question, Team
 import enum
 import random
 import json
+import time
 
 class GridCellStatus(enum.Enum):
     HIDDEN = "hidden"

@@ -156,6 +156,9 @@ class TokenUseRequest(BaseModel):
     token_type: TokenTypeEnum
     team_id: int
 
+class SetCurrentQuestionRequest(BaseModel):
+    question_id: int
+
 class WheelSpinRequest(BaseModel):
     team_id: int
 
@@ -400,3 +403,62 @@ class GameResultResponse(BaseModel):
     total_rounds: int
     sudden_death_rounds: int = 0
     completion_time: Optional[datetime] = None
+
+# Ping-Pong Schemas (Duel Format)
+class PingPongThemeBase(BaseModel):
+    title: str
+    description: Optional[str] = None
+    correct_answers: List[str]
+    min_answers_to_win: int = 3
+
+class PingPongThemeCreate(PingPongThemeBase):
+    pass
+
+class PingPongTheme(PingPongThemeBase):
+    id: int
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+class StartPingPongDuelRequest(BaseModel):
+    game_session_id: int
+    theme_id: int
+    team1_id: int
+    team2_id: int
+
+class PingPongDuelResponse(BaseModel):
+    duel_id: int
+    theme: PingPongTheme
+    team1: dict  # {id, name}
+    team2: dict  # {id, name}
+    current_turn_team_id: int
+    turn_number: int
+    answers_used: List[str]
+    is_completed: bool
+    winner_team_id: Optional[int] = None
+
+class SubmitPingPongAnswerRequest(BaseModel):
+    duel_id: int
+    team_id: int
+    answer: str
+
+class SubmitPingPongAnswerResponse(BaseModel):
+    is_correct: bool
+    answer: str
+    turn_number: int
+    duel_continues: bool
+    winner_team_id: Optional[int] = None
+    winner_team_name: Optional[str] = None
+    next_turn_team_id: Optional[int] = None
+    message: str
+
+class PingPongDuelResultsResponse(BaseModel):
+    duel_id: int
+    theme: PingPongTheme
+    team1: dict  # {id, name, turns, correct_answers}
+    team2: dict  # {id, name, turns, correct_answers}
+    winner_team_id: int
+    winner_team_name: str
+    total_turns: int
+    answers_used: List[str]

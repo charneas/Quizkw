@@ -153,6 +153,7 @@ export interface PlayerRound2Stats {
 }
 
 export interface ThemeSelectionRequest {
+  player_id: number
   theme_id: number
 }
 
@@ -175,6 +176,7 @@ export interface Round2QuestionResponse {
 }
 
 export interface Round2AnswerRequest {
+  player_id: number
   question_id: number
   player_answer: string
 }

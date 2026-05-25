@@ -209,6 +209,90 @@ def get_random_question(category: str = None, difficulty: schemas.DifficultyEnum
         "options": options
     }
 
+@app.post("/games/{code}/set-current-question")
+def set_current_question(code: str, request: schemas.SetCurrentQuestionRequest, db: Session = Depends(get_db)):
+    """
+    Définir la question courante pour toutes les équipes (synchronisation)
+    """
+    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
+    
+    question = db.query(models.Question).filter(models.Question.id == request.question_id).first()
+    if not question:
+        raise HTTPException(status_code=404, detail="Question non trouvée")
+    
+    game.current_question_id = request.question_id
+    db.commit()
+    
+    return {
+        "message": "Question courante définie",
+        "question": question.text,
+        "question_id": question.id
+    }
+
+@app.get("/games/{code}/current-question")
+def get_current_question(code: str, db: Session = Depends(get_db)):
+    """
+    Obtenir la question courante synchronisée pour toutes les équipes
+    """
+    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
+    
+    if not game.current_question_id:
+        return {"message": "Pas de question courante définie", "question_id": None}
+    
+    question = db.query(models.Question).filter(models.Question.id == game.current_question_id).first()
+    
+    # Mélanger les réponses
+    import json
+    wrong_answers = json.loads(question.wrong_answers) if question.wrong_answers else []
+    options = wrong_answers + [question.correct_answer]
+    random.shuffle(options)
+    
+    return {
+        "question": question,
+        "options": options,
+        "question_id": question.id
+    }
+
+@app.get("/games/{code}/answers-status")
+def get_answers_status(code: str, question_id: int = None, db: Session = Depends(get_db)):
+    """
+    Obtenir le statut des réponses pour la question courante
+    """
+    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
+    
+    # Si question_id n'est pas fourni, utiliser la question courante
+    if not question_id:
+        question_id = game.current_question_id
+        if not question_id:
+            return {"message": "Pas de question courante définie", "answered": []}
+    
+    teams = db.query(models.Team).filter(models.Team.game_session_id == game.id).all()
+    team_ids = [team.id for team in teams]
+    
+    # Obtenir les réponses déjà données pour cette question
+    answered_teams = db.query(models.Answer).filter(
+        models.Answer.question_id == question_id,
+        models.Answer.team_id.in_(team_ids)
+    ).all()
+    
+    answered_ids = [answer.team_id for answer in answered_teams]
+    all_ids = [team.id for team in teams]
+    remaining_ids = [id for id in all_ids if id not in answered_ids]
+    
+    return {
+        "question_id": question_id,
+        "total_teams": len(all_ids),
+        "answered_teams": answered_ids,
+        "remaining_teams": remaining_ids,
+        "all_answered": len(answered_ids) == len(all_ids)
+    }
+
 @app.post("/answers/", response_model=schemas.AnswerResponse)
 def submit_answer(answer_create: schemas.AnswerCreate, db: Session = Depends(get_db)):
     """
@@ -242,11 +326,46 @@ def submit_answer(answer_create: schemas.AnswerCreate, db: Session = Depends(get
     db.commit()
     db.refresh(team)
     
+    # Marquer que l'équipe a répondu à cette question
+    game = db.query(models.GameSession).filter(models.GameSession.current_question_id == question.id).first()
+    if game:
+        # Vérifier si toutes les équipes ont répondu
+        teams = db.query(models.Team).filter(models.Team.game_session_id == game.id).all()
+        team_responses = db.query(models.Answer).filter(
+            models.Answer.question_id == question.id,
+            models.Answer.team_id.in_([t.id for t in teams])
+        ).count()
+        
+        if team_responses == len(teams):
+            # All teams have answered, clear current question
+            game.current_question_id = None
+            db.commit()
+    
     return {
         "is_correct": is_correct,
         "correct_answer": question.correct_answer,
         "points_earned": points_earned,
         "team_score": team.score
+    }
+
+@app.get("/teams/{team_id}/tokens")
+def get_team_tokens(team_id: int, db: Session = Depends(get_db)):
+    """
+    Récupérer les jetons disponibles pour une équipe
+    """
+    tokens = db.query(models.Token).filter(
+        models.Token.team_id == team_id,
+        models.Token.is_used == False
+    ).all()
+    
+    return {
+        "tokens": [
+            {
+                "id": token.id,
+                "token_type": token.token_type.value,
+                "is_used": token.is_used
+            } for token in tokens
+        ]
     }
 
 @app.post("/tokens/use")
@@ -795,6 +914,146 @@ def get_round2_progress(game_code: str, db: Session = Depends(get_db)):
     progress = manager.get_tournament_progress(game.id)
     
     return progress
+
+# Ping-Pong Endpoints
+@app.get("/ping-pong/random", response_model=schemas.PingPongTheme)
+def get_random_ping_pong_theme(db: Session = Depends(get_db)):
+    """
+    Get a random ping-pong theme for the 5-turn challenge
+    """
+    from app.models import PingPongTheme
+    
+    theme = db.query(PingPongTheme).order_by(func.random()).first()
+    
+    if not theme:
+        raise HTTPException(status_code=404, detail="No ping-pong themes available")
+    
+    return theme
+
+@app.post("/ping-pong/answer", response_model=schemas.PingPongAnswerResponse)
+def submit_ping_pong_answer(answer_request: schemas.PingPongAnswerRequest, db: Session = Depends(get_db)):
+    """
+    Submit ping-pong answers for a team
+    """
+    from app.models import PingPongTheme, PingPongAnswer
+    
+    # Get theme
+    theme = db.query(PingPongTheme).filter(PingPongTheme.id == answer_request.theme_id).first()
+    if not theme:
+        raise HTTPException(status_code=404, detail="Ping-pong theme not found")
+    
+    # Get team
+    team = db.query(models.Team).filter(models.Team.id == answer_request.team_id).first()
+    if not team:
+        raise HTTPException(status_code=404, detail="Team not found")
+    
+    # Normalize answers (case-insensitive comparison)
+    correct_answers_lower = [ans.strip().lower() for ans in theme.correct_answers]
+    given_answers_lower = [ans.strip().lower() for ans in answer_request.answers_given]
+    
+    # Find correct answers
+    correct_given = []
+    for given in answer_request.answers_given:
+        if given.strip().lower() in correct_answers_lower:
+            correct_given.append(given.strip())
+    
+    correct_count = len(correct_given)
+    
+    # Calculate points: +2 points per correct answer
+    points_earned = correct_count * 2
+    
+    # Check if winner (has minimum required answers)
+    is_winner = correct_count >= theme.min_answers_to_win
+    
+    # Bonus si toutes les réponses sont correctes
+    if correct_count == len(theme.correct_answers):
+        points_earned += 3  # Bonus de 3 points
+    
+    # Update team score
+    team.score += points_earned
+    
+    # Save answer
+    ping_pong_answer = PingPongAnswer(
+        game_session_id=answer_request.game_session_id,
+        theme_id=answer_request.theme_id,
+        team_id=answer_request.team_id,
+        answers_given=answer_request.answers_given,
+        correct_count=correct_count,
+        points_earned=points_earned
+    )
+    
+    db.add(ping_pong_answer)
+    db.commit()
+    db.refresh(team)
+    
+    # Find missed answers
+    missed = [ans for ans in theme.correct_answers if ans.strip().lower() not in given_answers_lower]
+    
+    return schemas.PingPongAnswerResponse(
+        correct_count=correct_count,
+        total_possible=len(theme.correct_answers),
+        points_earned=points_earned,
+        correct_answers_given=correct_given,
+        missed_answers=missed,
+        team_score=team.score,
+        is_winner=is_winner
+    )
+
+@app.get("/games/{code}/ping-pong-results/{theme_id}", response_model=schemas.PingPongResultsResponse)
+def get_ping_pong_results(code: str, theme_id: int, db: Session = Depends(get_db)):
+    """
+    Get results for a ping-pong session
+    """
+    from app.models import PingPongTheme, PingPongAnswer
+    
+    # Get game
+    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Game session not found")
+    
+    # Get theme
+    theme = db.query(PingPongTheme).filter(PingPongTheme.id == theme_id).first()
+    if not theme:
+        raise HTTPException(status_code=404, detail="Ping-pong theme not found")
+    
+    # Get all answers for this theme in this game
+    answers = db.query(PingPongAnswer).filter(
+        PingPongAnswer.game_session_id == game.id,
+        PingPongAnswer.theme_id == theme_id
+    ).all()
+    
+    # Get teams
+    teams = db.query(models.Team).filter(models.Team.game_session_id == game.id).all()
+    
+    # Build results
+    team_results = []
+    max_correct = 0
+    winner_team_id = None
+    
+    for team in teams:
+        team_answer = next((a for a in answers if a.team_id == team.id), None)
+        if team_answer:
+            correct_count = team_answer.correct_count
+            if correct_count > max_correct:
+                max_correct = correct_count
+                winner_team_id = team.id
+            
+            team_results.append({
+                "team_id": team.id,
+                "team_name": team.name,
+                "correct_count": correct_count,
+                "points": team_answer.points_earned,
+                "answers": team_answer.answers_given
+            })
+    
+    all_answered = len(answers) == len(teams)
+    
+    return schemas.PingPongResultsResponse(
+        theme=theme,
+        team_results=team_results,
+        winner_team_id=winner_team_id,
+        all_teams_answered=all_answered
+    )
 
 if __name__ == "__main__":
     import uvicorn

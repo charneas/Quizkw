@@ -76,6 +76,32 @@ export async function getRandomQuestion(category?: string, difficulty?: string) 
   return fetchApi<QuestionResponse>(`/questions/random${query}`)
 }
 
+export async function getCurrentQuestion(gameCode: string) {
+  return fetchApi<QuestionResponse>(`/games/${gameCode}/current-question`)
+}
+
+export async function setCurrentQuestion(gameCode: string, questionId: number) {
+  return fetchApi<{ message: string; question: string; question_id: number }>(`/games/${gameCode}/set-current-question`, {
+    method: 'POST',
+    body: JSON.stringify({ question_id: questionId }),
+  })
+}
+
+export async function getAnswersStatus(gameCode: string, questionId?: number) {
+  const query = questionId ? `?question_id=${questionId}` : ''
+  return fetchApi<{
+    question_id: number | null;
+    total_teams: number;
+    answered_teams: number[];
+    remaining_teams: number[];
+    all_answered: boolean;
+  }>(`/games/${gameCode}/answers-status${query}`)
+}
+
+export async function getTeamTokens(teamId: number) {
+  return fetchApi<{ tokens: { id: number; token_type: string; is_used: boolean }[] }>(`/teams/${teamId}/tokens`)
+}
+
 // === Réponses ===
 
 export async function submitAnswer(data: SubmitAnswerRequest) {
@@ -183,4 +209,58 @@ export async function advanceRound2Phase(gameCode: string) {
 
 export async function getRound2Progress(gameCode: string) {
   return fetchApi<TournamentProgress>(`/round2/${gameCode}/progress`)
+}
+
+// === Ping-Pong ===
+
+export async function getRandomPingPongTheme() {
+  return fetchApi<{
+    id: number
+    title: string
+    description: string | null
+    correct_answers: string[]
+    min_answers_to_win: number
+    created_at: string
+  }>('/ping-pong/random')
+}
+
+export async function submitPingPongAnswer(data: {
+  game_session_id: number
+  theme_id: number
+  team_id: number
+  answers_given: string[]
+}) {
+  return fetchApi<{
+    correct_count: number
+    total_possible: number
+    points_earned: number
+    correct_answers_given: string[]
+    missed_answers: string[]
+    team_score: number
+    is_winner: boolean
+  }>('/ping-pong/answer', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+export async function getPingPongResults(gameCode: string, themeId: number) {
+  return fetchApi<{
+    theme: {
+      id: number
+      title: string
+      description: string | null
+      correct_answers: string[]
+      min_answers_to_win: number
+    }
+    team_results: Array<{
+      team_id: number
+      team_name: string
+      correct_count: number
+      points: number
+      answers: string[]
+    }>
+    winner_team_id: number | null
+    all_teams_answered: boolean
+  }>(`/games/${gameCode}/ping-pong-results/${themeId}`)
 }

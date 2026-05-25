@@ -2,9 +2,13 @@ import type { TournamentProgress } from '../types'
 
 interface TournamentProgressProps {
   progress: TournamentProgress
+  currentPlayerId?: number
 }
 
-function TournamentProgressComponent({ progress }: TournamentProgressProps) {
+function TournamentProgressComponent({ progress, currentPlayerId }: TournamentProgressProps) {
+  const currentPlayerRank = currentPlayerId 
+    ? progress.top_players.findIndex(p => p.player_id === currentPlayerId) + 1
+    : null
   const getPhaseColor = (phase: string) => {
     switch (phase) {
       case '16_players':
@@ -47,7 +51,14 @@ function TournamentProgressComponent({ progress }: TournamentProgressProps) {
   return (
     <div className="bg-gray-800 rounded-lg p-6 mb-6">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-bold text-white">Tournament Progress</h2>
+        <div>
+          <h2 className="text-xl font-bold text-white">Tournament Progress</h2>
+          {currentPlayerRank && currentPlayerRank > 0 && (
+            <p className="text-sm text-green-400 font-semibold mt-1">
+              🏆 Your Position: #{currentPlayerRank}/{progress.players_total}
+            </p>
+          )}
+        </div>
         <span className={`px-3 py-1 rounded-full text-white ${getPhaseColor(progress.phase)}`}>
           {getPhaseText(progress.phase)}
         </span>

@@ -1,4 +1,4 @@
-import { createTeam, startGame } from '../services/api';
+import { createTeam } from '../services/api';
 
 interface DevHelperProps {
   code: string;

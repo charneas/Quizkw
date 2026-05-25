@@ -1,11 +1,14 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getGame, getRandomQuestion, submitAnswer, useToken, spinWheel, advanceToPhase3, createMemoryGrid, startMemoryGridRound } from '../services/api'
+import { getGame, getRandomQuestion, submitAnswer, useToken, spinWheel, advanceRound2Phase, getCurrentQuestion, setCurrentQuestion, getAnswersStatus, getTeamTokens, getRandomPingPongTheme, submitPingPongAnswer, getPingPongResults } from '../services/api'
 import type { GameSession, QuestionResponse, AnswerResponse, WheelSpinResponse, TokenType } from '../types'
 import Scoreboard from '../components/Scoreboard'
 import QuestionCard from '../components/QuestionCard'
 import TokenPanel from '../components/TokenPanel'
 import WheelModal from '../components/WheelModal'
+import WaitingForTeams from '../components/WaitingForTeams'
+import PingPongQuestion from '../components/PingPongQuestion'
+import PingPongResults from '../components/PingPongResults'
 import DevHelper from '../components/DevHelper'
 
 function Game() {
@@ -21,10 +24,35 @@ function Game() {
   const [showWheel, setShowWheel] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [waitingForTeams, setWaitingForTeams] = useState(false)
+  const [answersStatus, setAnswersStatus] = useState<{
+    question_id: number | null
+    total_teams: number
+    answered_teams: number[]
+    remaining_teams: number[]
+    all_answered: boolean
+  } | null>(null)
+  const pollingIntervalRef = useRef<number | null>(null)
+  
+  // Ping-Pong states
+  const [showPingPong, setShowPingPong] = useState(false)
+  const [pingPongTheme, setPingPongTheme] = useState<any>(null)
+  const [pingPongResult, setPingPongResult] = useState<any>(null)
+  const [showPingPongResults, setShowPingPongResults] = useState(false)
+  const [pingPongResults, setPingPongResults] = useState<any>(null)
 
   useEffect(() => {
     if (code) loadGame()
   }, [code])
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current)
+      }
+    }
+  }, [])
 
   const loadGame = async () => {
     try {
@@ -40,12 +68,72 @@ function Game() {
 
   const loadQuestion = async () => {
     try {
-      const question = await getRandomQuestion()
-      setCurrentQuestion(question)
+      // Synchronisation: récupérer la question courante pour toutes les équipes
+      const status = await getAnswersStatus(code!)
+      setAnswersStatus(status)
+      
+      if (status.all_answered || !status.question_id) {
+        // Si toutes les équipes ont déjà répondu ou pas de question courante, définir une nouvelle question
+        const question = await getRandomQuestion()
+        await setCurrentQuestion(code!, question.question.id)
+        setCurrentQuestion(question)
+        setWaitingForTeams(false)
+        // Réinitialiser le statut pour la nouvelle question
+        const newStatus = await getAnswersStatus(code!)
+        setAnswersStatus(newStatus)
+      } else {
+        // Récupérer la question courante synchronisée
+        const question = await getCurrentQuestion(code!)
+        setCurrentQuestion(question)
+        
+        // Vérifier si l'équipe courante a déjà répondu
+        if (game && status.answered_teams.includes(game.teams[currentTeamIndex].id)) {
+          setWaitingForTeams(true)
+          startPolling()
+        } else {
+          setWaitingForTeams(false)
+        }
+      }
       setAnswerResult(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Aucune question disponible')
     }
+  }
+
+  const startPolling = () => {
+    // Arrêter le polling existant
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current)
+    }
+
+    // Démarrer un nouveau polling toutes les 2 secondes
+    pollingIntervalRef.current = setInterval(async () => {
+      try {
+        const status = await getAnswersStatus(code!)
+        setAnswersStatus(status)
+        
+        if (status.all_answered) {
+          // Toutes les équipes ont répondu, arrêter le polling
+          stopPolling()
+        }
+      } catch (err) {
+        console.error('Erreur polling:', err)
+      }
+    }, 2000)
+  }
+
+  const stopPolling = () => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current)
+      pollingIntervalRef.current = null
+    }
+  }
+
+  const handleAllAnswered = async () => {
+    stopPolling()
+    setWaitingForTeams(false)
+    // Charger automatiquement la prochaine question
+    await handleNextTurn()
   }
 
   const handleAnswer = async (answer: string) => {
@@ -70,6 +158,11 @@ function Game() {
         }
         return { ...prev, teams: updatedTeams }
       })
+
+      // Mettre à jour le statut des réponses
+      const status = await getAnswersStatus(code!)
+      setAnswersStatus(status)
+      
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur')
     }
@@ -81,9 +174,9 @@ function Game() {
     const newTurnCount = turnCount + 1
     setTurnCount(newTurnCount)
     
-    // Roue tous les 5 tours
+    // Ping-Pong tous les 5 tours
     if (newTurnCount % 5 === 0) {
-      setShowWheel(true)
+      await startPingPong()
       return
     }
     
@@ -91,6 +184,70 @@ function Game() {
     setCurrentTeamIndex((prev) => (prev + 1) % game.teams.length)
     await loadQuestion()
   }, [game, turnCount])
+
+  const startPingPong = async () => {
+    try {
+      const theme = await getRandomPingPongTheme()
+      setPingPongTheme(theme)
+      setShowPingPong(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur ping-pong')
+    }
+  }
+
+  const handlePingPongSubmit = async (answers: string[]) => {
+    if (!game || !pingPongTheme) return
+    const currentTeam = game.teams[currentTeamIndex]
+
+    try {
+      const result = await submitPingPongAnswer({
+        game_session_id: game.id,
+        theme_id: pingPongTheme.id,
+        team_id: currentTeam.id,
+        answers_given: answers
+      })
+
+      setPingPongResult(result)
+      
+      // Update score locally
+      setGame(prev => {
+        if (!prev) return prev
+        const updatedTeams = [...prev.teams]
+        updatedTeams[currentTeamIndex] = {
+          ...updatedTeams[currentTeamIndex],
+          score: result.team_score,
+        }
+        return { ...prev, teams: updatedTeams }
+      })
+
+      // Check if all teams have answered
+      const results = await getPingPongResults(code!, pingPongTheme.id)
+      if (results.all_teams_answered) {
+        setPingPongResults(results)
+        setShowPingPong(false)
+        setShowPingPongResults(true)
+      } else {
+        // Move to next team
+        setCurrentTeamIndex((prev) => (prev + 1) % game.teams.length)
+        // Keep showing ping-pong for next team
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur ping-pong')
+    }
+  }
+
+  const handlePingPongContinue = async () => {
+    setShowPingPongResults(false)
+    setPingPongTheme(null)
+    setPingPongResult(null)
+    setPingPongResults(null)
+    
+    // Continue to next turn
+    if (game) {
+      setCurrentTeamIndex((prev) => (prev + 1) % game.teams.length)
+      await loadQuestion()
+    }
+  }
 
   const handleSpinWheel = async () => {
     if (!game) return
@@ -131,21 +288,12 @@ function Game() {
     }
   }
 
-  const handleAdvanceToPhase3 = async () => {
+  const handleAdvanceToPhase2 = async () => {
     try {
-      // 1. Advance to phase 3 backend
-      await advanceToPhase3(code!)
-      
-      // 2. Create memory grid
-      await createMemoryGrid(code!)
-      
-      // 3. Start memory grid tour
-      await startMemoryGridRound(code!)
-      
-      // 4. Navigate
-      navigate(`/game/${code}/memory-grid`)
+      await advanceRound2Phase(code!)
+      navigate(`/game/${code}/round2`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erreur lors de la transition vers la manche 3')
+      setError(err instanceof Error ? err.message : 'Erreur lors de la transition vers la manche 2')
     }
   }
 
@@ -182,10 +330,10 @@ function Game() {
             <p className="text-slate-400 text-sm">Tour {turnCount + 1} • Code: {game.code}</p>
           </div>
           <button
-            onClick={handleAdvanceToPhase3}
+            onClick={handleAdvanceToPhase2}
             className="btn-secondary text-sm"
           >
-            Passer en Manche 3 →
+            Passer en Manche 2 →
           </button>
         </div>
 
@@ -204,10 +352,21 @@ function Game() {
             </div>
 
             {/* Question */}
-            {currentQuestion && !answerResult && (
+            {currentQuestion && !answerResult && !waitingForTeams && (
               <QuestionCard
                 question={currentQuestion}
                 onAnswer={handleAnswer}
+              />
+            )}
+
+            {/* Écran d'attente pour les autres équipes */}
+            {waitingForTeams && answersStatus && (
+              <WaitingForTeams
+                gameCode={code!}
+                currentTeam={currentTeam}
+                totalTeams={answersStatus.total_teams}
+                answeredCount={answersStatus.answered_teams.length}
+                onAllAnswered={handleAllAnswered}
               />
             )}
 
@@ -257,6 +416,35 @@ function Game() {
             result={wheelResult}
             onClose={handleCloseWheel}
           />
+        )}
+
+        {/* Modal Ping-Pong */}
+        {showPingPong && pingPongTheme && (
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+            <div className="max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              <PingPongQuestion
+                theme={pingPongTheme}
+                currentTeam={currentTeam}
+                onSubmit={handlePingPongSubmit}
+                timeLimit={60}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Modal Ping-Pong Results */}
+        {showPingPongResults && pingPongResults && (
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+            <div className="max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+              <PingPongResults
+                theme={pingPongResults.theme}
+                teamResults={pingPongResults.team_results}
+                winnerTeamId={pingPongResults.winner_team_id}
+                currentTeam={currentTeam}
+                onContinue={handlePingPongContinue}
+              />
+            </div>
+          </div>
         )}
       </div>
     </div>

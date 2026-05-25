@@ -425,6 +425,84 @@ def seed_round2_game_session(db: Session):
     print(f"✅ Session Round 2 créée avec 16 joueurs (code: ROUND2)")
 
 
+def seed_round3_hard_questions(db: Session):
+    """Peupler la base avec 40+ questions HARD pour Round 3 (grille 7x5 nécessite 35 questions)"""
+    
+    hard_questions_data = [
+        # Histoire mondiale
+        ("En quelle année a commencé la Première Guerre mondiale ?", "Histoire", "1914", ["1912", "1916", "1918"]),
+        ("Qui était le dernier empereur romain d'Occident ?", "Histoire", "Romulus Augustule", ["Néron", "Constantin", "Justinien"]),
+        ("Quelle bataille de 732 a arrêté l'expansion arabe en Europe ?", "Histoire", "Bataille de Poitiers", ["Bataille de Tours", "Bataille de Hastings", "Bataille de Lépante"]),
+        ("Quel traité a divisé le monde entre l'Espagne et le Portugal en 1494 ?", "Histoire", "Traité de Tordesillas", ["Traité de Versailles", "Traité de Westphalie", "Traité d'Utrecht"]),
+        ("Qui a dirigé l'armée carthaginoise lors de la deuxième guerre punique ?", "Histoire", "Hannibal Barca", ["Scipion l'Africain", "Pyrrhus", "Alexandre"]),
+        
+        # Sciences avancées
+        ("Quelle est la constante gravitationnelle universelle (symbole) ?", "Sciences", "G", ["c", "h", "k"]),
+        ("Quel élément chimique a pour symbole W ?", "Sciences", "Tungstène", ["Wolfram", "Wismuth", "Wasserstoff"]),
+        ("Combien de paires de chromosomes possède le chat domestique ?", "Sciences", "19", ["23", "16", "21"]),
+        ("Quelle particule élémentaire a été découverte au CERN en 2012 ?", "Sciences", "Boson de Higgs", ["Graviton", "Tachyon", "Neutrino"]),
+        ("Quelle est la durée d'une année sur Neptune en années terrestres ?", "Sciences", "165", ["120", "200", "145"]),
+        
+        # Géographie pointue
+        ("Quelle est la capitale du Kazakhstan ?", "Géographie", "Astana", ["Almaty", "Nur-Sultan", "Chimkent"]),
+        ("Quel est le point le plus bas sur Terre ?", "Géographie", "Mer Morte", ["Vallée de la Mort", "Lac Assal", "Dépression de Danakil"]),
+        ("Combien d'États composent les États-Unis ?", "Géographie", "50", ["48", "52", "49"]),
+        ("Quelle mer sépare l'Italie de la Yougoslavie ?", "Géographie", "Mer Adriatique", ["Mer Ionienne", "Mer Tyrrhénienne", "Mer Égée"]),
+        ("Quel pays a la plus longue côte au monde ?", "Géographie", "Canada", ["Russie", "Indonésie", "Australie"]),
+        
+        # Littérature
+        ("Qui a écrit 'Les Misérables' ?", "Littérature", "Victor Hugo", ["Émile Zola", "Alexandre Dumas", "Gustave Flaubert"]),
+        ("Dans quel pays est né Jorge Luis Borges ?", "Littérature", "Argentine", ["Mexique", "Espagne", "Chili"]),
+        ("Quel roman de Dostoïevski met en scène Raskolnikov ?", "Littérature", "Crime et Châtiment", ["Les Frères Karamazov", "L'Idiot", "Les Démons"]),
+        ("Qui a écrit 'Le Nom de la Rose' ?", "Littérature", "Umberto Eco", ["Italo Calvino", "Alessandro Manzoni", "Dante Alighieri"]),
+        ("Quel poète a écrit 'Une Saison en Enfer' ?", "Littérature", "Arthur Rimbaud", ["Paul Verlaine", "Charles Baudelaire", "Stéphane Mallarmé"]),
+        
+        # Arts
+        ("Quel peintre a créé 'La Nuit étoilée' ?", "Art", "Vincent Van Gogh", ["Claude Monet", "Paul Cézanne", "Edvard Munch"]),
+        ("Dans quel musée se trouve la Joconde ?", "Art", "Le Louvre", ["Le Musée d'Orsay", "Le British Museum", "Les Offices"]),
+        ("Qui a sculpté 'Le Penseur' ?", "Art", "Auguste Rodin", ["Michel-Ange", "Donatello", "Bernini"]),
+        ("Quel mouvement artistique Picasso a-t-il cofondé ?", "Art", "Le cubisme", ["Le surréalisme", "Le fauvisme", "L'expressionnisme"]),
+        ("Quel artiste hollandais est célèbre pour ses tableaux de tournesols ?", "Art", "Vincent Van Gogh", ["Rembrandt", "Vermeer", "Mondrian"]),
+        
+        # Philosophie
+        ("Qui a écrit 'Le Banquet' ?", "Philosophie", "Platon", ["Aristote", "Socrate", "Épicure"]),
+        ("Quel philosophe a dit 'Cogito, ergo sum' ?", "Philosophie", "René Descartes", ["Emmanuel Kant", "Blaise Pascal", "John Locke"]),
+        ("Qui est l'auteur de 'L'Être et le Néant' ?", "Philosophie", "Jean-Paul Sartre", ["Albert Camus", "Simone de Beauvoir", "Maurice Merleau-Ponty"]),
+        ("Quel philosophe allemand a écrit 'La Critique de la raison pure' ?", "Philosophie", "Emmanuel Kant", ["Hegel", "Schopenhauer", "Nietzsche"]),
+        ("Qui a fondé l'école philosophique du stoïcisme ?", "Philosophie", "Zénon de Citium", ["Épictète", "Marc Aurèle", "Sénèque"]),
+        
+        # Technologie
+        ("En quelle année a été créé le World Wide Web ?", "Technologie", "1989", ["1991", "1985", "1993"]),
+        ("Qui a inventé le téléphone ?", "Technologie", "Alexander Graham Bell", ["Thomas Edison", "Nikola Tesla", "Guglielmo Marconi"]),
+        ("Quel est le premier langage de programmation de haut niveau ?", "Technologie", "Fortran", ["COBOL", "BASIC", "C"]),
+        ("Quelle entreprise a créé le système d'exploitation Unix ?", "Technologie", "Bell Labs", ["IBM", "Apple", "Microsoft"]),
+        ("Combien de bits dans un octet ?", "Technologie", "8", ["10", "16", "4"]),
+        
+        # Mythologie & Religion
+        ("Quel dieu nordique est associé au tonnerre ?", "Mythologie", "Thor", ["Odin", "Loki", "Freyr"]),
+        ("Comment s'appelle le fleuve des Enfers dans la mythologie grecque ?", "Mythologie", "Styx", ["Achéron", "Léthé", "Cocyte"]),
+        ("Quel héros a accompli les 12 travaux ?", "Mythologie", "Héraclès", ["Persée", "Thésée", "Jason"]),
+        ("Quel est le nom romain de Zeus ?", "Mythologie", "Jupiter", ["Mars", "Neptune", "Pluton"]),
+        ("Combien de muses y a-t-il dans la mythologie grecque ?", "Mythologie", "9", ["7", "12", "5"]),
+    ]
+    
+    question_count = 0
+    for text, category, correct, wrong in hard_questions_data:
+        question = Question(
+            text=text,
+            category=category,
+            difficulty=Difficulty.HARD,
+            points=6,
+            correct_answer=correct,
+            wrong_answers=json.dumps(wrong)
+        )
+        db.add(question)
+        question_count += 1
+    
+    db.commit()
+    print(f"✅ {question_count} questions HARD Round 3 créées")
+
+
 def main():
     """Fonction principale"""
     db = SessionLocal()
@@ -447,6 +525,7 @@ def main():
         seed_game_session(db)
         seed_round2_themes_and_questions(db)
         seed_round2_game_session(db)
+        seed_round3_hard_questions(db)
         
         print("\n🎉 Base de données peuplée avec succès !")
         print("\n📊 Données créées:")

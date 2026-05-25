@@ -166,5 +166,52 @@ class PlayerRound2Stats(Base):
     game_session = relationship("GameSession")
     theme = relationship("Theme", back_populates="player_stats")
 
+class PingPongTheme(Base):
+    __tablename__ = "ping_pong_themes"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, nullable=False)
+    description = Column(String)
+    correct_answers = Column(JSON, nullable=False)  # Liste des réponses valides
+    min_answers_to_win = Column(Integer, default=3)  # Minimum de réponses pour gagner
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class PingPongDuel(Base):
+    __tablename__ = "ping_pong_duels"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    game_session_id = Column(Integer, ForeignKey("game_sessions.id"))
+    theme_id = Column(Integer, ForeignKey("ping_pong_themes.id"))
+    team1_id = Column(Integer, ForeignKey("teams.id"))
+    team2_id = Column(Integer, ForeignKey("teams.id"))
+    current_turn_team_id = Column(Integer, ForeignKey("teams.id"))  # Équipe dont c'est le tour
+    winner_team_id = Column(Integer, ForeignKey("teams.id"), nullable=True)
+    is_completed = Column(Boolean, default=False)
+    answers_used = Column(JSON, default=list)  # Liste des réponses déjà données (pour éviter les doublons)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relations
+    game_session = relationship("GameSession", foreign_keys=[game_session_id])
+    theme = relationship("PingPongTheme")
+    team1 = relationship("Team", foreign_keys=[team1_id])
+    team2 = relationship("Team", foreign_keys=[team2_id])
+    current_turn_team = relationship("Team", foreign_keys=[current_turn_team_id])
+    winner_team = relationship("Team", foreign_keys=[winner_team_id])
+
+class PingPongTurn(Base):
+    __tablename__ = "ping_pong_turns"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    duel_id = Column(Integer, ForeignKey("ping_pong_duels.id"))
+    team_id = Column(Integer, ForeignKey("teams.id"))
+    answer_given = Column(String, nullable=False)
+    is_correct = Column(Boolean, nullable=False)
+    turn_number = Column(Integer, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relations
+    duel = relationship("PingPongDuel")
+    team = relationship("Team")
+
 # Mise à jour de GameSession pour la progression 16→8→4
 # Ajout de champs pour suivre le tournoi
