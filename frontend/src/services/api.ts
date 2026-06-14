@@ -211,7 +211,7 @@ export async function getRound2Progress(gameCode: string) {
   return fetchApi<TournamentProgress>(`/round2/${gameCode}/progress`)
 }
 
-// === Ping-Pong ===
+// === Ping-Pong Duel ===
 
 export async function getRandomPingPongTheme() {
   return fetchApi<{
@@ -221,31 +221,104 @@ export async function getRandomPingPongTheme() {
     correct_answers: string[]
     min_answers_to_win: number
     created_at: string
-  }>('/ping-pong/random')
+  }>('/ping-pong/random-theme')
 }
 
-export async function submitPingPongAnswer(data: {
+// === Multi-screen Team State ===
+
+export async function getTeamState(gameCode: string, teamId: number) {
+  return fetchApi<{
+    team_id: number
+    team_name: string
+    team_score: number
+    game_phase: string
+    is_my_turn: boolean
+    has_answered: boolean
+    current_question: {
+      id: number
+      text: string
+      category: string
+      difficulty: string
+      points: number
+      correct_answer: string | null
+      options: string[]
+    } | null
+    active_duel: {
+      duel_id: number
+      theme: {
+        id: number
+        title: string
+        description: string | null
+        correct_answers: string[]
+        min_answers_to_win: number
+      }
+      team1: { id: number; name: string }
+      team2: { id: number; name: string }
+      current_turn_team_id: number
+      current_turn_team_name: string
+      turn_number: number
+      answers_used: string[]
+      is_completed: boolean
+      winner_team_id: number | null
+      is_my_turn_in_duel: boolean
+    } | null
+    tokens: { id: number; token_type: string; is_used: boolean }[]
+    other_teams: { team_id: number; team_name: string; has_answered: boolean }[]
+  }>(`/game/${gameCode}/team/${teamId}/state`)
+}
+
+export async function startPingPongDuel(data: {
   game_session_id: number
   theme_id: number
-  team_id: number
-  answers_given: string[]
+  team1_id: number
+  team2_id: number
 }) {
   return fetchApi<{
-    correct_count: number
-    total_possible: number
-    points_earned: number
-    correct_answers_given: string[]
-    missed_answers: string[]
-    team_score: number
-    is_winner: boolean
-  }>('/ping-pong/answer', {
+    duel_id: number
+    theme: {
+      id: number
+      title: string
+      description: string | null
+      correct_answers: string[]
+      min_answers_to_win: number
+      created_at: string
+    }
+    team1: { id: number; name: string }
+    team2: { id: number; name: string }
+    current_turn_team_id: number
+    turn_number: number
+    answers_used: string[]
+    is_completed: boolean
+    winner_team_id: number | null
+  }>('/ping-pong/duel/start', {
     method: 'POST',
     body: JSON.stringify(data),
   })
 }
 
-export async function getPingPongResults(gameCode: string, themeId: number) {
+export async function submitPingPongDuelAnswer(data: {
+  duel_id: number
+  team_id: number
+  answer: string
+}) {
   return fetchApi<{
+    is_correct: boolean
+    answer: string
+    turn_number: number
+    duel_continues: boolean
+    winner_team_id: number | null
+    winner_team_name: string | null
+    next_turn_team_id: number | null
+    message: string
+  }>('/ping-pong/duel/answer', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+export async function getPingPongDuelState(duelId: number) {
+  return fetchApi<{
+    duel_id: number
     theme: {
       id: number
       title: string
@@ -253,14 +326,42 @@ export async function getPingPongResults(gameCode: string, themeId: number) {
       correct_answers: string[]
       min_answers_to_win: number
     }
-    team_results: Array<{
-      team_id: number
-      team_name: string
-      correct_count: number
-      points: number
-      answers: string[]
-    }>
+    team1: { id: number; name: string }
+    team2: { id: number; name: string }
+    current_turn_team_id: number
+    current_turn_team_name: string
+    turn_number: number
+    answers_used: string[]
+    is_completed: boolean
     winner_team_id: number | null
-    all_teams_answered: boolean
-  }>(`/games/${gameCode}/ping-pong-results/${themeId}`)
+  }>(`/ping-pong/duel/${duelId}`)
+}
+
+export async function getPingPongDuelResults(duelId: number) {
+  return fetchApi<{
+    duel_id: number
+    theme: {
+      id: number
+      title: string
+      description: string | null
+      correct_answers: string[]
+      min_answers_to_win: number
+    }
+    team1: {
+      id: number
+      name: string
+      turns: number
+      correct_answers: string[]
+    }
+    team2: {
+      id: number
+      name: string
+      turns: number
+      correct_answers: string[]
+    }
+    winner_team_id: number
+    winner_team_name: string
+    total_turns: number
+    answers_used: string[]
+  }>(`/ping-pong/duel/${duelId}/results`)
 }

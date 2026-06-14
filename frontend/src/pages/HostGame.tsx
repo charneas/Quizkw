@@ -1,24 +1,22 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getGame, getRandomQuestion, submitAnswer, useToken, spinWheel, advanceRound2Phase, getCurrentQuestion, setCurrentQuestion as setCurrentQuestionApi, getAnswersStatus, getRandomPingPongTheme, startPingPongDuel, submitPingPongDuelAnswer, getPingPongDuelState, getPingPongDuelResults } from '../services/api'
-import type { GameSession, QuestionResponse, AnswerResponse, WheelSpinResponse, TokenType, Team } from '../types'
+import { getGame, getRandomQuestion, submitAnswer, spinWheel, advanceRound2Phase, getCurrentQuestion, setCurrentQuestion as setCurrentQuestionApi, getAnswersStatus, getRandomPingPongTheme, startPingPongDuel, getPingPongDuelState, getPingPongDuelResults } from '../services/api'
+import type { GameSession, QuestionResponse, WheelSpinResponse, Team } from '../types'
 import Scoreboard from '../components/Scoreboard'
 import QuestionCard from '../components/QuestionCard'
-import TokenPanel from '../components/TokenPanel'
 import WheelModal from '../components/WheelModal'
 import WaitingForTeams from '../components/WaitingForTeams'
 import PingPongQuestion from '../components/PingPongQuestion'
 import PingPongResults from '../components/PingPongResults'
 import PingPongTeamSelector from '../components/PingPongTeamSelector'
-import DevHelper from '../components/DevHelper'
 
-function Game() {
+function HostGame() {
   const { code } = useParams<{ code: string }>()
   const navigate = useNavigate()
-  
+
   const [game, setGame] = useState<GameSession | null>(null)
   const [currentQuestion, setCurrentQuestion] = useState<QuestionResponse | null>(null)
-  const [answerResult, setAnswerResult] = useState<AnswerResponse | null>(null)
+  const [answerResult, setAnswerResult] = useState<any>(null)
   const [wheelResult, setWheelResult] = useState<WheelSpinResponse | null>(null)
   const [currentTeamIndex, setCurrentTeamIndex] = useState(0)
   const [turnCount, setTurnCount] = useState(0)
@@ -26,15 +24,9 @@ function Game() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [waitingForTeams, setWaitingForTeams] = useState(false)
-  const [answersStatus, setAnswersStatus] = useState<{
-    question_id: number | null
-    total_teams: number
-    answered_teams: number[]
-    remaining_teams: number[]
-    all_answered: boolean
-  } | null>(null)
+  const [answersStatus, setAnswersStatus] = useState<any>(null)
   const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  
+
   // Ping-Pong Duel states
   const [showPingPong, setShowPingPong] = useState(false)
   const [pingPongTheme, setPingPongTheme] = useState<any>(null)
@@ -50,9 +42,7 @@ function Game() {
 
   useEffect(() => {
     return () => {
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current)
-      }
+      if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current)
     }
   }, [])
 
@@ -68,114 +58,95 @@ function Game() {
     }
   }
 
+  // Charge une NOUVELLE question aléatoire et la définit comme question courante
+  // À utiliser quand l'hôte veut forcer le tour suivant (indépendamment du statut des réponses)
+  const forceNewQuestion = async () => {
+    try {
+      // Cacher WaitingForTeams IMMÉDIATEMENT pour éviter la boucle :
+      // si waitingForTeams=true avec answeredCount===totalTeams, WaitingForTeams rappellerait
+      // handleNextTurn en boucle pendant que forceNewQuestion est en cours
+      setWaitingForTeams(false)
+      setAnswersStatus(null)
+      setAnswerResult(null)   // Réactiver le bouton "Valider" pour la nouvelle question
+      const question = await getRandomQuestion()
+      await setCurrentQuestionApi(code!, question.question.id)
+      setCurrentQuestion(question)
+      setWaitingForTeams(true)
+      startPolling()
+      const status = await getAnswersStatus(code!)
+      setAnswersStatus(status)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Aucune question disponible')
+    }
+  }
+
+  // Charge la question courante si elle existe, sinon en force une nouvelle
+  // À utiliser uniquement au chargement initial
   const loadQuestion = async () => {
     try {
       const status = await getAnswersStatus(code!)
       setAnswersStatus(status)
-      
+
       if (status.all_answered || !status.question_id) {
-        const question = await getRandomQuestion()
-        await setCurrentQuestionApi(code!, question.question.id)
-        setCurrentQuestion(question)
-        setWaitingForTeams(false)
-        const newStatus = await getAnswersStatus(code!)
-        setAnswersStatus(newStatus)
+        await forceNewQuestion()
       } else {
         const question = await getCurrentQuestion(code!)
         setCurrentQuestion(question)
-        
-        if (game && status.answered_teams.includes(game.teams[currentTeamIndex].id)) {
-          setWaitingForTeams(true)
-          startPolling()
-        } else {
-          setWaitingForTeams(false)
-        }
+        setWaitingForTeams(true)
+        startPolling()
       }
-      setAnswerResult(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Aucune question disponible')
     }
   }
 
   const startPolling = () => {
-    if (pollingIntervalRef.current) {
-      clearInterval(pollingIntervalRef.current)
-    }
+    if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current)
     pollingIntervalRef.current = setInterval(async () => {
       try {
         const status = await getAnswersStatus(code!)
         setAnswersStatus(status)
-        if (status.all_answered) stopPolling()
+        if (status.all_answered) {
+          clearInterval(pollingIntervalRef.current!)
+          pollingIntervalRef.current = null
+        }
       } catch (err) {
         console.error('Erreur polling:', err)
       }
     }, 2000)
   }
 
-  const stopPolling = () => {
-    if (pollingIntervalRef.current) {
-      clearInterval(pollingIntervalRef.current)
-      pollingIntervalRef.current = null
-    }
-  }
-
   const handleAllAnswered = async () => {
-    stopPolling()
+    // Démonter WaitingForTeams IMMÉDIATEMENT pour éviter la boucle de déclenchement
     setWaitingForTeams(false)
-    await handleNextTurn()
+    setAnswersStatus(null)
+    // Valider les réponses de la question courante
+    // Ne PAS auto-avancer : l'hôte clique "Tour suivant" quand il veut
+    // (évite que le host valide la mauvaise question si il clique "Valider" après l'auto-avance)
+    await handleValidateAnswers()
   }
-
-  const handleAnswer = async (answer: string) => {
-    if (!currentQuestion || !game) return
-    const currentTeam = game.teams[currentTeamIndex]
-    
-    try {
-      const result = await submitAnswer({
-        question_id: currentQuestion.question.id,
-        team_id: currentTeam.id,
-        player_answer: answer,
-      })
-      setAnswerResult(result)
-      
-      setGame(prev => {
-        if (!prev) return prev
-        const updatedTeams = [...prev.teams]
-        updatedTeams[currentTeamIndex] = {
-          ...updatedTeams[currentTeamIndex],
-          score: result.team_score,
-        }
-        return { ...prev, teams: updatedTeams }
-      })
-
-      const status = await getAnswersStatus(code!)
-      setAnswersStatus(status)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erreur')
-    }
-  }
-
-  // === Turn & Wheel ===
 
   const handleNextTurn = useCallback(async () => {
     if (!game) return
-    
+
     const newTurnCount = turnCount + 1
     setTurnCount(newTurnCount)
-    
+
     // Roue tous les 5 tours
     if (newTurnCount % 5 === 0) {
       setShowWheel(true)
       return
     }
-    
+
     setCurrentTeamIndex((prev) => (prev + 1) % game.teams.length)
-    await loadQuestion()
+    // Toujours forcer une NOUVELLE question quand l'hôte avance manuellement
+    await forceNewQuestion()
   }, [game, turnCount])
 
   const handleSpinWheel = async () => {
     if (!game) return
     const currentTeam = game.teams[currentTeamIndex]
-    
+
     try {
       const result = await spinWheel(currentTeam.id)
       setWheelResult(result)
@@ -199,7 +170,7 @@ function Game() {
     }
   }
 
-  // === Ping-Pong Duel ===
+  // === Ping-Pong Duel (Host) ===
 
   const handleTeamSelect = async (team2: Team) => {
     if (!game) return
@@ -218,6 +189,7 @@ function Game() {
       setPingPongDuel(duel)
       setPingPongTheme(theme)
       setShowPingPong(true)
+      startDuelPolling(duel.duel_id)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur ping-pong')
     }
@@ -235,11 +207,15 @@ function Game() {
     if (!game || !pingPongDuel) return
 
     try {
-      const result = await submitPingPongDuelAnswer({
-        duel_id: pingPongDuel.duel_id,
-        team_id: pingPongDuel.current_turn_team_id,
-        answer: answer,
-      })
+      const result = await fetch('/api/ping-pong/duel/answer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          duel_id: pingPongDuel.duel_id,
+          team_id: pingPongDuel.current_turn_team_id,
+          answer: answer,
+        }),
+      }).then(r => r.json())
 
       setPingPongResult(result)
 
@@ -248,11 +224,9 @@ function Game() {
         setPingPongResults(results)
         setShowPingPong(false)
         setShowPingPongResults(true)
-
         const freshGame = await getGame(code!)
         setGame(freshGame)
       } else {
-        // Rafraîchir l'état du duel (tour suivant)
         const state = await getPingPongDuelState(pingPongDuel.duel_id)
         setPingPongDuel(state)
       }
@@ -262,69 +236,69 @@ function Game() {
   }
 
   const handlePingPongPass = async () => {
-    if (!game || !pingPongDuel) return
+    await handlePingPongSubmit('__PASS__')
+  }
 
-    try {
-      const result = await submitPingPongDuelAnswer({
-        duel_id: pingPongDuel.duel_id,
-        team_id: pingPongDuel.current_turn_team_id,
-        answer: '__PASS__',
-      })
-
-      setPingPongResult(result)
-
-      if (!result.duel_continues) {
-        const results = await getPingPongDuelResults(pingPongDuel.duel_id)
-        setPingPongResults(results)
-        setShowPingPong(false)
-        setShowPingPongResults(true)
-
-        const freshGame = await getGame(code!)
-        setGame(freshGame)
+  // Polling pendant le duel (les équipes répondent, l'hôte observe)
+  const startDuelPolling = (duelId: number) => {
+    if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current)
+    pollingIntervalRef.current = setInterval(async () => {
+      try {
+        const state = await getPingPongDuelState(duelId)
+        setPingPongDuel(state)
+        if (state.is_completed) {
+          clearInterval(pollingIntervalRef.current!)
+          pollingIntervalRef.current = null
+          const results = await getPingPongDuelResults(duelId)
+          setPingPongResults(results)
+          setShowPingPong(false)
+          setShowPingPongResults(true)
+          const freshGame = await getGame(code!)
+          setGame(freshGame)
+        }
+      } catch (err) {
+        console.error('Erreur polling duel:', err)
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erreur ping-pong')
-    }
+    }, 2000)
   }
 
   const handlePingPongContinue = async () => {
     setShowPingPongResults(false)
     setPingPongTheme(null)
+    setPingPongDuel(null)
     setPingPongResult(null)
     setPingPongResults(null)
-    setPingPongDuel(null)
-    
+
     if (game) {
       setCurrentTeamIndex((prev) => (prev + 1) % game.teams.length)
       await loadQuestion()
     }
   }
 
-  // === Jetons ===
-
-  const handleUseToken = async (tokenType: TokenType) => {
+  // === Validate answers (host validates all team answers) ===
+  const handleValidateAnswers = async () => {
     if (!game) return
-    const currentTeam = game.teams[currentTeamIndex]
-    
     try {
-      await useToken({ team_id: currentTeam.id, token_type: tokenType })
-      if (tokenType === 'swap') await loadQuestion()
-      await loadGame()
+      const result = await fetch(`/api/games/${code}/validate-answers`, {
+        method: 'POST',
+      }).then(r => r.json())
+      setAnswerResult(result)
+      const freshGame = await getGame(code!)
+      setGame(freshGame)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erreur jeton')
+      setError(err instanceof Error ? err.message : 'Erreur validation')
     }
   }
 
+  // === Advance to next phase ===
   const handleAdvanceToPhase2 = async () => {
     try {
       await advanceRound2Phase(code!)
       navigate(`/game/${code}/round2`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erreur lors de la transition vers la manche 2')
+      setError(err instanceof Error ? err.message : 'Erreur transition')
     }
   }
-
-  // === Render ===
 
   if (loading) {
     return (
@@ -347,92 +321,109 @@ function Game() {
   }
 
   const currentTeam = game.teams[currentTeamIndex]
+  const showQuestion = currentQuestion && !waitingForTeams
 
   return (
     <div className="min-h-screen p-4">
-      <DevHelper code={code!} />
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold">Manche 1</h1>
-            <p className="text-slate-400 text-sm">Tour {turnCount + 1} • Code: {game.code}</p>
+            <h1 className="text-2xl font-bold">Manche 1 — Hôte</h1>
+            <p className="text-slate-400 text-sm">
+              Tour {turnCount + 1} • Code: <span className="font-mono font-bold text-game-accent">{game.code}</span>
+            </p>
           </div>
-          <button
-            onClick={handleAdvanceToPhase2}
-            className="btn-secondary text-sm"
-          >
+          <button onClick={handleAdvanceToPhase2} className="btn-secondary text-sm">
             Passer en Manche 2 →
           </button>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Scoreboard */}
           <div className="lg:col-span-1">
             <Scoreboard teams={game.teams} currentTeamIndex={currentTeamIndex} />
           </div>
 
+          {/* Zone de contrôle */}
           <div className="lg:col-span-2 space-y-4">
             <div className="card text-center">
               <p className="text-sm text-slate-400">C'est au tour de</p>
               <p className="text-2xl font-bold text-game-accent">{currentTeam.name}</p>
             </div>
 
-            {currentQuestion && !answerResult && !waitingForTeams && (
-              <QuestionCard question={currentQuestion} onAnswer={handleAnswer} />
+            {/* Question affichée pour référence (les équipes répondent via leur écran) */}
+            {showQuestion && currentQuestion && (
+              <div className="card">
+                <h3 className="text-lg font-semibold mb-2">{currentQuestion.question.text}</h3>
+                <p className="text-xs text-slate-500 mb-3">
+                  {currentQuestion.question.category} • {currentQuestion.question.points} pts
+                </p>
+                <p className="text-sm text-slate-400 italic">
+                  Les équipes répondent sur leur propre écran...
+                </p>
+              </div>
             )}
 
-            {waitingForTeams && answersStatus && (
+            {/* État des réponses */}
+            {answersStatus && waitingForTeams && answersStatus.answered_teams && (
               <WaitingForTeams
                 currentTeam={currentTeam}
-                totalTeams={answersStatus.total_teams}
-                answeredCount={answersStatus.answered_teams.length}
+                totalTeams={answersStatus.total_teams ?? 0}
+                answeredCount={answersStatus.answered_teams?.length ?? 0}
                 onAllAnswered={handleAllAnswered}
               />
             )}
 
-            {answerResult && (
-              <div className={`card text-center ${answerResult.is_correct ? 'border-game-success' : 'border-game-danger'}`}>
-                <div className="text-4xl mb-3">
-                  {answerResult.is_correct ? '✅' : '❌'}
-                </div>
-                <h3 className={`text-xl font-bold ${answerResult.is_correct ? 'text-game-success' : 'text-game-danger'}`}>
-                  {answerResult.is_correct ? 'Bonne réponse !' : 'Mauvaise réponse !'}
-                </h3>
-                {!answerResult.is_correct && (
-                  <p className="text-slate-400 mt-2">
-                    Réponse correcte : <span className="text-white font-semibold">{answerResult.correct_answer}</span>
-                  </p>
-                )}
-                <p className="text-slate-400 mt-2">
-                  Points gagnés : <span className="text-game-accent font-bold">+{answerResult.points_earned}</span>
+            {/* Résultat de la validation */}
+            {answerResult && answerResult.teams_updated && (
+              <div className="card border-game-success">
+                <h3 className="text-lg font-bold text-game-success mb-3">✅ Réponses validées !</h3>
+                <p className="text-sm text-slate-400 mb-2">
+                  Réponse correcte : <span className="text-white font-semibold">{answerResult.correct_answer}</span>
                 </p>
-                <button onClick={handleNextTurn} className="btn-primary mt-4">
+                <div className="space-y-1 mb-4">
+                {answerResult.teams_updated.map((t: any, idx: number) => (
+                    <div key={`${t.team_id}_${idx}`} className="flex justify-between text-sm">
+                      <span>{t.team_name}</span>
+                      <span className={t.is_correct ? 'text-game-success' : 'text-game-danger'}>
+                        {t.is_correct ? `+${t.points_earned} pts` : '✗'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <button onClick={handleNextTurn} className="btn-primary">
                   Tour suivant →
                 </button>
               </div>
             )}
 
-            <TokenPanel teamId={currentTeam.id} onUseToken={handleUseToken} />
+            {/* Contrôles rapides */}
+            <div className="flex gap-2">
+              <button
+                onClick={handleValidateAnswers}
+                disabled={!!answerResult}
+                className="btn-success flex-1 text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                title={answerResult ? 'Déjà validé — cliquez Tour suivant pour continuer' : ''}
+              >
+                ✅ Valider les réponses
+              </button>
+              <button onClick={handleNextTurn} className="btn-secondary flex-1 text-sm">
+                Tour suivant →
+              </button>
+              <button onClick={forceNewQuestion} className="btn-secondary flex-1 text-sm">
+                Nouvelle question
+              </button>
+            </div>
           </div>
         </div>
 
-        {error && (
-          <div className="fixed bottom-4 right-4 bg-red-900/90 text-white px-4 py-2 rounded-lg text-sm">
-            {error}
-            <button onClick={() => setError('')} className="ml-2 text-red-300 hover:text-white">✕</button>
-          </div>
-        )}
-
         {/* Modal Roue */}
         {showWheel && (
-          <WheelModal
-            onSpin={handleSpinWheel}
-            result={wheelResult}
-            onClose={handleCloseWheel}
-          />
+          <WheelModal onSpin={handleSpinWheel} result={wheelResult} onClose={handleCloseWheel} />
         )}
 
-        {/* Modal Team Selector (quand la roue donne ping_pong) */}
+        {/* Team Selector (quand la roue donne ping_pong) */}
         {showTeamSelector && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
             <div className="max-w-md w-full">
@@ -446,7 +437,7 @@ function Game() {
           </div>
         )}
 
-        {/* Modal Ping-Pong Duel */}
+        {/* Duel Ping-Pong */}
         {showPingPong && pingPongTheme && pingPongDuel && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
             <div className="max-w-2xl w-full max-h-[90vh] overflow-y-auto">
@@ -466,10 +457,10 @@ function Game() {
           </div>
         )}
 
-        {/* Modal Ping-Pong Results */}
+        {/* Résultats du duel */}
         {showPingPongResults && pingPongResults && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-            <div className="max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="max-w-2xl w-full">
               <PingPongResults
                 theme={pingPongResults.theme}
                 team1={{
@@ -493,14 +484,21 @@ function Game() {
             </div>
           </div>
         )}
+
+        {/* Erreur */}
+        {error && (
+          <div className="fixed bottom-4 right-4 bg-red-900/90 text-white px-4 py-2 rounded-lg text-sm">
+            {error}
+            <button onClick={() => setError('')} className="ml-2 text-red-300 hover:text-white">✕</button>
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
-// Helper to find a Team by its ID
 function findTeamById(teams: Team[], teamId: number): Team {
   return teams.find(t => t.id === teamId)!
 }
 
-export default Game
+export default HostGame

@@ -49,7 +49,7 @@ function Lobby() {
     if (!code) return
     try {
       await startGame(code)
-      navigate(`/game/${code}`)
+      navigate(`/game/${code}/host`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Impossible de démarrer')
     }

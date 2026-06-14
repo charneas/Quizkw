@@ -2,14 +2,13 @@ import { useEffect, useState } from 'react'
 import type { Team } from '../types'
 
 interface WaitingForTeamsProps {
-  gameCode: string
   currentTeam: Team
   totalTeams: number
   answeredCount: number
   onAllAnswered: () => void
 }
 
-function WaitingForTeams({ gameCode, currentTeam, totalTeams, answeredCount, onAllAnswered }: WaitingForTeamsProps) {
+function WaitingForTeams({ currentTeam, totalTeams, answeredCount, onAllAnswered }: WaitingForTeamsProps) {
   const [dots, setDots] = useState('.')
 
   useEffect(() => {

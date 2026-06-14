@@ -9,7 +9,7 @@ import json
 import random
 from sqlalchemy.orm import Session
 from app.database import SessionLocal, engine
-from app.models import Base, Question, Difficulty, GameSession, Team, Player, Token, TokenType, RoundType, Theme, ThemeCategory, PlayerRound2Stats, QualificationStatus
+from app.models import Base, Question, Difficulty, GameSession, Team, Player, Token, TokenType, RoundType, Theme, ThemeCategory, PlayerRound2Stats, QualificationStatus, PingPongTheme
 
 # Créer toutes les tables
 Base.metadata.create_all(bind=engine)
@@ -503,6 +503,242 @@ def seed_round3_hard_questions(db: Session):
     print(f"✅ {question_count} questions HARD Round 3 créées")
 
 
+def seed_ping_pong_themes(db: Session):
+    """Peupler la base avec les 17 thèmes Ping-Pong pour les duels"""
+    
+    themes_data = [
+        {
+            "title": "Pays ayant le Français en langue officielle",
+            "description": "Citez des pays où le français est une langue officielle",
+            "correct_answers": [
+                "France", "Belgique", "Suisse", "Canada", "Luxembourg", "Monaco",
+                "Sénégal", "Côte d'Ivoire", "Cameroun", "Madagascar", "Mali",
+                "Niger", "Burkina Faso", "Bénin", "Togo", "Guinée", "Tchad",
+                "République Démocratique du Congo", "République du Congo",
+                "Haïti", "Vanuatu", "Seychelles", "Comores", "Burundi",
+                "Rwanda", "Djibouti", "Gabon", "République Centrafricaine",
+                "Guinée Équatoriale", "Maurice"
+            ],
+            "min_answers_to_win": 3,
+        },
+        {
+            "title": "Présidents de la 5ème République",
+            "description": "Citez les présidents français de la 5ème République",
+            "correct_answers": [
+                "Charles de Gaulle", "Georges Pompidou", "Valéry Giscard d'Estaing",
+                "François Mitterrand", "Jacques Chirac", "Nicolas Sarkozy",
+                "François Hollande", "Emmanuel Macron"
+            ],
+            "min_answers_to_win": 3,
+        },
+        {
+            "title": "Artistes français à l'Eurovision",
+            "description": "Citez des artistes ayant représenté la France à l'Eurovision",
+            "correct_answers": [
+                "Amir", "Barbara Pravi", "Slimane", "Madame Monsieur",
+                "Alma", "Amir Haddad", "Bilal Hassani", "Tom Leeb",
+                "Twin Twin", "Anggun", "Amaury Vassili", "Jessy Matador",
+                "Patricia Kaas", "Sébastien Tellier", "Les Fatals Picards",
+                "Natasha St-Pier", "Marie Myriam"
+            ],
+            "min_answers_to_win": 3,
+        },
+        {
+            "title": "Pays ayant organisé les JO d'été",
+            "description": "Citez des pays ayant accueilli les Jeux Olympiques d'été",
+            "correct_answers": [
+                "Grèce", "France", "États-Unis", "Royaume-Uni", "Suède",
+                "Allemagne", "Belgique", "Pays-Bas", "Finlande", "Italie",
+                "Australie", "Mexique", "Canada", "Japon", "URSS", "Russie",
+                "Corée du Sud", "Espagne", "Chine", "Brésil"
+            ],
+            "min_answers_to_win": 3,
+        },
+        {
+            "title": "Auteurs classiques français (19e et avant)",
+            "description": "Citez des auteurs français classiques avant le 20e siècle",
+            "correct_answers": [
+                "Victor Hugo", "Molière", "Voltaire", "Jean-Jacques Rousseau",
+                "Émile Zola", "Gustave Flaubert", "Honoré de Balzac",
+                "Charles Baudelaire", "Stendhal", "Alexandre Dumas",
+                "Jules Verne", "Arthur Rimbaud", "Paul Verlaine",
+                "Alfred de Musset", "Pierre Corneille", "Jean Racine",
+                "Denis Diderot", "Montesquieu", "Guy de Maupassant"
+            ],
+            "min_answers_to_win": 3,
+        },
+        {
+            "title": "Films du MCU",
+            "description": "Citez des films du Marvel Cinematic Universe",
+            "correct_answers": [
+                "Iron Man", "The Incredible Hulk", "Iron Man 2", "Thor",
+                "Captain America: First Avenger", "Avengers", "Iron Man 3",
+                "Thor: The Dark World", "Captain America: The Winter Soldier",
+                "Guardians of the Galaxy", "Avengers: Age of Ultron", "Ant-Man",
+                "Captain America: Civil War", "Doctor Strange",
+                "Guardians of the Galaxy Vol. 2", "Spider-Man: Homecoming",
+                "Thor: Ragnarok", "Black Panther", "Avengers: Infinity War",
+                "Ant-Man and the Wasp", "Captain Marvel", "Avengers: Endgame",
+                "Spider-Man: Far From Home", "Black Widow", "Shang-Chi",
+                "Eternals", "Spider-Man: No Way Home", "Doctor Strange 2",
+                "Thor: Love and Thunder", "Black Panther: Wakanda Forever",
+                "Guardians of the Galaxy Vol. 3", "The Marvels"
+            ],
+            "min_answers_to_win": 4,
+        },
+        {
+            "title": "Marques de voiture en activité",
+            "description": "Citez des marques automobiles encore en activité",
+            "correct_answers": [
+                "Renault", "Peugeot", "Citroën", "Volkswagen", "Toyota",
+                "BMW", "Mercedes", "Audi", "Ford", "Ferrari", "Porsche",
+                "Honda", "Hyundai", "Kia", "Tesla", "Nissan", "Fiat",
+                "Alfa Romeo", "Lamborghini", "Bentley", "Aston Martin",
+                "Maserati", "Jaguar", "Land Rover", "Lexus", "Suzuki",
+                "Mazda", "Subaru", "Volvo", "Jeep", "Dacia", "SEAT", "Skoda"
+            ],
+            "min_answers_to_win": 4,
+        },
+        {
+            "title": "Agents Valorant",
+            "description": "Citez les agents jouables dans Valorant",
+            "correct_answers": [
+                "Jett", "Phoenix", "Sage", "Sova", "Brimstone", "Viper",
+                "Cypher", "Reyna", "Killjoy", "Breach", "Omen", "Raze",
+                "Skye", "Yoru", "Astra", "KAY/O", "Chamber", "Neon",
+                "Fade", "Harbor", "Gekko", "Deadlock", "Iso", "Clove", "Vyse"
+            ],
+            "min_answers_to_win": 4,
+        },
+        {
+            "title": "Plats de la cuisine française",
+            "description": "Citez des plats typiques français",
+            "correct_answers": [
+                "Bœuf bourguignon", "Coq au vin", "Blanquette de veau",
+                "Cassoulet", "Choucroute garnie", "Pot-au-feu",
+                "Bouillabaisse", "Ratatouille", "Quiche lorraine",
+                "Tartiflette", "Magret de canard", "Foie gras",
+                "Confit de canard", "Omelette", "Croque-monsieur",
+                "Steak-frites", "Galette bretonne", "Aligot",
+                "Gratin dauphinois"
+            ],
+            "min_answers_to_win": 3,
+        },
+        {
+            "title": "Ustensiles de cuisine",
+            "description": "Citez des ustensiles que l'on trouve dans une cuisine",
+            "correct_answers": [
+                "Couteau", "Fourchette", "Cuillère", "Fouet", "Spatule",
+                "Louche", "Casserole", "Poêle", "Marmite", "Faitout",
+                "Planche à découper", "Éplucheur", "Râpe", "Passoire",
+                "Tamis", "Entonnoir", "Balance", "Verre doseur",
+                "Rouleau à pâtisserie", "Moule", "Fouet électrique",
+                "Mixeur plongeant", "Thermomètre", "Minuteur",
+                "Ouvre-boîte", "Tire-bouchon", "Presse-ail"
+            ],
+            "min_answers_to_win": 4,
+        },
+        {
+            "title": "Capitales de l'UE",
+            "description": "Citez les capitales des pays de l'Union Européenne",
+            "correct_answers": [
+                "Paris", "Berlin", "Rome", "Madrid", "Lisbonne", "Vienne",
+                "Bruxelles", "Amsterdam", "Stockholm", "Copenhague",
+                "Helsinki", "Varsovie", "Prague", "Bratislava", "Budapest",
+                "Bucarest", "Sofia", "Athènes", "Dublin", "Vilnius",
+                "Riga", "Tallinn", "Ljubljana", "Zagreb", "La Valette",
+                "Nicosie", "Luxembourg"
+            ],
+            "min_answers_to_win": 5,
+        },
+        {
+            "title": "Pays bordant la Méditerranée",
+            "description": "Citez des pays qui ont une côte sur la mer Méditerranée",
+            "correct_answers": [
+                "France", "Espagne", "Italie", "Grèce", "Turquie",
+                "Syrie", "Liban", "Israël", "Égypte", "Libye", "Tunisie",
+                "Algérie", "Maroc", "Malte", "Chypre", "Croatie",
+                "Bosnie-Herzégovine", "Monténégro", "Albanie", "Slovénie",
+                "Monaco"
+            ],
+            "min_answers_to_win": 4,
+        },
+        {
+            "title": "Pays commençant par M",
+            "description": "Citez des pays dont le nom commence par M",
+            "correct_answers": [
+                "Madagascar", "Malaisie", "Malawi", "Maldives", "Mali",
+                "Malte", "Maroc", "Marshall", "Maurice", "Mauritanie",
+                "Mexique", "Micronésie", "Moldavie", "Monaco", "Mongolie",
+                "Monténégro", "Mozambique", "Myanmar"
+            ],
+            "min_answers_to_win": 3,
+        },
+        {
+            "title": "Personnages de Sonic",
+            "description": "Citez des personnages de l'univers Sonic",
+            "correct_answers": [
+                "Sonic", "Tails", "Knuckles", "Amy Rose", "Shadow",
+                "Dr Eggman", "Robotnik", "Metal Sonic", "Silver",
+                "Blaze", "Cream", "Rouge", "Vector", "Espio", "Charmy",
+                "Big the Cat", "E-123 Omega", "Chaos"
+            ],
+            "min_answers_to_win": 4,
+        },
+        {
+            "title": "Consoles de salon",
+            "description": "Citez des consoles de jeux vidéo de salon",
+            "correct_answers": [
+                "PlayStation", "PS2", "PS3", "PS4", "PS5", "Xbox",
+                "Xbox 360", "Xbox One", "Xbox Series X", "Nintendo Switch",
+                "Wii", "Wii U", "GameCube", "Nintendo 64", "Super Nintendo",
+                "NES", "Sega Genesis", "Mega Drive", "Sega Dreamcast",
+                "Sega Saturn", "Atari 2600"
+            ],
+            "min_answers_to_win": 4,
+        },
+        {
+            "title": "Franchises NBA",
+            "description": "Citez les franchises de la NBA",
+            "correct_answers": [
+                "Lakers", "Celtics", "Bulls", "Warriors", "Knicks",
+                "Heat", "Nets", "76ers", "Raptors", "Bucks", "Cavaliers",
+                "Pacers", "Pistons", "Magic", "Hornets", "Wizards",
+                "Hawks", "Nuggets", "Timberwolves", "Thunder", "Trail Blazers",
+                "Jazz", "Clippers", "Suns", "Kings", "Rockets",
+                "Mavericks", "Spurs", "Grizzlies", "Pelicans"
+            ],
+            "min_answers_to_win": 5,
+        },
+        {
+            "title": "Fast Food en France",
+            "description": "Citez des enseignes de fast-food présentes en France",
+            "correct_answers": [
+                "McDonald's", "Burger King", "KFC", "Quick", "Subway",
+                "Domino's Pizza", "Pizza Hut", "Five Guys", "O'Tacos",
+                "Paul", "Starbucks", "Pomme de Pain", "La Croissanterie",
+                "Brioche Dorée", "Class'Croute", "Prêt à Manger",
+                "Exki", "Bagel Corner", "Big Fernand", "Steak 'n Shake"
+            ],
+            "min_answers_to_win": 3,
+        },
+    ]
+    
+    count = 0
+    for theme_data in themes_data:
+        theme = PingPongTheme(
+            title=theme_data["title"],
+            description=theme_data["description"],
+            correct_answers=theme_data["correct_answers"],
+            min_answers_to_win=theme_data["min_answers_to_win"],
+        )
+        db.add(theme)
+        count += 1
+    
+    db.commit()
+    print(f"✅ {count} thèmes Ping-Pong créés")
+
+
 def main():
     """Fonction principale"""
     db = SessionLocal()
@@ -518,6 +754,7 @@ def main():
         db.query(GameSession).delete()
         db.query(Question).delete()
         db.query(Theme).delete()
+        db.query(PingPongTheme).delete()
         db.commit()
         
         # Peupler les données
@@ -526,11 +763,13 @@ def main():
         seed_round2_themes_and_questions(db)
         seed_round2_game_session(db)
         seed_round3_hard_questions(db)
+        seed_ping_pong_themes(db)
         
         print("\n🎉 Base de données peuplée avec succès !")
         print("\n📊 Données créées:")
         print(f"   - Questions: {db.query(Question).count()}")
         print(f"   - Thèmes Round 2: {db.query(Theme).count()}")
+        print(f"   - Thèmes Ping-Pong: {db.query(PingPongTheme).count()}")
         print(f"   - Sessions de jeu: {db.query(GameSession).count()}")
         print(f"   - Équipes: {db.query(Team).count()}")
         print(f"   - Joueurs: {db.query(Player).count()}")

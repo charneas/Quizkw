@@ -151,6 +151,7 @@ class AnswerResponse(BaseModel):
     correct_answer: str
     points_earned: int
     team_score: int
+    pending_validation: bool = True
 
 class TokenUseRequest(BaseModel):
     token_type: TokenTypeEnum

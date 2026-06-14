@@ -198,11 +198,15 @@ def get_random_question(category: str = None, difficulty: schemas.DifficultyEnum
     if not question:
         raise HTTPException(status_code=404, detail="Aucune question trouvée")
     
-    # Mélanger les réponses
-    import json
+    # Mélanger les réponses de façon déterministe (basé sur le question_id)
+    # pour que l'ordre soit stable entre les appels de polling
+    import json, hashlib
     wrong_answers = json.loads(question.wrong_answers) if question.wrong_answers else []
     options = wrong_answers + [question.correct_answer]
-    random.shuffle(options)
+    # Seed basé sur le hash du question_id → ordre identique pour chaque équipe
+    seed = int(hashlib.md5(str(question.id).encode()).hexdigest(), 16) % (2**32)
+    rng = random.Random(seed)
+    rng.shuffle(options)
     
     return {
         "question": question,
@@ -245,11 +249,18 @@ def get_current_question(code: str, db: Session = Depends(get_db)):
     
     question = db.query(models.Question).filter(models.Question.id == game.current_question_id).first()
     
-    # Mélanger les réponses
-    import json
+    if not question:
+        raise HTTPException(status_code=404, detail="Question non trouvée")
+    
+    # Mélanger les réponses de façon déterministe (basé sur le question_id)
+    # pour que l'ordre soit stable entre les appels de polling
+    import json, hashlib
     wrong_answers = json.loads(question.wrong_answers) if question.wrong_answers else []
     options = wrong_answers + [question.correct_answer]
-    random.shuffle(options)
+    # Seed basé sur le hash du question_id → ordre identique pour chaque équipe
+    seed = int(hashlib.md5(str(question.id).encode()).hexdigest(), 16) % (2**32)
+    rng = random.Random(seed)
+    rng.shuffle(options)
     
     return {
         "question": question,
@@ -281,7 +292,8 @@ def get_answers_status(code: str, question_id: int = None, db: Session = Depends
         models.Answer.team_id.in_(team_ids)
     ).all()
     
-    answered_ids = [answer.team_id for answer in answered_teams]
+    # Dédupliquer: si une équipe a soumis plusieurs réponses, compter une seule fois
+    answered_ids = list(set([answer.team_id for answer in answered_teams]))
     all_ids = [team.id for team in teams]
     remaining_ids = [id for id in all_ids if id not in answered_ids]
     
@@ -305,47 +317,107 @@ def submit_answer(answer_create: schemas.AnswerCreate, db: Session = Depends(get
     team = db.query(models.Team).filter(models.Team.id == answer_create.team_id).first()
     if not team:
         raise HTTPException(status_code=404, detail="Équipe non trouvée")
-    
-    # Vérifier si la réponse est correcte
+
+    # Empêcher les réponses en double pour la même question/équipe
+    existing = db.query(models.Answer).filter(
+        models.Answer.question_id == answer_create.question_id,
+        models.Answer.team_id == answer_create.team_id,
+    ).first()
+    if existing:
+        # Retourner la réponse existante sans créer de doublon
+        return {
+            "is_correct": existing.is_correct,
+            "correct_answer": question.correct_answer,
+            "points_earned": existing.points_earned,
+            "team_score": team.score,
+            "pending_validation": True,
+        }
+
+    # Vérifier si la réponse est correcte (sans attribuer les points — l'host valide)
     is_correct = answer_create.player_answer.strip().lower() == question.correct_answer.strip().lower()
-    points_earned = question.points if is_correct else 0
     
-    # Ajouter les points à l'équipe
-    team.score += points_earned
-    
-    # Enregistrer la réponse
+    # Ne PAS ajouter les points maintenant — l'host les validera via /validate-answers
+    # On enregistre juste la réponse avec points_earned=0 (sera mis à jour par l'host)
     answer = models.Answer(
         question_id=answer_create.question_id,
         team_id=answer_create.team_id,
         player_answer=answer_create.player_answer,
         is_correct=is_correct,
-        points_earned=points_earned
+        points_earned=0  # Points attribués par l'host lors de la validation
     )
     
     db.add(answer)
     db.commit()
-    db.refresh(team)
-    
-    # Marquer que l'équipe a répondu à cette question
-    game = db.query(models.GameSession).filter(models.GameSession.current_question_id == question.id).first()
-    if game:
-        # Vérifier si toutes les équipes ont répondu
-        teams = db.query(models.Team).filter(models.Team.game_session_id == game.id).all()
-        team_responses = db.query(models.Answer).filter(
-            models.Answer.question_id == question.id,
-            models.Answer.team_id.in_([t.id for t in teams])
-        ).count()
-        
-        if team_responses == len(teams):
-            # All teams have answered, clear current question
-            game.current_question_id = None
-            db.commit()
     
     return {
         "is_correct": is_correct,
         "correct_answer": question.correct_answer,
-        "points_earned": points_earned,
-        "team_score": team.score
+        "points_earned": 0,  # Pas encore de points — en attente de validation
+        "team_score": team.score,
+        "pending_validation": True
+    }
+
+@app.post("/games/{code}/validate-answers")
+def validate_answers(code: str, db: Session = Depends(get_db)):
+    """
+    L'host valide les réponses de toutes les équipes pour la question courante.
+    Attribue les points aux équipes qui ont répondu correctement.
+    """
+    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
+    
+    if not game.current_question_id:
+        raise HTTPException(status_code=400, detail="Pas de question courante à valider")
+    
+    question = db.query(models.Question).filter(models.Question.id == game.current_question_id).first()
+    if not question:
+        raise HTTPException(status_code=404, detail="Question non trouvée")
+    
+    # Récupérer toutes les réponses pour cette question
+    answers = db.query(models.Answer).filter(
+        models.Answer.question_id == game.current_question_id
+    ).all()
+    
+    # Attribuer les points pour chaque réponse correcte (une seule réponse par équipe)
+    teams_updated = []
+    teams_processed = set()  # Éviter les doublons si une équipe a soumis plusieurs réponses
+    for answer in answers:
+        if answer.team_id in teams_processed:
+            continue  # Ignorer les réponses en double pour la même équipe
+        teams_processed.add(answer.team_id)
+        team = db.query(models.Team).filter(models.Team.id == answer.team_id).first()
+        if team and answer.is_correct:
+            points = question.points
+            team.score += points
+            answer.points_earned = points
+            teams_updated.append({
+                "team_id": team.id,
+                "team_name": team.name,
+                "is_correct": True,
+                "points_earned": points,
+                "new_score": team.score,
+            })
+        elif team:
+            teams_updated.append({
+                "team_id": team.id,
+                "team_name": team.name,
+                "is_correct": False,
+                "points_earned": 0,
+                "new_score": team.score,
+            })
+    
+    db.commit()
+    
+    # Effacer la question courante (toutes les équipes ont été validées)
+    game.current_question_id = None
+    db.commit()
+    
+    return {
+        "message": "Réponses validées avec succès",
+        "teams_updated": teams_updated,
+        "question_text": question.text,
+        "correct_answer": question.correct_answer,
     }
 
 @app.get("/teams/{team_id}/tokens")
@@ -915,145 +987,289 @@ def get_round2_progress(game_code: str, db: Session = Depends(get_db)):
     
     return progress
 
-# Ping-Pong Endpoints
-@app.get("/ping-pong/random", response_model=schemas.PingPongTheme)
+# Ping-Pong Duel Endpoints
+@app.get("/ping-pong/random-theme", response_model=schemas.PingPongTheme)
 def get_random_ping_pong_theme(db: Session = Depends(get_db)):
     """
-    Get a random ping-pong theme for the 5-turn challenge
+    Get a random ping-pong theme for a duel
     """
-    from app.models import PingPongTheme
+    from app.ping_pong_manager import PingPongManager
     
-    theme = db.query(PingPongTheme).order_by(func.random()).first()
+    manager = PingPongManager(db)
+    theme = manager.get_random_theme()
     
     if not theme:
         raise HTTPException(status_code=404, detail="No ping-pong themes available")
     
     return theme
 
-@app.post("/ping-pong/answer", response_model=schemas.PingPongAnswerResponse)
-def submit_ping_pong_answer(answer_request: schemas.PingPongAnswerRequest, db: Session = Depends(get_db)):
+@app.post("/ping-pong/duel/start", response_model=schemas.PingPongDuelResponse)
+def start_ping_pong_duel(request: schemas.StartPingPongDuelRequest, db: Session = Depends(get_db)):
     """
-    Submit ping-pong answers for a team
+    Démarrer un duel ping-pong entre 2 équipes.
+    team1_id = équipe qui a tourné la roue (elle commence le duel).
     """
-    from app.models import PingPongTheme, PingPongAnswer
+    from app.ping_pong_manager import PingPongManager
     
-    # Get theme
-    theme = db.query(PingPongTheme).filter(PingPongTheme.id == answer_request.theme_id).first()
-    if not theme:
-        raise HTTPException(status_code=404, detail="Ping-pong theme not found")
+    manager = PingPongManager(db)
     
-    # Get team
-    team = db.query(models.Team).filter(models.Team.id == answer_request.team_id).first()
-    if not team:
-        raise HTTPException(status_code=404, detail="Team not found")
+    try:
+        duel = manager.start_duel(
+            game_session_id=request.game_session_id,
+            theme_id=request.theme_id,
+            team1_id=request.team1_id,
+            team2_id=request.team2_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     
-    # Normalize answers (case-insensitive comparison)
-    correct_answers_lower = [ans.strip().lower() for ans in theme.correct_answers]
-    given_answers_lower = [ans.strip().lower() for ans in answer_request.answers_given]
+    # Construire la réponse
+    theme = db.query(models.PingPongTheme).filter(models.PingPongTheme.id == duel.theme_id).first()
+    team1 = db.query(models.Team).filter(models.Team.id == duel.team1_id).first()
+    team2 = db.query(models.Team).filter(models.Team.id == duel.team2_id).first()
     
-    # Find correct answers
-    correct_given = []
-    for given in answer_request.answers_given:
-        if given.strip().lower() in correct_answers_lower:
-            correct_given.append(given.strip())
-    
-    correct_count = len(correct_given)
-    
-    # Calculate points: +2 points per correct answer
-    points_earned = correct_count * 2
-    
-    # Check if winner (has minimum required answers)
-    is_winner = correct_count >= theme.min_answers_to_win
-    
-    # Bonus si toutes les réponses sont correctes
-    if correct_count == len(theme.correct_answers):
-        points_earned += 3  # Bonus de 3 points
-    
-    # Update team score
-    team.score += points_earned
-    
-    # Save answer
-    ping_pong_answer = PingPongAnswer(
-        game_session_id=answer_request.game_session_id,
-        theme_id=answer_request.theme_id,
-        team_id=answer_request.team_id,
-        answers_given=answer_request.answers_given,
-        correct_count=correct_count,
-        points_earned=points_earned
-    )
-    
-    db.add(ping_pong_answer)
-    db.commit()
-    db.refresh(team)
-    
-    # Find missed answers
-    missed = [ans for ans in theme.correct_answers if ans.strip().lower() not in given_answers_lower]
-    
-    return schemas.PingPongAnswerResponse(
-        correct_count=correct_count,
-        total_possible=len(theme.correct_answers),
-        points_earned=points_earned,
-        correct_answers_given=correct_given,
-        missed_answers=missed,
-        team_score=team.score,
-        is_winner=is_winner
+    return schemas.PingPongDuelResponse(
+        duel_id=duel.id,
+        theme=schemas.PingPongTheme(
+            id=theme.id,
+            title=theme.title,
+            description=theme.description,
+            correct_answers=theme.correct_answers,
+            min_answers_to_win=theme.min_answers_to_win,
+            created_at=theme.created_at,
+        ),
+        team1={"id": team1.id, "name": team1.name},
+        team2={"id": team2.id, "name": team2.name},
+        current_turn_team_id=duel.current_turn_team_id,
+        turn_number=1,
+        answers_used=duel.answers_used or [],
+        is_completed=duel.is_completed,
+        winner_team_id=duel.winner_team_id,
     )
 
-@app.get("/games/{code}/ping-pong-results/{theme_id}", response_model=schemas.PingPongResultsResponse)
-def get_ping_pong_results(code: str, theme_id: int, db: Session = Depends(get_db)):
+@app.post("/ping-pong/duel/answer", response_model=schemas.SubmitPingPongAnswerResponse)
+def submit_ping_pong_duel_answer(request: schemas.SubmitPingPongAnswerRequest, db: Session = Depends(get_db)):
     """
-    Get results for a ping-pong session
+    Soumettre une réponse dans un duel ping-pong.
     """
-    from app.models import PingPongTheme, PingPongAnswer
+    from app.ping_pong_manager import PingPongManager
     
-    # Get game
+    manager = PingPongManager(db)
+    
+    try:
+        result = manager.submit_answer(
+            duel_id=request.duel_id,
+            team_id=request.team_id,
+            answer=request.answer,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
+    return schemas.SubmitPingPongAnswerResponse(
+        is_correct=result["is_correct"],
+        answer=result["answer"],
+        turn_number=result["turn_number"],
+        duel_continues=result["duel_continues"],
+        winner_team_id=result["winner_team_id"],
+        winner_team_name=result["winner_team_name"],
+        next_turn_team_id=result["next_turn_team_id"],
+        message=result["message"],
+    )
+
+@app.get("/ping-pong/duel/{duel_id}")
+def get_ping_pong_duel_state(duel_id: int, db: Session = Depends(get_db)):
+    """
+    Récupérer l'état actuel d'un duel ping-pong.
+    """
+    from app.ping_pong_manager import PingPongManager
+    
+    manager = PingPongManager(db)
+    
+    try:
+        state = manager.get_duel_state(duel_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    
+    return state
+
+@app.get("/ping-pong/duel/{duel_id}/results")
+def get_ping_pong_duel_results(duel_id: int, db: Session = Depends(get_db)):
+    """
+    Récupérer les résultats finaux d'un duel ping-pong.
+    """
+    from app.ping_pong_manager import PingPongManager
+    
+    manager = PingPongManager(db)
+    
+    try:
+        results = manager.get_duel_results(duel_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    
+    return results
+
+# Team-specific state endpoint (multi-screen architecture)
+@app.get("/game/{code}/team/{team_id}/state")
+def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_db)):
+    """
+    Retourne l'état spécifique à UNE équipe pour le jeu multi-écrans.
+    
+    Chaque équipe peut avoir son propre appareil et voir :
+    - Si c'est son tour de répondre
+    - La question courante (si elle n'a pas déjà répondu)
+    - Les duels ping-pong en cours (si elle est impliquée)
+    - Ses jetons disponibles
+    - Son score actuel
+    """
     game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
     if not game:
-        raise HTTPException(status_code=404, detail="Game session not found")
-    
-    # Get theme
-    theme = db.query(PingPongTheme).filter(PingPongTheme.id == theme_id).first()
-    if not theme:
-        raise HTTPException(status_code=404, detail="Ping-pong theme not found")
-    
-    # Get all answers for this theme in this game
-    answers = db.query(PingPongAnswer).filter(
-        PingPongAnswer.game_session_id == game.id,
-        PingPongAnswer.theme_id == theme_id
+        raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
+
+    # Récupérer l'équipe
+    team = db.query(models.Team).filter(
+        models.Team.id == team_id,
+        models.Team.game_session_id == game.id,
+    ).first()
+    if not team:
+        raise HTTPException(status_code=404, detail="Équipe non trouvée dans cette session")
+
+    from app.ping_pong_manager import PingPongManager
+    from app.round2_manager import Round2Manager
+
+    # --- Statut de la question courante ---
+    current_question_data = None
+    has_answered = False
+    is_my_turn = True  # par défaut
+
+    if game.current_question_id:
+        question = db.query(models.Question).filter(
+            models.Question.id == game.current_question_id
+        ).first()
+
+        if question:
+            # Vérifier si cette équipe a déjà répondu à cette question
+            existing_answer = db.query(models.Answer).filter(
+                models.Answer.question_id == question.id,
+                models.Answer.team_id == team_id,
+            ).first()
+
+            has_answered = existing_answer is not None
+
+            # Mélanger les réponses de façon déterministe (basé sur le question_id)
+            # pour que l'ordre soit stable entre les appels de polling
+            import json, hashlib
+            wrong_answers = json.loads(question.wrong_answers) if question.wrong_answers else []
+            options = wrong_answers + [question.correct_answer]
+            # Seed basé sur le hash du question_id → ordre identique pour chaque équipe
+            seed = int(hashlib.md5(str(question.id).encode()).hexdigest(), 16) % (2**32)
+            rng = random.Random(seed)
+            rng.shuffle(options)
+
+            current_question_data = {
+                "id": question.id,
+                "text": question.text,
+                "category": question.category,
+                "difficulty": question.difficulty.value,
+                "points": question.points,
+                "correct_answer": question.correct_answer if has_answered else None,  # Ne révéler qu'après réponse
+                "options": options,
+            }
+
+    # Vérifier le statut des réponses pour déterminer si c'est le tour
+    if game.current_question_id:
+        teams_in_game = db.query(models.Team).filter(
+            models.Team.game_session_id == game.id
+        ).all()
+        team_ids_in_game = [t.id for t in teams_in_game]
+
+        answered_teams = db.query(models.Answer).filter(
+            models.Answer.question_id == game.current_question_id,
+            models.Answer.team_id.in_(team_ids_in_game),
+        ).all()
+        # Dédupliquer: une équipe peut avoir soumis plusieurs réponses
+        answered_ids = list(set([a.team_id for a in answered_teams]))
+
+        # Si toutes les équipes ont répondu, personne n'a "le tour"
+        if len(answered_ids) == len(team_ids_in_game):
+            is_my_turn = False
+
+    # --- Duel Ping-Pong en cours ---
+    ping_pong_manager = PingPongManager(db)
+    active_duel_for_team = None
+
+    # Chercher un duel actif où cette équipe est impliquée
+    active_duel = db.query(models.PingPongDuel).filter(
+        models.PingPongDuel.game_session_id == game.id,
+        models.PingPongDuel.is_completed == False,
+        models.PingPongDuel.team1_id == team_id,
+    ).first()
+
+    if not active_duel:
+        active_duel = db.query(models.PingPongDuel).filter(
+            models.PingPongDuel.game_session_id == game.id,
+            models.PingPongDuel.is_completed == False,
+            models.PingPongDuel.team2_id == team_id,
+        ).first()
+
+    if active_duel:
+        try:
+            duel_state = ping_pong_manager.get_duel_state(active_duel.id)
+            active_duel_for_team = {
+                "duel_id": active_duel.id,
+                "theme": duel_state["theme"],
+                "team1": duel_state["team1"],
+                "team2": duel_state["team2"],
+                "current_turn_team_id": duel_state["current_turn_team_id"],
+                "current_turn_team_name": duel_state["current_turn_team_name"],
+                "turn_number": duel_state["turn_number"],
+                "answers_used": duel_state["answers_used"],
+                "is_completed": duel_state["is_completed"],
+                "winner_team_id": duel_state["winner_team_id"],
+                "is_my_turn_in_duel": active_duel.current_turn_team_id == team_id,
+            }
+        except Exception:
+            pass  # Duel not found or error — leave as None
+
+    # --- Jetons ---
+    tokens = db.query(models.Token).filter(
+        models.Token.team_id == team_id,
+        models.Token.is_used == False,
     ).all()
-    
-    # Get teams
-    teams = db.query(models.Team).filter(models.Team.game_session_id == game.id).all()
-    
-    # Build results
-    team_results = []
-    max_correct = 0
-    winner_team_id = None
-    
-    for team in teams:
-        team_answer = next((a for a in answers if a.team_id == team.id), None)
-        if team_answer:
-            correct_count = team_answer.correct_count
-            if correct_count > max_correct:
-                max_correct = correct_count
-                winner_team_id = team.id
-            
-            team_results.append({
-                "team_id": team.id,
-                "team_name": team.name,
-                "correct_count": correct_count,
-                "points": team_answer.points_earned,
-                "answers": team_answer.answers_given
+
+    tokens_data = [
+        {"id": t.id, "token_type": t.token_type.value, "is_used": t.is_used}
+        for t in tokens
+    ]
+
+    # --- Statut des autres équipes ---
+    if game.current_question_id:
+        teams_in_game = db.query(models.Team).filter(
+            models.Team.game_session_id == game.id
+        ).all()
+        other_teams_status = []
+        for t in teams_in_game:
+            if t.id == team_id:
+                continue
+            other_teams_status.append({
+                "team_id": t.id,
+                "team_name": t.name,
+                "has_answered": t.id in answered_ids if game.current_question_id else False,
             })
-    
-    all_answered = len(answers) == len(teams)
-    
-    return schemas.PingPongResultsResponse(
-        theme=theme,
-        team_results=team_results,
-        winner_team_id=winner_team_id,
-        all_teams_answered=all_answered
-    )
+    else:
+        other_teams_status = []
+
+    return {
+        "team_id": team_id,
+        "team_name": team.name,
+        "team_score": team.score,
+        "game_phase": game.current_round.value,
+        "is_my_turn": is_my_turn,
+        "has_answered": has_answered,
+        "current_question": current_question_data,
+        "active_duel": active_duel_for_team,
+        "tokens": tokens_data,
+        "other_teams": other_teams_status,
+    }
 
 if __name__ == "__main__":
     import uvicorn
