@@ -570,7 +570,7 @@ def start_memory_grid_round(code: str, db: Session = Depends(get_db)):
         "message": "Tour de grille mémoire démarré"
     }
 
-@app.get("/memory-grid/{memory_grid_id}/state", response_model=schemas.MemoryGridStateResponse)
+@app.get("/memory-grid/{memory_grid_id}/state")
 def get_memory_grid_state(memory_grid_id: int, db: Session = Depends(get_db)):
     """
     Obtenir l'état actuel de la grille mémoire
