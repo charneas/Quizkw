@@ -5,9 +5,12 @@ interface WheelModalProps {
   onSpin: () => void
   result: WheelSpinResponse | null
   onClose: () => void
+  teamName?: string
+  teamProgress?: string
+  isLastTeam?: boolean
 }
 
-function WheelModal({ onSpin, result, onClose }: WheelModalProps) {
+function WheelModal({ onSpin, result, onClose, teamName, teamProgress, isLastTeam = true }: WheelModalProps) {
   const [spinning, setSpinning] = useState(false)
 
   const handleSpin = async () => {
@@ -36,7 +39,17 @@ function WheelModal({ onSpin, result, onClose }: WheelModalProps) {
   return (
     <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
       <div className="card max-w-md w-full text-center">
-        <h2 className="text-2xl font-bold mb-6">🎡 Roue de Fortune</h2>
+        <h2 className="text-2xl font-bold mb-2">🎡 Roue de Fortune</h2>
+
+        {/* Nom de l'équipe et progression */}
+        {teamName && (
+          <div className="mb-4">
+            <p className="text-lg font-semibold text-game-accent">{teamName}</p>
+            {teamProgress && (
+              <p className="text-xs text-slate-500">Équipe {teamProgress}</p>
+            )}
+          </div>
+        )}
 
         {/* Roue animée */}
         <div className="relative w-48 h-48 mx-auto mb-6">
@@ -64,7 +77,7 @@ function WheelModal({ onSpin, result, onClose }: WheelModalProps) {
               </p>
             )}
             <button onClick={onClose} className="btn-primary w-full mt-4">
-              Continuer →
+              {isLastTeam ? 'Continuer →' : 'Équipe suivante →'}
             </button>
           </div>
         ) : (

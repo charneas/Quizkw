@@ -374,20 +374,24 @@ def validate_answers(code: str, db: Session = Depends(get_db)):
     if not question:
         raise HTTPException(status_code=404, detail="Question non trouvée")
     
-    # Récupérer toutes les réponses pour cette question
+    # FIX: Only get answers from teams in THIS game session (not previous games)
+    teams_in_game = db.query(models.Team).filter(models.Team.game_session_id == game.id).all()
+    team_ids_in_game = [t.id for t in teams_in_game]
+    
     answers = db.query(models.Answer).filter(
-        models.Answer.question_id == game.current_question_id
+        models.Answer.question_id == game.current_question_id,
+        models.Answer.team_id.in_(team_ids_in_game)
     ).all()
     
-    # Attribuer les points pour chaque réponse correcte (une seule réponse par équipe)
+    # Attribuer les points pour chaque réponse correcte (idempotent — safe to call multiple times)
     teams_updated = []
-    teams_processed = set()  # Éviter les doublons si une équipe a soumis plusieurs réponses
+    teams_processed = set()
     for answer in answers:
         if answer.team_id in teams_processed:
-            continue  # Ignorer les réponses en double pour la même équipe
+            continue
         teams_processed.add(answer.team_id)
         team = db.query(models.Team).filter(models.Team.id == answer.team_id).first()
-        if team and answer.is_correct:
+        if team and answer.is_correct and answer.points_earned == 0:
             points = question.points
             team.score += points
             answer.points_earned = points
@@ -396,6 +400,15 @@ def validate_answers(code: str, db: Session = Depends(get_db)):
                 "team_name": team.name,
                 "is_correct": True,
                 "points_earned": points,
+                "new_score": team.score,
+            })
+        elif team and answer.is_correct:
+            # Already validated — return existing data without double-counting
+            teams_updated.append({
+                "team_id": team.id,
+                "team_name": team.name,
+                "is_correct": True,
+                "points_earned": answer.points_earned,
                 "new_score": team.score,
             })
         elif team:
@@ -1258,6 +1271,68 @@ def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_d
     else:
         other_teams_status = []
 
+    # --- Auto-validation (no-host mode) ---
+    # When all teams have answered AND no host is present, auto-validate and return results.
+    # When a host IS present, the host validates manually via /validate-answers.
+    all_teams_answered = False
+    validation_result_data = None
+
+    if game.current_question_id:
+        all_teams_answered = (
+            len(answered_ids) == len(team_ids_in_game) and len(team_ids_in_game) > 0
+        )
+
+        if all_teams_answered and not game.has_host:
+            # No host → auto-validate answers and award points
+            question = db.query(models.Question).filter(
+                models.Question.id == game.current_question_id
+            ).first()
+
+            if question:
+                # Get answers for this game's teams only
+                game_answers = db.query(models.Answer).filter(
+                    models.Answer.question_id == game.current_question_id,
+                    models.Answer.team_id.in_(team_ids_in_game),
+                ).all()
+
+                # Auto-validate: award points (idempotent — won't double-count)
+                needs_validation = any(
+                    a.is_correct and a.points_earned == 0 for a in game_answers
+                )
+                if needs_validation:
+                    processed = set()
+                    for a in game_answers:
+                        if a.team_id in processed:
+                            continue
+                        processed.add(a.team_id)
+                        t = db.query(models.Team).filter(models.Team.id == a.team_id).first()
+                        if t and a.is_correct and a.points_earned == 0:
+                            a.points_earned = question.points
+                            t.score += question.points
+                    db.commit()
+                    # Refresh this team's score after auto-validation
+                    db.refresh(team)
+
+                # Build validation result
+                teams_results = []
+                processed = set()
+                for a in game_answers:
+                    if a.team_id in processed:
+                        continue
+                    processed.add(a.team_id)
+                    t = db.query(models.Team).filter(models.Team.id == a.team_id).first()
+                    if t:
+                        teams_results.append({
+                            "team_name": t.name,
+                            "is_correct": a.is_correct,
+                            "points_earned": a.points_earned,
+                        })
+
+                validation_result_data = {
+                    "correct_answer": question.correct_answer,
+                    "teams": teams_results,
+                }
+
     return {
         "team_id": team_id,
         "team_name": team.name,
@@ -1269,7 +1344,52 @@ def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_d
         "active_duel": active_duel_for_team,
         "tokens": tokens_data,
         "other_teams": other_teams_status,
+        "all_answered": all_teams_answered,
+        "validation_result": validation_result_data,
     }
+
+@app.post("/games/{code}/register-host")
+def register_host(code: str, db: Session = Depends(get_db)):
+    """
+    Enregistre qu'un hôte est connecté à cette session.
+    Quand un hôte est présent, la validation des réponses est manuelle (par l'hôte).
+    Sans hôte, les réponses sont auto-validées quand toutes les équipes ont répondu.
+    """
+    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
+    
+    game.has_host = True
+    db.commit()
+    
+    return {"message": "Hôte enregistré", "has_host": True}
+
+
+@app.post("/games/{code}/next-question")
+def next_question(code: str, db: Session = Depends(get_db)):
+    """
+    Passer à la question suivante (utilisable sans hôte).
+    Choisit une question aléatoire et la définit comme question courante.
+    """
+    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
+
+    # Choisir une question aléatoire
+    question = db.query(models.Question).order_by(func.random()).first()
+    if not question:
+        raise HTTPException(status_code=404, detail="Aucune question disponible")
+
+    # Définir comme question courante
+    game.current_question_id = question.id
+    db.commit()
+
+    return {
+        "message": "Nouvelle question définie",
+        "question_id": question.id,
+        "question_text": question.text,
+    }
+
 
 if __name__ == "__main__":
     import uvicorn

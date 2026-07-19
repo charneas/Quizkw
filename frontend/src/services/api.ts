@@ -264,6 +264,11 @@ export async function getTeamState(gameCode: string, teamId: number) {
     } | null
     tokens: { id: number; token_type: string; is_used: boolean }[]
     other_teams: { team_id: number; team_name: string; has_answered: boolean }[]
+    all_answered: boolean
+    validation_result: {
+      correct_answer: string
+      teams: { team_name: string; is_correct: boolean; points_earned: number }[]
+    } | null
   }>(`/game/${gameCode}/team/${teamId}/state`)
 }
 
@@ -335,6 +340,18 @@ export async function getPingPongDuelState(duelId: number) {
     is_completed: boolean
     winner_team_id: number | null
   }>(`/ping-pong/duel/${duelId}`)
+}
+
+export async function registerHost(gameCode: string) {
+  return fetchApi<{ message: string; has_host: boolean }>(`/games/${gameCode}/register-host`, {
+    method: 'POST',
+  })
+}
+
+export async function nextQuestion(gameCode: string) {
+  return fetchApi<{ message: string; question_id: number; question_text: string }>(`/games/${gameCode}/next-question`, {
+    method: 'POST',
+  })
 }
 
 export async function getPingPongDuelResults(duelId: number) {

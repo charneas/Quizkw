@@ -1,9 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getGame, getRandomQuestion, submitAnswer, spinWheel, advanceRound2Phase, getCurrentQuestion, setCurrentQuestion as setCurrentQuestionApi, getAnswersStatus, getRandomPingPongTheme, startPingPongDuel, getPingPongDuelState, getPingPongDuelResults } from '../services/api'
+import { getGame, getRandomQuestion, spinWheel, advanceRound2Phase, getCurrentQuestion, setCurrentQuestion as setCurrentQuestionApi, getAnswersStatus, getRandomPingPongTheme, startPingPongDuel, getPingPongDuelState, getPingPongDuelResults, registerHost } from '../services/api'
 import type { GameSession, QuestionResponse, WheelSpinResponse, Team } from '../types'
 import Scoreboard from '../components/Scoreboard'
-import QuestionCard from '../components/QuestionCard'
 import WheelModal from '../components/WheelModal'
 import WaitingForTeams from '../components/WaitingForTeams'
 import PingPongQuestion from '../components/PingPongQuestion'
@@ -21,6 +20,8 @@ function HostGame() {
   const [currentTeamIndex, setCurrentTeamIndex] = useState(0)
   const [turnCount, setTurnCount] = useState(0)
   const [showWheel, setShowWheel] = useState(false)
+  const [wheelTeamQueue, setWheelTeamQueue] = useState<number[]>([])
+  const [wheelTeamIdx, setWheelTeamIdx] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [waitingForTeams, setWaitingForTeams] = useState(false)
@@ -48,6 +49,8 @@ function HostGame() {
 
   const loadGame = async () => {
     try {
+      // Enregistrer qu'un hôte est connecté — désactive l'auto-validation côté backend
+      await registerHost(code!)
       const gameData = await getGame(code!)
       setGame(gameData)
       await loadQuestion()
@@ -132,8 +135,12 @@ function HostGame() {
     const newTurnCount = turnCount + 1
     setTurnCount(newTurnCount)
 
-    // Roue tous les 5 tours
+    // Roue tous les 5 tours — chaque équipe tourne une fois
     if (newTurnCount % 5 === 0) {
+      const teamIndices = game.teams.map((_, i) => i)
+      setWheelTeamQueue(teamIndices)
+      setWheelTeamIdx(0)
+      setWheelResult(null)
       setShowWheel(true)
       return
     }
@@ -145,10 +152,12 @@ function HostGame() {
 
   const handleSpinWheel = async () => {
     if (!game) return
-    const currentTeam = game.teams[currentTeamIndex]
+    // Spin pour l'équipe courante dans la queue de la roue
+    const teamIdx = wheelTeamQueue.length > 0 ? wheelTeamQueue[wheelTeamIdx] : currentTeamIndex
+    const team = game.teams[teamIdx]
 
     try {
-      const result = await spinWheel(currentTeam.id)
+      const result = await spinWheel(team.id)
       setWheelResult(result)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur roue')
@@ -156,11 +165,22 @@ function HostGame() {
   }
 
   const handleCloseWheel = async () => {
+    if (!game) return
+
+    // Si on est dans un cycle per-team et qu'il reste des équipes
+    if (wheelTeamQueue.length > 0 && wheelTeamIdx < wheelTeamQueue.length - 1) {
+      // Passer à l'équipe suivante dans la queue
+      setWheelTeamIdx(prev => prev + 1)
+      setWheelResult(null)
+      return
+    }
+
+    // Toutes les équipes ont tourné (ou pas de queue) — fermer la roue
     setShowWheel(false)
+    setWheelTeamQueue([])
+    setWheelTeamIdx(0)
     const result = wheelResult
     setWheelResult(null)
-
-    if (!game) return
 
     if (result?.effect_type === 'ping_pong') {
       setShowTeamSelector(true)
@@ -418,9 +438,16 @@ function HostGame() {
           </div>
         </div>
 
-        {/* Modal Roue */}
+        {/* Modal Roue — tourne une fois par équipe */}
         {showWheel && (
-          <WheelModal onSpin={handleSpinWheel} result={wheelResult} onClose={handleCloseWheel} />
+          <WheelModal
+            onSpin={handleSpinWheel}
+            result={wheelResult}
+            onClose={handleCloseWheel}
+            teamName={wheelTeamQueue.length > 0 ? game.teams[wheelTeamQueue[wheelTeamIdx]]?.name : currentTeam.name}
+            teamProgress={wheelTeamQueue.length > 0 ? `${wheelTeamIdx + 1}/${wheelTeamQueue.length}` : undefined}
+            isLastTeam={wheelTeamQueue.length === 0 || wheelTeamIdx >= wheelTeamQueue.length - 1}
+          />
         )}
 
         {/* Team Selector (quand la roue donne ping_pong) */}

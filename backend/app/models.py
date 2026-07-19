@@ -47,6 +47,7 @@ class GameSession(Base):
     total_players = Column(Integer, nullable=False)
     players_per_team = Column(Integer, nullable=False)  # 2 ou 3 selon règles
     is_active = Column(Boolean, default=True)
+    has_host = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relations

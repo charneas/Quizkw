@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getTeamState, submitAnswer, useToken, getPingPongDuelState, getPingPongDuelResults, submitPingPongDuelAnswer } from '../services/api'
+import { getTeamState, submitAnswer, useToken, getPingPongDuelState, getPingPongDuelResults, submitPingPongDuelAnswer, nextQuestion } from '../services/api'
 import type { TokenType } from '../types'
 import PingPongQuestion from '../components/PingPongQuestion'
 import PingPongResults from '../components/PingPongResults'
@@ -37,6 +37,11 @@ interface TeamStateData {
   } | null
   tokens: { id: number; token_type: string; is_used: boolean }[]
   other_teams: { team_id: number; team_name: string; has_answered: boolean }[]
+  all_answered: boolean
+  validation_result: {
+    correct_answer: string
+    teams: { team_name: string; is_correct: boolean; points_earned: number }[]
+  } | null
 }
 
 function TeamScreen() {
@@ -51,6 +56,8 @@ function TeamScreen() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const lastDuelRef = useRef<TeamStateData['active_duel']>(null)
+  const duelResultRef = useRef<any>(null)
 
   useEffect(() => {
     if (code && teamIdNum) {
@@ -62,10 +69,22 @@ function TeamScreen() {
     }
   }, [code, teamIdNum])
 
+  // Sauvegarder les données du duel dans le ref tant qu'il est actif
+  useEffect(() => {
+    if (state?.active_duel) {
+      lastDuelRef.current = state.active_duel
+    }
+  }, [state?.active_duel])
+
+  // Synchroniser le ref avec l'état du duelResult
+  useEffect(() => {
+    duelResultRef.current = duelResult
+  }, [duelResult])
+
   // Quand la question change (ou disparaît), effacer le résultat local de la question précédente
+  // Mais ne PAS effacer duelResult (le duel est indépendant de la question courante)
   useEffect(() => {
     setAnswerResult(null)
-    setDuelResult(null)
   }, [state?.current_question?.id])
 
   const loadState = async () => {
@@ -83,6 +102,11 @@ function TeamScreen() {
     pollingRef.current = setInterval(async () => {
       try {
         const data = await getTeamState(code!, teamIdNum)
+        // Préserver active_duel si on affiche des résultats de duel
+        // (le backend retourne null une fois le duel terminé, mais on veut garder l'UI)
+        if (duelResultRef.current && !data.active_duel && lastDuelRef.current) {
+          data.active_duel = lastDuelRef.current
+        }
         setState(data)
       } catch (err) {
         console.error('Polling error:', err)
@@ -139,6 +163,17 @@ function TeamScreen() {
 
   const handleDuelPass = async () => {
     await handleDuelAnswer('__PASS__')
+  }
+
+  const handleNextQuestion = async () => {
+    if (!code) return
+    try {
+      await nextQuestion(code)
+      setAnswerResult(null)
+      await loadState()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur lors du changement de question')
+    }
   }
 
   const handleUseToken = async (tokenType: TokenType) => {
@@ -248,45 +283,57 @@ function TeamScreen() {
           </div>
         )}
 
-        {/* Réponse envoyée — en attente de validation par l'host */}
-        {state.has_answered && !answerResult && (
+        {/* Résultats validés (auto-validation quand toutes les équipes ont répondu) */}
+        {state.validation_result && (
+          <div className="card border-game-success">
+            <h3 className="text-lg font-bold text-game-success mb-3">✅ Réponses validées !</h3>
+            <p className="text-sm text-slate-400 mb-2">
+              Réponse correcte : <span className="text-white font-semibold">{state.validation_result.correct_answer}</span>
+            </p>
+            <div className="space-y-1 mb-4">
+              {state.validation_result.teams.map((t, idx) => (
+                <div key={idx} className="flex justify-between text-sm">
+                  <span>{t.team_name}</span>
+                  <span className={t.is_correct ? 'text-game-success' : 'text-game-danger'}>
+                    {t.is_correct ? `+${t.points_earned} pts` : '✗'}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <button onClick={handleNextQuestion} className="btn-primary w-full">
+              Tour suivant →
+            </button>
+          </div>
+        )}
+
+        {/* Réponse envoyée — en attente des autres équipes */}
+        {state.has_answered && !state.validation_result && (
           <div className="card text-center py-8 border-game-accent">
             <div className="text-6xl mb-4">📤</div>
             <p className="text-xl text-game-accent font-semibold">
               Réponse envoyée !
             </p>
-            <p className="text-sm text-slate-400 mt-2">
-              En attente de validation par l'hôte...
-            </p>
-          </div>
-        )}
-
-        {/* Résultat de la réponse (après validation host) */}
-        {answerResult && (
-          <div className={`card text-center ${answerResult.is_correct ? 'border-game-success' : 'border-game-danger'}`}>
-            <div className="text-4xl mb-3">{answerResult.is_correct ? '✅' : '❌'}</div>
-            <h3 className={`text-xl font-bold ${answerResult.is_correct ? 'text-game-success' : 'text-game-danger'}`}>
-              {answerResult.is_correct ? 'Bonne réponse !' : 'Mauvaise réponse !'}
-            </h3>
-            {!answerResult.is_correct && (
-              <p className="text-slate-400 mt-2">
-                Réponse : <span className="text-white font-semibold">{answerResult.correct_answer}</span>
+            {answerResult && (
+              <p className={`text-sm mt-2 ${answerResult.is_correct ? 'text-game-success' : 'text-game-danger'}`}>
+                {answerResult.is_correct ? '✅ Bonne réponse !' : '❌ Mauvaise réponse'}
               </p>
             )}
-            <p className="mt-2">
-              +{answerResult.points_earned} points
+            <p className="text-sm text-slate-400 mt-2">
+              ⏳ En attente des autres équipes...
             </p>
           </div>
         )}
 
-        {/* En attente de son tour */}
-        {!state.is_my_turn && !state.active_duel && !state.has_answered && (
+        {/* Pas de question en cours — possibilité d'en lancer une */}
+        {!state.current_question && !state.has_answered && !state.validation_result && !state.active_duel && (
           <div className="card text-center py-8">
-            <div className="text-6xl mb-4 animate-pulse">⏳</div>
-            <p className="text-xl text-slate-400">
-              En attente de votre tour...
+            <div className="text-6xl mb-4">🎯</div>
+            <p className="text-xl text-slate-400 mb-4">
+              Pas de question en cours
             </p>
-            <p className="text-sm text-slate-500 mt-2">L'hôte contrôle le déroulé du jeu</p>
+            <button onClick={handleNextQuestion} className="btn-primary">
+              Lancer une question →
+            </button>
           </div>
         )}
 
@@ -314,6 +361,7 @@ function TeamScreen() {
                 answersUsed={duelResult.final?.answers_used || []}
                 onContinue={async () => {
                   setDuelResult(null)
+                  lastDuelRef.current = null
                   await loadState()
                 }}
               />

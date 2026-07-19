@@ -12,6 +12,7 @@ function Lobby() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [creating, setCreating] = useState(false)
+  const [gameStarted, setGameStarted] = useState(false)
 
   useEffect(() => {
     if (code) {
@@ -49,7 +50,8 @@ function Lobby() {
     if (!code) return
     try {
       await startGame(code)
-      navigate(`/game/${code}/host`)
+      setGameStarted(true)
+      await loadGame()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Impossible de démarrer')
     }
@@ -120,9 +122,18 @@ function Lobby() {
                       </p>
                     </div>
                   </div>
-                  <span className="text-sm text-slate-500">
-                    Score : {team.score}
-                  </span>
+                  {gameStarted ? (
+                    <button
+                      onClick={() => navigate(`/game/${code}/team/${team.id}`)}
+                      className="btn-primary text-sm px-3 py-1"
+                    >
+                      Rejoindre →
+                    </button>
+                  ) : (
+                    <span className="text-sm text-slate-500">
+                      Score : {team.score}
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
@@ -163,19 +174,39 @@ function Lobby() {
           </div>
         )}
 
-        {/* Bouton démarrer */}
-        <div className="flex gap-3">
-          <button onClick={() => navigate('/')} className="btn-secondary flex-1">
-            ← Retour
-          </button>
-          <button
-            onClick={handleStartGame}
-            disabled={game.teams.length < 2}
-            className="btn-success flex-1 text-lg disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            🎯 Démarrer le jeu
-          </button>
-        </div>
+        {/* Boutons d'action */}
+        {gameStarted ? (
+          <div className="space-y-3">
+            <div className="card text-center bg-game-success/10 border-game-success">
+              <p className="text-game-success font-semibold text-lg mb-2">🎯 Jeu démarré !</p>
+              <p className="text-sm text-slate-400">Chaque équipe peut rejoindre en cliquant sur "Rejoindre" ci-dessus.</p>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => navigate('/')} className="btn-secondary flex-1">
+                ← Retour
+              </button>
+              <button
+                onClick={() => navigate(`/game/${code}/host`)}
+                className="btn-secondary flex-1 text-sm"
+              >
+                📺 Écran hôte (optionnel)
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex gap-3">
+            <button onClick={() => navigate('/')} className="btn-secondary flex-1">
+              ← Retour
+            </button>
+            <button
+              onClick={handleStartGame}
+              disabled={game.teams.length < 2}
+              className="btn-success flex-1 text-lg disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              🎯 Démarrer le jeu
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )
