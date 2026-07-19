@@ -4,6 +4,7 @@ import type {
   AnswerResponse,
   WheelSpinResponse,
   MemoryGridState,
+  MemoryGridCreateResponse,
   CreateGameRequest,
   CreateTeamRequest,
   SubmitAnswerRequest,
@@ -132,7 +133,7 @@ export async function spinWheel(teamId: number) {
 // === Grille Mémoire ===
 
 export async function createMemoryGrid(code: string) {
-  return fetchApi<MemoryGridState>(`/games/${code}/memory-grid/create`, {
+  return fetchApi<MemoryGridCreateResponse>(`/games/${code}/memory-grid/create`, {
     method: 'POST',
   })
 }
@@ -155,7 +156,7 @@ export async function revealCell(data: SelectCellRequest) {
 }
 
 export async function answerCell(data: AnswerCellRequest) {
-  return fetchApi<{ status: string; is_correct: boolean; points_awarded: number }>('/memory-grid/answer-cell', {
+  return fetchApi<{ status: string; points_awarded: number; cell_type: string }>('/memory-grid/answer-cell', {
     method: 'POST',
     body: JSON.stringify(data),
   })

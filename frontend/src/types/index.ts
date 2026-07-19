@@ -68,6 +68,7 @@ export interface GridCell {
   row: number
   col: number
   status: GridCellStatus
+  assigned_team_id: number | null
   matched_by_team_id: number | null
   question: Question | null
 }
@@ -75,6 +76,8 @@ export interface GridCell {
 export interface MemoryGridData {
   id: number
   game_session_id: number
+  rows: number
+  cols: number
   grid_size: number
   current_turn: number
   is_completed: boolean
@@ -83,6 +86,16 @@ export interface MemoryGridData {
 export interface MemoryGridState {
   memory_grid: MemoryGridData
   cells: GridCell[]
+}
+
+// Simple grid creation response (from POST /memory-grid/create)
+export interface MemoryGridCreateResponse {
+  id: number
+  game_session_id: number
+  rows: number
+  cols: number
+  current_turn: number
+  is_completed: boolean
 }
 
 // Enums

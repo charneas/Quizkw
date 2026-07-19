@@ -83,7 +83,7 @@ function Lobby() {
 
   return (
     <div className="min-h-screen p-4">
-      <DevHelper code={code!} />
+      {import.meta.env.DEV && <DevHelper code={code!} />}
       <div className="max-w-2xl mx-auto space-y-6">
         {/* Header */}
         <div className="text-center">
@@ -161,9 +161,11 @@ function Lobby() {
               </button>
             </div>
             
-            <p className="text-xs text-slate-400 mt-2">
-              Note: Pour démarrer, utilisez le bouton rouge "DEV: Fast Track" ci-dessus. Il créera automatiquement les joueurs nécessaires pour chaque équipe.
-            </p>
+            {import.meta.env.DEV && (
+              <p className="text-xs text-slate-400 mt-2">
+                Note: Pour démarrer, utilisez le bouton rouge "DEV: Fast Track" ci-dessus. Il créera automatiquement les joueurs nécessaires pour chaque équipe.
+              </p>
+            )}
           </div>
         )}
 

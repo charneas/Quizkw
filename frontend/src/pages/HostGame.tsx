@@ -320,6 +320,10 @@ function HostGame() {
     }
   }
 
+  const handleAdvanceToPhase3 = async () => {
+    navigate(`/game/${code}/memory-grid`)
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -354,9 +358,14 @@ function HostGame() {
               Tour {turnCount + 1} • Code: <span className="font-mono font-bold text-game-accent">{game.code}</span>
             </p>
           </div>
-          <button onClick={handleAdvanceToPhase2} className="btn-secondary text-sm">
-            Passer en Manche 2 →
-          </button>
+          <div className="flex gap-2">
+            <button onClick={handleAdvanceToPhase2} className="btn-secondary text-sm">
+              Manche 2 →
+            </button>
+            <button onClick={handleAdvanceToPhase3} className="btn-primary text-sm">
+              🧠 Manche 3 →
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

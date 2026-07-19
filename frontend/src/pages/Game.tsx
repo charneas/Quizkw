@@ -350,7 +350,7 @@ function Game() {
 
   return (
     <div className="min-h-screen p-4">
-      <DevHelper code={code!} />
+      {import.meta.env.DEV && <DevHelper code={code!} />}
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">

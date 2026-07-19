@@ -236,28 +236,55 @@ class MemoryGridManager:
         if not memory_grid:
             return None
         
-        cells = self.db.query(GridCell).filter(GridCell.memory_grid_id == memory_grid_id).all()
+        cells = self.db.query(GridCell).filter(
+            GridCell.memory_grid_id == memory_grid_id
+        ).order_by(GridCell.row, GridCell.col).all()
         
-        # Convert to dict format
-        grid_state = []
+        # Map status: backend 'answered' → frontend 'matched'
+        def map_status(status):
+            if status == GridCellStatus.ANSWERED:
+                return 'matched'
+            return status.value
+        
+        # Convert to dict format matching frontend MemoryGridState type
+        cells_data = []
         for cell in cells:
-            grid_state.append({
+            # Load question text if cell is revealed/answered
+            question_data = None
+            if cell.status != GridCellStatus.HIDDEN and cell.question_id:
+                q = self.db.query(Question).filter(Question.id == cell.question_id).first()
+                if q:
+                    question_data = {
+                        'id': q.id,
+                        'text': q.text,
+                        'category': q.category,
+                        'difficulty': q.difficulty.value,
+                        'points': q.points,
+                        'correct_answer': q.correct_answer,
+                    }
+            
+            cells_data.append({
                 'id': cell.id,
+                'memory_grid_id': memory_grid_id,
                 'row': cell.row,
                 'col': cell.col,
-                'status': cell.status.value,
+                'status': map_status(cell.status),
                 'assigned_team_id': cell.assigned_team_id,
-                'answered_by_team_id': cell.answered_by_team_id,
-                'question_id': cell.question_id
+                'matched_by_team_id': cell.answered_by_team_id,
+                'question': question_data,
             })
         
         return {
-            'memory_grid_id': memory_grid_id,
-            'rows': memory_grid.rows,
-            'cols': memory_grid.cols,
-            'current_turn': memory_grid.current_turn,
-            'is_completed': memory_grid.is_completed,
-            'cells': grid_state
+            'memory_grid': {
+                'id': memory_grid_id,
+                'game_session_id': memory_grid.game_session_id,
+                'rows': memory_grid.rows,
+                'cols': memory_grid.cols,
+                'grid_size': memory_grid.cols,  # alias for frontend
+                'current_turn': memory_grid.current_turn,
+                'is_completed': memory_grid.is_completed,
+            },
+            'cells': cells_data,
         }
     
     def advance_turn(self, memory_grid_id):

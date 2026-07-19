@@ -204,8 +204,8 @@ def get_detailed_memory_grid_state(memory_grid_id: int, db: Session = Depends(ge
                 "row": cell["row"],
                 "col": cell["col"],
                 "status": cell["status"],
-                "assigned_team_id": cell["assigned_team_id"],
-                "answered_by_team_id": cell["answered_by_team_id"],
+                "assigned_team_id": cell.get("assigned_team_id"),
+                "answered_by_team_id": cell.get("matched_by_team_id"),  # mapped from backend
                 "question": cell.get("question")
             }
             cells_info.append(cell_info)
