@@ -79,7 +79,8 @@
 - ✅ 52/52 tests backend passent (100%)
 - ✅ Synchronisation des questions COMPLÈTE
 - ✅ Ping-Pong duels COMPLET (17 thèmes, modèles, UI, résultats)
-- ✅ 232 questions en base + 85 questions Round 3
+- ✅ 147 questions + 10 thèmes + 17 thèmes ping-pong en base (vérifié 2026-07-25
+  dans `backend/quizkw.db` — l'ancien chiffre de 232 était inexact)
 - ✅ **Manche 3 — Grille Mémoire COMPLÈTE** (backend + frontend)
   - Backend: `create_memory_grid`, `reveal_cell`, `answer_cell`, `get_grid_state`
   - Frontend: `MemoryGrid.tsx` avec grille 7×5, couleurs par équipe, popup question, scoring
