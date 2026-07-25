@@ -124,7 +124,7 @@ function Lobby() {
                   </div>
                   {gameStarted ? (
                     <button
-                      onClick={() => navigate(`/game/${code}/team/${team.id}`)}
+                      onClick={() => navigate(`/team/${code}/${team.id}`)}
                       className="btn-primary text-sm px-3 py-1"
                     >
                       Rejoindre →
