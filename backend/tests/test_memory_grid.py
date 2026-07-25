@@ -47,6 +47,32 @@ class TestMemoryGridManager:
         # Aucune cellule ne doit être attribuée avant d'avoir été jouée (AD-15)
         assert all(c.points_awarded == 0 for c in cells)
 
+    def test_create_memory_grid_starts_finalists_at_zero_regardless_of_round2_score(
+        self, memory_grid_manager, db_session, sample_game_session, round3_finalists, grid_questions
+    ):
+        """E-002 (AD-1) : les axes de score sont scellés par manche — un
+        finaliste au score de Manche 2 élevé (100, fixture round3_finalists)
+        ne doit démarrer la Manche 3 qu'à zéro, jamais avec un report."""
+        from app.models import PlayerRound2Stats
+
+        round2_scores = {
+            s.player_id: s.score for s in db_session.query(PlayerRound2Stats).filter(
+                PlayerRound2Stats.game_session_id == sample_game_session.id
+            ).all()
+        }
+        assert len(set(round2_scores.values())) > 1, "la fixture doit varier les scores de Manche 2"
+
+        memory_grid_manager.create_memory_grid(
+            game_session_id=sample_game_session.id, rows=7, cols=5
+        )
+
+        round3_stats = db_session.query(PlayerRound3Stats).filter(
+            PlayerRound3Stats.game_session_id == sample_game_session.id
+        ).all()
+        assert len(round3_stats) == len(round3_finalists)
+        assert all(s.score == 0 for s in round3_stats), \
+            "aucun score de Manche 2 ne doit être reporté dans PlayerRound3Stats"
+
     def test_create_memory_grid_excludes_non_finalists(self, memory_grid_manager, db_session,
                                                         sample_game_session, round3_finalists,
                                                         grid_questions):

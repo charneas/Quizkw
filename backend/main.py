@@ -1,3 +1,4 @@
+import logging
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import random
@@ -12,6 +13,16 @@ from app.models import Base
 from app.memory_grid import MemoryGridManager, MemoryGrid, GridCell, MemoryGridRound, GridCellStatus
 from app.round2_manager import Round2Manager
 from main_extended import router
+
+# E-002 : journalisation minimale au niveau module (voir la spine § Deferred —
+# pas d'infrastructure d'observabilité, seulement logging.getLogger standard
+# aux points de transition de phase et d'erreur).
+# basicConfig est nécessaire : sans configuration explicite, le logger racine
+# reste au niveau WARNING par défaut et les logger.info() ajoutés seraient
+# silencieusement ignorés (trouvé en revue de code — l'objectif même de
+# diagnosticabilité de cette story aurait été vide de sens sans ça).
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logger = logging.getLogger(__name__)
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -717,11 +728,16 @@ def advance_to_phase3(code: str, db: Session = Depends(get_db)):
 
     # Check if game is active and can proceed to phase 3
     if not game.is_active:
+        logger.warning("advance_to_phase3 refusé pour %s : partie inactive", code)
         raise HTTPException(status_code=400, detail="Game is not active")
 
     # AD-7 : la transition part de la Manche 2 — un garde vérifie que la
     # manche précédente a réellement eu lieu avant de sauter en Manche 3.
     if game.current_round != models.RoundType.MANCHE_2:
+        logger.warning(
+            "advance_to_phase3 refusé pour %s : partie en %s, pas MANCHE_2",
+            code, game.current_round.value,
+        )
         raise HTTPException(
             status_code=400,
             detail=f"La Manche 3 ne peut démarrer qu'après la Manche 2 ; la partie est en {game.current_round.value}"
@@ -730,6 +746,7 @@ def advance_to_phase3(code: str, db: Session = Depends(get_db)):
     # Advance to round 3
     game.current_round = models.RoundType.MANCHE_3
     db.commit()
+    logger.info("Manche 2 -> Manche 3 : partie %s avancée", code)
 
     return {
         "message": "Successfully advanced to round 3 (memory grid)",
@@ -1123,10 +1140,15 @@ def advance_round2_phase(game_code: str, db: Session = Depends(get_db)):
             db.commit()
         except (LookupError, ValueError) as e:
             db.rollback()
+            logger.warning("qualify_players_from_round1 rejeté pour %s : %s", game_code, e)
             raise HTTPException(status_code=400, detail=str(e))
         except IntegrityError:
             db.rollback()
+            logger.warning("qualify_players_from_round1 en conflit pour %s (rejeu concurrent)", game_code)
             raise HTTPException(status_code=409, detail="Qualification déjà en cours ou en conflit, réessayez")
+        logger.info(
+            "Manche 1 -> Manche 2 : %s joueurs qualifiés pour %s", result["qualified_count"], game_code
+        )
         return schemas.Round2AdvanceResponse(
             new_phase="16_players",
             qualified_count=result["qualified_count"],
@@ -1168,6 +1190,10 @@ def advance_round2_phase(game_code: str, db: Session = Depends(get_db)):
             models.PlayerRound2Stats.qualification_status == models.QualificationStatus.PLAYING,
         ).count()
         if still_playing:
+            logger.info(
+                "Manche 2 -> Manche 3 différée pour %s : %s joueur(s) encore en jeu",
+                game_code, still_playing,
+            )
             raise HTTPException(
                 status_code=400,
                 detail=f"{still_playing} joueur(s) qualifié(s) n'ont pas encore terminé la Manche 2"
@@ -1177,7 +1203,9 @@ def advance_round2_phase(game_code: str, db: Session = Depends(get_db)):
         try:
             result = manager.advance_to_finalists(game.id)
         except ValueError as e:
+            logger.warning("advance_to_finalists rejeté pour %s : %s", game_code, e)
             raise HTTPException(status_code=400, detail=str(e))
+        logger.info("Manche 2 -> Manche 3 : 4 finalistes désignés pour %s", game_code)
         return result
     
     else:

@@ -106,6 +106,22 @@ test.describe('Round 2 E2E Flow - Tournoi 16→8→4', () => {
     await expect(page.locator('text=Join Round 2 Tournament')).not.toBeVisible();
   });
 
+  test('reconnexion sans localStorage : retour à la sélection de joueur plutôt que blocage (E-002)', async ({ page, request }) => {
+    const code = await createGame(request);
+    await page.goto(`/game/${code}/round2`);
+
+    await page.fill('#playerName', 'Sans Storage');
+    await page.click('button:text("Join Tournament")');
+    await expect(page.locator('text=/Player:/')).toBeVisible({ timeout: 5000 });
+
+    // localStorage vidé (autre appareil, navigation privée, cache effacé) :
+    // le joueur doit retomber sur la sélection plutôt que rester bloqué.
+    await page.evaluate((gameCode) => localStorage.removeItem(`quizkw_player_${gameCode}`), code);
+    await page.reload();
+
+    await expect(page.locator('text=Join Round 2 Tournament')).toBeVisible({ timeout: 10000 });
+  });
+
   test("erreur réseau lors de la sélection de thème : un message d'erreur est affiché", async ({ page, request }) => {
     const code = await createGame(request);
     await page.goto(`/game/${code}/round2`);
