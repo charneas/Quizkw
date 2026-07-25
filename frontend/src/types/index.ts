@@ -62,15 +62,29 @@ export interface WheelSpinResponse {
   message: string
 }
 
+// AD-0 : la Manche 3 est individuelle — les cellules appartiennent à des
+// joueurs finalistes, pas à des équipes.
 export interface GridCell {
   id: number
   memory_grid_id: number
   row: number
   col: number
   status: GridCellStatus
-  assigned_team_id: number | null
-  matched_by_team_id: number | null
-  question: Question | null
+  assigned_player_id: number | null
+  matched_by_player_id: number | null
+  points_awarded: number
+  question: GridQuestion | null
+}
+
+// AD-13 : le type reflète ce que le serveur envoie réellement pour une
+// cellule — il n'expédie ni wrong_answers ni created_at ici.
+export interface GridQuestion {
+  id: number
+  text: string
+  category: string
+  difficulty: Difficulty
+  points: number
+  correct_answer: string
 }
 
 export interface MemoryGridData {
@@ -88,14 +102,22 @@ export interface MemoryGridState {
   cells: GridCell[]
 }
 
-// Simple grid creation response (from POST /memory-grid/create)
+// AD-13 : réponse de POST /games/:code/memory-grid/create telle que le serveur
+// la sérialise — il envoie grid_size, pas rows/cols.
 export interface MemoryGridCreateResponse {
   id: number
   game_session_id: number
-  rows: number
-  cols: number
+  grid_size: number
   current_turn: number
   is_completed: boolean
+}
+
+export interface AnswerCellResponse {
+  status: string
+  is_correct: boolean
+  correct_answer: string
+  points_awarded: number
+  cell_type: 'own' | 'stolen' | 'unassigned'
 }
 
 // Enums
@@ -127,15 +149,17 @@ export interface UseTokenRequest {
 
 export interface SelectCellRequest {
   round_id: number
-  team_id: number
+  player_id: number
   cell_id: number
 }
 
 export interface AnswerCellRequest {
   round_id: number
-  team_id: number
+  player_id: number
   cell_id: number
-  is_correct: boolean
+  // AD-3 : on envoie la réponse du joueur ; le serveur seul décide si elle
+  // est juste. Le front ne transmet plus de verdict.
+  player_answer: string
 }
 
 // Round 2 Types (16→8→4 Tournament)

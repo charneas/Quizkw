@@ -203,3 +203,58 @@ def sample_player_stats(db_session, sample_player, sample_game_session):
     db_session.commit()
     db_session.refresh(stats)
     return stats
+
+
+@pytest.fixture
+def round3_finalists(db_session, sample_game_session, sample_team):
+    """Les 4 finalistes de la Manche 3, avec leurs scores de Manche 2.
+
+    AD-0 : la Manche 3 est INDIVIDUELLE et oppose exactement 4 joueurs.
+    Le classement de Manche 2 les désigne ; on crée 6 joueurs notés pour que
+    la sélection des 4 meilleurs soit réellement exercée.
+
+    Retourne la liste des 4 joueurs finalistes, du meilleur au moins bon.
+    """
+    players = []
+    for i in range(6):
+        player = models.Player(name=f"Finaliste {i}", team_id=sample_team.id)
+        db_session.add(player)
+        players.append(player)
+    db_session.commit()
+
+    # Scores décroissants : le joueur 0 est premier, le 5 dernier
+    for rank, player in enumerate(players):
+        db_session.refresh(player)
+        db_session.add(models.PlayerRound2Stats(
+            player_id=player.id,
+            game_session_id=sample_game_session.id,
+            score=100 - rank * 10,
+            questions_answered=10,
+            correct_answers=10 - rank,
+            current_question_index=10,
+            qualification_status=models.QualificationStatus.PLAYING,
+        ))
+    db_session.commit()
+
+    return players[:4]
+
+
+@pytest.fixture
+def grid_questions(db_session):
+    """35 questions suffisantes pour remplir une grille 7x5."""
+    questions = [
+        models.Question(
+            text=f"Question grille {i}",
+            category="Test",
+            difficulty=models.Difficulty.EASY,
+            points=2,
+            correct_answer=f"Reponse {i}",
+            wrong_answers='["a", "b", "c"]',
+            theme_id=None,
+            question_number=i,
+        )
+        for i in range(100, 140)
+    ]
+    db_session.add_all(questions)
+    db_session.commit()
+    return questions

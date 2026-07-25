@@ -12,7 +12,11 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import the Base from your models
 from app.database import Base
-from app import models  # Import all models to ensure they're registered
+# Import EVERY module that defines ORM models, so Base.metadata is complete.
+# Missing one makes autogenerate silently propose dropping its tables.
+from app import models  # noqa: F401 — core entities
+from app import memory_grid  # noqa: F401 — Manche 3 grid models
+from app import memory_grid_enhanced  # noqa: F401 — grid colour/result models
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

@@ -11,6 +11,7 @@ import type {
   UseTokenRequest,
   SelectCellRequest,
   AnswerCellRequest,
+  AnswerCellResponse,
   Team,
 } from '../types'
 
@@ -156,10 +157,64 @@ export async function revealCell(data: SelectCellRequest) {
 }
 
 export async function answerCell(data: AnswerCellRequest) {
-  return fetchApi<{ status: string; points_awarded: number; cell_type: string }>('/memory-grid/answer-cell', {
+  return fetchApi<AnswerCellResponse>('/memory-grid/answer-cell', {
     method: 'POST',
     body: JSON.stringify(data),
   })
+}
+
+// AD-0 : les 4 finalistes de la Manche 3, classés par score de Manche 2.
+export async function getMemoryGridFinalists(code: string) {
+  return fetchApi<{ finalists: number[]; game_session_id: number }>(
+    `/games/${code}/memory-grid/finalists`
+  )
+}
+
+export interface MemoryGridStandings {
+  is_completed: boolean
+  player_scores: Array<{
+    player_id: number
+    player_name: string
+    stolen_cells: number
+    own_theme_cells: number
+    unassigned_cells: number
+    total_score: number
+  }>
+  winner: { player_id: number; player_name: string; total_score: number } | null
+  is_tie: boolean
+  message: string
+}
+
+// Classement final adressé par code de partie (AD-1 : Manche 3 seule).
+export async function getFinalStandings(code: string) {
+  return fetchApi<MemoryGridStandings>(`/games/${code}/memory-grid/standings`)
+}
+
+// Classement courant des finalistes (AD-1 : score de Manche 3 uniquement).
+export async function getMemoryGridStandings(memoryGridId: number) {
+  return fetchApi<{
+    is_completed: boolean
+    player_scores: Array<{
+      player_id: number
+      player_name: string
+      stolen_cells: number
+      own_theme_cells: number
+      unassigned_cells: number
+      total_score: number
+    }>
+    winner: { player_id: number; player_name: string; total_score: number } | null
+    is_tie: boolean
+    message: string
+  }>(`/memory-grid/${memoryGridId}/winner`)
+}
+
+export async function getCurrentPlayerTurn(memoryGridId: number) {
+  return fetchApi<{
+    memory_grid_id: number
+    current_turn: number
+    finalists: number[]
+    current_player_id: number | null
+  }>(`/memory-grid/${memoryGridId}/current-player-turn`)
 }
 
 // === Round 2 (16→8→4 Tournament) ===

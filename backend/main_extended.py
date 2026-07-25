@@ -34,11 +34,14 @@ def select_player_color(request: ColorSelectionRequest, db: Session = Depends(ge
             game_session_id=request.game_session_id,
             color=request.color
         )
+        db.commit()  # AD-5 : l'endpoint possède la transaction
         return result
+    except LookupError as e:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:
+        db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erreur lors de la sélection de couleur: {str(e)}")
 
 @router.post("/theme/select", response_model=ThemeSelectionResponse)
 def select_player_themes(request: ThemeSelectionRequest, db: Session = Depends(get_db)):
@@ -53,11 +56,14 @@ def select_player_themes(request: ThemeSelectionRequest, db: Session = Depends(g
             game_session_id=request.game_session_id,
             theme_ids=request.theme_ids
         )
+        db.commit()  # AD-5 : l'endpoint possède la transaction
         return result
+    except LookupError as e:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:
+        db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erreur lors de la sélection de thèmes: {str(e)}")
 
 @router.get("/colors/available/{game_session_id}", response_model=ColorPaletteResponse)
 def get_available_colors(game_session_id: int, db: Session = Depends(get_db)):
@@ -171,15 +177,25 @@ def get_player_setup_status(player_id: int, game_session_id: int, db: Session = 
     if not game_session:
         raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
     
-    # Pour l'instant, retourner un statut par défaut
-    # Dans une implémentation complète, on vérifierait dans la base de données
+    # La couleur et les thèmes sont désormais réellement persistés sur
+    # PlayerRound3Stats (AD-0), donc ce statut est calculé et non plus simulé.
+    stats = db.query(models.PlayerRound3Stats).filter(
+        models.PlayerRound3Stats.game_session_id == game_session_id,
+        models.PlayerRound3Stats.player_id == player_id,
+    ).first()
+
+    selected_color = stats.color if stats else None
+    selected_themes = stats.selected_theme_ids if stats else None
+    color_selected = selected_color is not None
+    themes_selected = bool(selected_themes) and len(selected_themes) == 3
+
     return PlayerSetupStatusResponse(
         player_id=player_id,
-        color_selected=False,
-        themes_selected=False,
-        selected_color=None,
-        selected_themes=None,
-        setup_complete=False
+        color_selected=color_selected,
+        themes_selected=themes_selected,
+        selected_color=selected_color,
+        selected_themes=selected_themes,
+        setup_complete=color_selected and themes_selected
     )
 
 @router.get("/{memory_grid_id}/detailed-state", response_model=MemoryGridDetailedStateResponse)
@@ -204,8 +220,8 @@ def get_detailed_memory_grid_state(memory_grid_id: int, db: Session = Depends(ge
                 "row": cell["row"],
                 "col": cell["col"],
                 "status": cell["status"],
-                "assigned_team_id": cell.get("assigned_team_id"),
-                "answered_by_team_id": cell.get("matched_by_team_id"),  # mapped from backend
+                "assigned_player_id": cell.get("assigned_player_id"),
+                "answered_by_player_id": cell.get("matched_by_player_id"),
                 "question": cell.get("question")
             }
             cells_info.append(cell_info)
@@ -221,7 +237,7 @@ def get_detailed_memory_grid_state(memory_grid_id: int, db: Session = Depends(ge
             current_turn=memory_grid_info["current_turn"],
             is_completed=memory_grid_info["is_completed"],
             cells=cells_info,
-            current_team_id=None,  # À implémenter
+            current_player_id=None,  # AD-0 : tour du finaliste, à câbler
             current_round=round_info["current_round"]
         )
     except HTTPException:

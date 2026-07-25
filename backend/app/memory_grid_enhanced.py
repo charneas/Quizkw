@@ -54,37 +54,21 @@ class MemoryGridEnhancer:
         Returns:
             dict: Résultat de la sélection
         """
-        from app.models import Player, Team
-        
-        # Vérifier que le joueur existe
+        from app.models import Player
+        from app.memory_grid import MemoryGridManager
+
         player = self.db.query(Player).filter(Player.id == player_id).first()
         if not player:
-            raise ValueError(f"Player {player_id} not found")
-        
-        # Vérifier que la couleur est valide
-        if not isinstance(color, PlayerColor):
-            try:
-                color = PlayerColor(color)
-            except ValueError:
-                raise ValueError(f"Invalid color: {color}. Must be one of {[c.value for c in PlayerColor]}")
-        
-        # Vérifier que la couleur n'est pas déjà prise dans cette session
-        # Pour cela, on doit trouver l'équipe du joueur
-        team = self.db.query(Team).filter(Team.id == player.team_id).first()
-        if not team:
-            raise ValueError(f"Player {player_id} has no team")
-        
-        # Vérifier si une autre équipe a déjà cette couleur
-        # Nous stockerons la couleur dans l'équipe (ou dans une table dédiée)
-        # Pour l'instant, on va ajouter un champ color à Team
-        # Mais comme on ne peut pas modifier le schéma, on va utiliser un dictionnaire en cache
-        # En attendant, on retourne un succès simulé
-        return {
-            "success": True,
-            "player_id": player_id,
-            "color": color.value,
-            "message": f"Color {color.value} selected successfully"
-        }
+            raise LookupError(f"Player {player_id} not found")
+
+        # La couleur est désormais RÉELLEMENT persistée, sur PlayerRound3Stats
+        # (AD-0). Cette méthode retournait auparavant un succès simulé sans rien
+        # écrire ; elle délègue maintenant à l'unique implémentation.
+        result = MemoryGridManager(self.db).select_player_color(
+            game_session_id, player_id, color
+        )
+        result["message"] = f"Couleur {result['color']} enregistrée"
+        return result
     
     def select_themes_for_player(self, player_id, game_session_id, theme_ids):
         """
@@ -98,36 +82,35 @@ class MemoryGridEnhancer:
         Returns:
             dict: Résultat de la sélection
         """
-        from app.models import Theme, Player, Team
-        
-        # Vérifier que le joueur existe
+        from app.models import Theme, Player
+        from app.memory_grid import MemoryGridManager
+
         player = self.db.query(Player).filter(Player.id == player_id).first()
         if not player:
-            raise ValueError(f"Player {player_id} not found")
-        
-        # Vérifier qu'il y a exactement 3 thèmes
+            raise LookupError(f"Player {player_id} not found")
+
         if len(theme_ids) != 3:
             raise ValueError("Exactly 3 themes must be selected")
-        
-        # Vérifier que les thèmes existent
-        themes = self.db.query(Theme).filter(Theme.id.in_(theme_ids)).all()
-        if len(themes) != 3:
-            raise ValueError("One or more themes not found")
-        
-        # Vérifier que les thèmes sont uniques
+
         if len(set(theme_ids)) != 3:
             raise ValueError("Themes must be unique")
-        
-        # Vérifier que les thèmes n'ont pas déjà été sélectionnés par d'autres joueurs
-        # Pour l'instant, on va simplement accepter la sélection
-        # Dans une implémentation complète, on vérifierait dans une table de sélection de thèmes
-        
+
+        themes = self.db.query(Theme).filter(Theme.id.in_(theme_ids)).all()
+        if len(themes) != 3:
+            raise LookupError("One or more themes not found")
+
+        # Persisté pour de bon sur PlayerRound3Stats (AD-0) au lieu du succès
+        # simulé d'avant.
+        MemoryGridManager(self.db).select_player_themes(
+            game_session_id, player_id, theme_ids
+        )
+
         return {
             "success": True,
             "player_id": player_id,
             "theme_ids": theme_ids,
             "theme_names": [theme.name for theme in themes],
-            "message": f"Themes {[theme.name for theme in themes]} selected successfully"
+            "message": f"Thèmes enregistrés : {[theme.name for theme in themes]}"
         }
     
     def get_available_colors(self, game_session_id):
@@ -204,70 +187,80 @@ class MemoryGridEnhancer:
             dict: Résultats du jeu
         """
         from app.memory_grid import MemoryGrid, GridCell, GridCellStatus
-        from app.models import Team
-        
+        from app.models import Player, PlayerRound3Stats
+
         memory_grid = self.db.query(MemoryGrid).filter(MemoryGrid.id == memory_grid_id).first()
         if not memory_grid:
-            raise ValueError(f"Memory grid {memory_grid_id} not found")
-        
-        # Récupérer toutes les équipes de la session
-        teams = self.db.query(Team).filter(Team.game_session_id == memory_grid.game_session_id).all()
-        
-        # Calculer les scores
-        team_scores = []
-        for team in teams:
-            # Score de base (team.score)
-            base_score = team.score
-            
-            # Compter les cellules volées (cellules assignées à d'autres équipes mais répondue par cette équipe)
+            raise LookupError(f"Memory grid {memory_grid_id} not found")
+
+        # AD-0 : la Manche 3 oppose des FINALISTES individuels.
+        # AD-1 : le vainqueur sort du seul score de Manche 3 — aucun score des
+        # manches 1 ou 2 n'entre dans ce calcul.
+        stats_rows = self.db.query(PlayerRound3Stats).filter(
+            PlayerRound3Stats.game_session_id == memory_grid.game_session_id
+        ).all()
+
+        player_scores = []
+        for stats in stats_rows:
+            player = self.db.query(Player).filter(Player.id == stats.player_id).first()
+
             stolen_cells = self.db.query(GridCell).filter(
                 GridCell.memory_grid_id == memory_grid_id,
-                GridCell.answered_by_team_id == team.id,
-                GridCell.assigned_team_id != team.id,
-                GridCell.assigned_team_id.isnot(None),
+                GridCell.answered_by_player_id == stats.player_id,
+                GridCell.assigned_player_id != stats.player_id,
+                GridCell.assigned_player_id.isnot(None),
                 GridCell.status == GridCellStatus.ANSWERED
             ).count()
-            
-            # Compter les cellules de son propre thème
+
             own_theme_cells = self.db.query(GridCell).filter(
                 GridCell.memory_grid_id == memory_grid_id,
-                GridCell.answered_by_team_id == team.id,
-                GridCell.assigned_team_id == team.id,
+                GridCell.answered_by_player_id == stats.player_id,
+                GridCell.assigned_player_id == stats.player_id,
                 GridCell.status == GridCellStatus.ANSWERED
             ).count()
-            
-            # Compter les cellules non assignées
+
             unassigned_cells = self.db.query(GridCell).filter(
                 GridCell.memory_grid_id == memory_grid_id,
-                GridCell.answered_by_team_id == team.id,
-                GridCell.assigned_team_id.is_(None),
+                GridCell.answered_by_player_id == stats.player_id,
+                GridCell.assigned_player_id.is_(None),
                 GridCell.status == GridCellStatus.ANSWERED
             ).count()
-            
-            team_scores.append({
-                "team_id": team.id,
-                "team_name": team.name,
-                "base_score": base_score,
+
+            player_scores.append({
+                "player_id": stats.player_id,
+                "player_name": player.name if player else f"Joueur {stats.player_id}",
                 "stolen_cells": stolen_cells,
                 "own_theme_cells": own_theme_cells,
                 "unassigned_cells": unassigned_cells,
-                "total_score": base_score
+                "total_score": stats.score,
             })
-        
-        # Trier par score total (décroissant)
-        team_scores.sort(key=lambda x: x["total_score"], reverse=True)
-        
-        # Vérifier s'il y a une égalité
-        is_tie = False
-        if len(team_scores) > 1 and team_scores[0]["total_score"] == team_scores[1]["total_score"]:
-            is_tie = True
-        
+
+        player_scores.sort(key=lambda x: x["total_score"], reverse=True)
+
+        is_tie = (
+            len(player_scores) > 1
+            and player_scores[0]["total_score"] == player_scores[1]["total_score"]
+        )
+
+        if not player_scores:
+            return {
+                "is_completed": memory_grid.is_completed,
+                "player_scores": [],
+                "winner": None,
+                "is_tie": False,
+                "message": "Aucun finaliste n'a encore marqué",
+            }
+
         return {
             "is_completed": memory_grid.is_completed,
-            "team_scores": team_scores,
-            "winner": team_scores[0] if not is_tie else None,
+            "player_scores": player_scores,
+            "winner": player_scores[0] if not is_tie else None,
             "is_tie": is_tie,
-            "message": f"Winner: {team_scores[0]['team_name']} with {team_scores[0]['total_score']} points" if not is_tie else "Tie - sudden death round needed"
+            "message": (
+                f"Vainqueur : {player_scores[0]['player_name']} "
+                f"avec {player_scores[0]['total_score']} points"
+                if not is_tie else "Égalité — mort subite nécessaire"
+            )
         }
     
     def get_current_round_info(self, memory_grid_id):
@@ -282,21 +275,16 @@ class MemoryGridEnhancer:
         """
         from app.memory_grid import MemoryGrid
         
+        from app.memory_grid import MemoryGridManager
+
         memory_grid = self.db.query(MemoryGrid).filter(MemoryGrid.id == memory_grid_id).first()
         if not memory_grid:
-            raise ValueError(f"Memory grid {memory_grid_id} not found")
-        
-        # Calculer le round actuel (basé sur le nombre de tours et le nombre d'équipes)
-        teams = self.db.query(Team).filter(Team.game_session_id == memory_grid.game_session_id).all()
-        num_teams = len(teams)
-        
-        if num_teams == 0:
-            current_round = 1
-            max_rounds = 5
-        else:
-            # Chaque round = chaque équipe joue une fois
-            current_round = (memory_grid.current_turn // num_teams) + 1
-            max_rounds = 5
+            raise LookupError(f"Memory grid {memory_grid_id} not found")
+
+        # AD-0 : un round = chaque FINALISTE joue une fois. Ils sont toujours 4.
+        num_finalists = MemoryGridManager.FINALIST_COUNT
+        current_round = (memory_grid.current_turn // num_finalists) + 1
+        max_rounds = 5
         
         # Vérifier si on est en sudden death (tie breaker)
         is_sudden_death = current_round > max_rounds

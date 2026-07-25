@@ -440,3 +440,71 @@ class TestRound2Manager:
         
         stats2 = round2_manager.get_player_stats(player2.id, sample_game_session.id)
         assert stats2.player_id == player2.id, f"BUG DÉTECTÉ: ID de joueur incorrect pour le deuxième joueur"
+
+class TestRound1ToRound2Qualification:
+    """AD-0 / AD-7 : passage de la Manche 1 collective à la Manche 2 individuelle."""
+
+    def _make_team(self, db_session, game, name, score, player_count):
+        from app import models
+        team = models.Team(name=name, game_session_id=game.id, score=score)
+        db_session.add(team)
+        db_session.flush()
+        for i in range(player_count):
+            db_session.add(models.Player(name=f"{name}-J{i}", team_id=team.id))
+        db_session.commit()
+        return team
+
+    def test_best_teams_send_all_their_players_up_to_eight(self, round2_manager, db_session,
+                                                           sample_game_session):
+        from app import models
+        # 4 équipes de 3, scores décroissants : les 3 meilleures fournissent 9
+        # joueurs, tronqués aux 8 places de la Manche 2.
+        self._make_team(db_session, sample_game_session, "Alpha", 90, 3)
+        self._make_team(db_session, sample_game_session, "Bravo", 70, 3)
+        self._make_team(db_session, sample_game_session, "Charlie", 50, 3)
+        weakest = self._make_team(db_session, sample_game_session, "Delta", 10, 3)
+
+        result = round2_manager.qualify_players_from_round1(sample_game_session.id)
+        db_session.commit()
+
+        assert result["qualified_count"] == 8
+        assert result["current_round"] == "manche_2"
+
+        weakest_player_ids = {p.id for p in weakest.players}
+        assert not (set(result["qualified_player_ids"]) & weakest_player_ids), \
+            "l'équipe la moins bien classée ne doit pas être qualifiée"
+
+        # AD-1 : chaque qualifié démarre à zéro
+        stats = db_session.query(models.PlayerRound2Stats).filter(
+            models.PlayerRound2Stats.game_session_id == sample_game_session.id
+        ).all()
+        assert len(stats) == 8
+        assert all(s.score == 0 for s in stats)
+
+    def test_transition_sets_manche_2(self, round2_manager, db_session, sample_game_session):
+        """AD-7 : la phase la plus manquante du tournoi est enfin écrite."""
+        from app import models
+        self._make_team(db_session, sample_game_session, "Alpha", 50, 2)
+
+        assert sample_game_session.current_round == models.RoundType.MANCHE_1
+
+        round2_manager.qualify_players_from_round1(sample_game_session.id)
+        db_session.commit()
+        db_session.refresh(sample_game_session)
+
+        assert sample_game_session.current_round == models.RoundType.MANCHE_2
+
+    def test_qualifying_twice_is_rejected(self, round2_manager, db_session, sample_game_session):
+        """AD-7 : le compare-and-set empêche une double qualification."""
+        self._make_team(db_session, sample_game_session, "Alpha", 50, 2)
+
+        round2_manager.qualify_players_from_round1(sample_game_session.id)
+        db_session.commit()
+
+        with pytest.raises(ValueError):
+            round2_manager.qualify_players_from_round1(sample_game_session.id)
+
+    def test_no_teams_raises(self, round2_manager, sample_game_session):
+        with pytest.raises(ValueError) as exc_info:
+            round2_manager.qualify_players_from_round1(sample_game_session.id)
+        assert "Aucune équipe" in str(exc_info.value)
