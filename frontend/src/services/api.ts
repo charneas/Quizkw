@@ -163,6 +163,17 @@ export async function answerCell(data: AnswerCellRequest) {
   })
 }
 
+// C-003 : fait passer au tour suivant quand le timer client arrive à 0.
+// expectedTurn permet un compare-and-set côté serveur : si un autre client
+// (ou une réponse) a déjà fait avancer le tour, l'appel est ignoré au lieu
+// de sauter un tour supplémentaire.
+export async function skipTurn(memoryGridId: number, expectedTurn: number) {
+  return fetchApi<{ memory_grid_id: number; current_turn: number }>(
+    `/memory-grid/${memoryGridId}/skip-turn?expected_turn=${expectedTurn}`,
+    { method: 'POST' }
+  )
+}
+
 // AD-0 : les 4 finalistes de la Manche 3, classés par score de Manche 2.
 export async function getMemoryGridFinalists(code: string) {
   return fetchApi<{ finalists: number[]; game_session_id: number }>(

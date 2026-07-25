@@ -16,7 +16,7 @@ from app.models import (
     GameSession, Team, Player, PlayerRound2Stats, PlayerRound3Stats,
     Theme, ThemeCategory, Question, Difficulty, RoundType,
 )
-from app.memory_grid import MemoryGrid
+from app.memory_grid import MemoryGrid, GridCell
 
 
 class TestMemoryGridRound3API:
@@ -211,6 +211,125 @@ class TestMemoryGridRound3API:
 
         assert response.status_code == 400
         assert "invalide" in response.json()["detail"].lower()
+
+    # --- Tours et synchronisation (C-003) ---
+
+    def _create_grid_and_round(self):
+        create_response = self.client.post(
+            f"/games/{self.game.code}/memory-grid/create-with-themes?rows=7&cols=5"
+        )
+        memory_grid_id = create_response.json()["id"]
+
+        start_response = self.client.post(f"/games/{self.game.code}/memory-grid/start")
+        round_id = start_response.json()["round_id"]
+
+        return memory_grid_id, round_id
+
+    def test_answer_cell_advances_turn(self):
+        memory_grid_id, round_id = self._create_grid_and_round()
+        first_player = self.finalists[0].id
+
+        cell = self.db_session.query(GridCell).filter(
+            GridCell.memory_grid_id == memory_grid_id
+        ).first()
+        question = self.db_session.query(Question).filter(Question.id == cell.question_id).first()
+
+        self.client.post("/memory-grid/reveal-cell", json={
+            "round_id": round_id, "player_id": first_player, "cell_id": cell.id,
+        })
+        self.client.post("/memory-grid/answer-cell", json={
+            "round_id": round_id, "player_id": first_player, "cell_id": cell.id,
+            "player_answer": question.correct_answer,
+        })
+
+        turn_response = self.client.get(f"/memory-grid/{memory_grid_id}/current-player-turn")
+        assert turn_response.json()["current_player_id"] != first_player
+
+    def test_skip_turn_advances_without_answering(self):
+        memory_grid_id, _ = self._create_grid_and_round()
+        first_player = self.finalists[0].id
+
+        response = self.client.post(f"/memory-grid/{memory_grid_id}/skip-turn")
+        assert response.status_code == 200
+        assert response.json()["current_turn"] == 1
+
+        turn_response = self.client.get(f"/memory-grid/{memory_grid_id}/current-player-turn")
+        assert turn_response.json()["current_player_id"] != first_player
+
+    def test_skip_turn_missing_grid(self):
+        response = self.client.post("/memory-grid/999999/skip-turn")
+        assert response.status_code == 404
+
+    def test_skip_turn_wraps_around_finalists(self):
+        """Le tourniquet boucle : après 4 skip-turn, on retrouve le premier joueur."""
+        memory_grid_id, _ = self._create_grid_and_round()
+        first_player = self.finalists[0].id
+
+        for _ in range(4):
+            response = self.client.post(f"/memory-grid/{memory_grid_id}/skip-turn")
+            assert response.status_code == 200
+
+        turn_response = self.client.get(f"/memory-grid/{memory_grid_id}/current-player-turn")
+        assert turn_response.json()["current_player_id"] == first_player
+
+    def test_skip_turn_ignores_stale_expected_turn(self):
+        """C-003 : un second client dont le timer expire pour le même tour ne doit pas
+        avancer une deuxième fois (compare-and-set sur expected_turn)."""
+        memory_grid_id, _ = self._create_grid_and_round()
+
+        first = self.client.post(f"/memory-grid/{memory_grid_id}/skip-turn?expected_turn=0")
+        assert first.status_code == 200
+        assert first.json()["current_turn"] == 1
+
+        # Un autre onglet, dont le timer avait démarré avant ce premier skip,
+        # rappelle avec le même expected_turn périmé : ignoré, pas de second avancement.
+        stale = self.client.post(f"/memory-grid/{memory_grid_id}/skip-turn?expected_turn=0")
+        assert stale.status_code == 200
+        assert stale.json()["current_turn"] == 1
+
+    def test_skip_turn_resets_revealed_cell_to_hidden(self):
+        """C-003 : une cellule révélée mais jamais répondue ne doit pas rester
+        exposée gratuitement au joueur suivant après un timeout."""
+        memory_grid_id, round_id = self._create_grid_and_round()
+        first_player = self.finalists[0].id
+
+        cell = self.db_session.query(GridCell).filter(
+            GridCell.memory_grid_id == memory_grid_id
+        ).first()
+        self.client.post("/memory-grid/reveal-cell", json={
+            "round_id": round_id, "player_id": first_player, "cell_id": cell.id,
+        })
+
+        self.client.post(f"/memory-grid/{memory_grid_id}/skip-turn")
+
+        self.db_session.expire_all()
+        refreshed = self.db_session.query(GridCell).filter(GridCell.id == cell.id).first()
+        assert refreshed.status.value == "hidden"
+
+    def test_create_memory_grid_is_idempotent(self):
+        """C-003 Scenario 6 : un rechargement de page ne doit pas recréer la grille."""
+        first = self.client.post(f"/games/{self.game.code}/memory-grid/create")
+        assert first.status_code == 200
+        second = self.client.post(f"/games/{self.game.code}/memory-grid/create")
+        assert second.status_code == 200
+
+        assert first.json()["id"] == second.json()["id"]
+
+        cells = self.db_session.query(GridCell).filter(
+            GridCell.memory_grid_id == first.json()["id"]
+        ).all()
+        assert len(cells) == 35
+
+    def test_start_memory_grid_round_is_idempotent(self):
+        """C-003 Scenario 6 : un rechargement de page ne doit pas repartir sur un nouveau round."""
+        self.client.post(f"/games/{self.game.code}/memory-grid/create")
+
+        first = self.client.post(f"/games/{self.game.code}/memory-grid/start")
+        second = self.client.post(f"/games/{self.game.code}/memory-grid/start")
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert first.json()["round_id"] == second.json()["round_id"]
 
     # --- Performance ---
 

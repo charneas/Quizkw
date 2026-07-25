@@ -191,9 +191,13 @@ class Round2Manager:
             models.PlayerRound2Stats.qualification_status == models.QualificationStatus.QUALIFIED
         ).order_by(desc(models.PlayerRound2Stats.score)).all()
         
-        # Pour MVP: top 8 qualifiés
-        qualified_players = all_players[:8] if len(all_players) >= 8 else all_players
-        eliminated_players = all_players[8:] if len(all_players) > 8 else []
+        # Le round1 qualifie déjà des équipes entières (8 ou 9 joueurs au
+        # total, jamais plus) : ne jamais couper une équipe qualifiée ici non
+        # plus. Cette coupe ne doit intervenir qu'au-delà de la tolérance
+        # partagée avec advance_to_finalists.
+        cutoff = self.ROUND2_SLOTS + 1
+        qualified_players = all_players[:cutoff] if len(all_players) > cutoff else all_players
+        eliminated_players = all_players[cutoff:] if len(all_players) > cutoff else []
         
         # Mettre à jour les statuts
         cutoff_score = qualified_players[-1].score if qualified_players else 0
@@ -221,8 +225,11 @@ class Round2Manager:
             models.PlayerRound2Stats.qualification_status == models.QualificationStatus.QUALIFIED
         ).order_by(desc(models.PlayerRound2Stats.score)).all()
         
-        if len(qualified_players) != 8:
-            raise ValueError(f"Attendu 8 joueurs qualifiés, trouvé {len(qualified_players)}")
+        if len(qualified_players) not in (self.ROUND2_SLOTS, self.ROUND2_SLOTS + 1):
+            raise ValueError(
+                f"Attendu {self.ROUND2_SLOTS} ou {self.ROUND2_SLOTS + 1} joueurs qualifiés, "
+                f"trouvé {len(qualified_players)}"
+            )
         
         # Top 4 deviennent finalistes
         finalists = qualified_players[:4]
@@ -366,7 +373,12 @@ class Round2Manager:
         if not qualified:
             raise ValueError("Aucun joueur à qualifier : les équipes sont vides")
 
-        qualified = qualified[:self.ROUND2_SLOTS]
+        if len(qualified) > self.ROUND2_SLOTS + 1:
+            raise ValueError(
+                f"La qualification par équipes entières a dépassé la tolérance "
+                f"({len(qualified)} joueurs, max {self.ROUND2_SLOTS + 1}) : "
+                "composition d'équipes incompatible avec le nombre de places Manche 2"
+            )
 
         # Chaque qualifié démarre la Manche 2 à zéro (AD-1)
         for player in qualified:

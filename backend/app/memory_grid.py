@@ -249,6 +249,7 @@ class MemoryGridManager:
             "correct_answer": question.correct_answer,
             "points_awarded": points,
             "cell_type": cell_type,
+            "memory_grid_id": round_obj.memory_grid_id,
         }
 
     def _get_or_create_round3_stats(self, game_session_id, player_id):
@@ -331,32 +332,33 @@ class MemoryGridManager:
         }
     
     def advance_turn(self, memory_grid_id):
-        """Advance to the next turn in the memory grid"""
+        """Advance to the next turn in the memory grid.
+        AD-5 : pas de commit ici, l'endpoint possède la transaction."""
         memory_grid = self.db.query(MemoryGrid).filter(MemoryGrid.id == memory_grid_id).first()
         if not memory_grid:
             return None
-        
+
         memory_grid.current_turn += 1
-        self.db.commit()
-        self.db.refresh(memory_grid)
-        
+        self.db.flush()
+
         return memory_grid.current_turn
-    
+
     def check_completion(self, memory_grid_id):
-        """Check if the memory grid is completed (all cells answered)"""
+        """Check if the memory grid is completed (all cells answered).
+        AD-5 : pas de commit ici, l'endpoint possède la transaction."""
         memory_grid = self.db.query(MemoryGrid).filter(MemoryGrid.id == memory_grid_id).first()
         if not memory_grid:
             return None
-        
+
         cells = self.db.query(GridCell).filter(GridCell.memory_grid_id == memory_grid_id).all()
-        
+
         # Check if all cells are answered
         all_answered = all(cell.status == GridCellStatus.ANSWERED for cell in cells)
-        
+
         if all_answered:
             memory_grid.is_completed = True
-            self.db.commit()
-        
+            self.db.flush()
+
         return all_answered
     
     # Round 3 Enhanced Methods

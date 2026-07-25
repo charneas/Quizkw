@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   getGame,
@@ -10,8 +10,15 @@ import {
   revealCell,
   answerCell,
   advanceToPhase3,
+  skipTurn,
 } from '../services/api'
 import type { GameSession, MemoryGridState, GridCell } from '../types'
+
+// C-003 AC2 : durée de tour, alignée sur le pattern déjà utilisé en Manche 2.
+const TURN_DURATION_SECONDS = 30
+// C-003 AC4 : synchronisation par polling (décision d'architecture du 2026-07-24,
+// cf. epics-and-stories.md § C-003 AC4 — pas de WebSocket).
+const POLL_INTERVAL_MS = 2000
 
 // AD-0 : la Manche 3 est INDIVIDUELLE — 4 finalistes, pas des équipes.
 // Chaque finaliste porte une couleur, dans l'ordre du classement de Manche 2.
@@ -22,10 +29,17 @@ const FINALIST_COLORS = [
   { bg: 'bg-yellow-600/40', border: 'border-yellow-400', text: 'text-yellow-300' },
 ]
 
+// 35 cellules fixes (grille 7x5, cf. create_memory_grid(rows=7, cols=5)).
+const TOTAL_GRID_CELLS = 35
+
 interface Standing {
   player_id: number
   player_name: string
   total_score: number
+  // C-004 : déjà renvoyées par GET /memory-grid/{id}/winner, ignorées jusqu'ici.
+  stolen_cells: number
+  own_theme_cells: number
+  unassigned_cells: number
 }
 
 function MemoryGrid() {
@@ -39,6 +53,10 @@ function MemoryGrid() {
   const [standings, setStandings] = useState<Standing[]>([])
   // AD-8 : le serveur possède l'ordre des tours — pas de compteur local.
   const [currentPlayerId, setCurrentPlayerId] = useState<number | null>(null)
+  // C-003 : le tour observé, transmis à skip-turn pour un compare-and-set
+  // (chaque client connecté fait tourner son propre timer et pourrait sinon
+  // appeler skip-turn plusieurs fois pour le même timeout).
+  const [currentTurn, setCurrentTurn] = useState<number | null>(null)
   const [selectedCell, setSelectedCell] = useState<GridCell | null>(null)
   const [answerText, setAnswerText] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -51,10 +69,78 @@ function MemoryGrid() {
   const [loading, setLoading] = useState(true)
   const [initStep, setInitStep] = useState('')
   const [error, setError] = useState('')
+  const [timeRemaining, setTimeRemaining] = useState<number | null>(null)
+  // C-004 : effet visuel transitoire sur la cellule qui vient d'être jouée,
+  // en plus de la modale de feedback existante. S'efface tout seul — ne doit
+  // pas être dérivé de gridState pour ne pas se redéclencher à chaque poll.
+  const [lastCaptured, setLastCaptured] = useState<{ cellId: number; isCorrect: boolean } | null>(null)
+  // Évite qu'un timeout d'effacement périmé (capture précédente) n'efface la
+  // capture suivante si deux réponses arrivent à moins de 1200ms d'intervalle.
+  const lastCapturedCellRef = useRef<number | null>(null)
+  // Le polling (2s) et les rafraîchissements déclenchés par une action peuvent
+  // se chevaucher ; une réponse réseau en retard ne doit jamais écraser un
+  // état plus récent déjà affiché — on ne garde que la réponse la plus récente émise.
+  const refreshSeq = useRef(0)
+  // React.StrictMode double-invoque les effets au montage en dev : sans ce
+  // garde, initGrid() partirait deux fois en parallèle et créerait deux
+  // grilles concurrentes (la vérification d'idempotence côté backend est
+  // sujette à une course entre deux requêtes quasi simultanées).
+  const initStarted = useRef(false)
+
+  const totalCells = gridState?.cells.length || 0
+  const matchedCells = gridState?.cells.filter((c) => c.status === 'matched').length || 0
+  const progress = totalCells > 0 ? Math.round((matchedCells / totalCells) * 100) : 0
+  const isCompleted = gridState?.memory_grid.is_completed || progress === 100
 
   useEffect(() => {
-    if (code) initGrid()
+    if (code && !initStarted.current) {
+      initStarted.current = true
+      initGrid()
+    }
   }, [code])
+
+  // C-003 AC4 : polling 2s pour que tous les finalistes voient converger
+  // l'état de la grille sans action manuelle. S'arrête une fois la partie
+  // terminée (plus rien à synchroniser, écran de résultats affiché).
+  useEffect(() => {
+    if (!gridId || isCompleted) return
+    const interval = setInterval(refreshState, POLL_INTERVAL_MS)
+    return () => clearInterval(interval)
+  }, [gridId, isCompleted])
+
+  // C-003 AC2/AC3 : le timer redémarre à chaque changement de joueur courant.
+  useEffect(() => {
+    if (currentPlayerId === null || isCompleted) {
+      setTimeRemaining(null)
+      return
+    }
+    setTimeRemaining(TURN_DURATION_SECONDS)
+  }, [currentPlayerId])
+
+  // C-003 AC4 : décompte du timer, un skip-turn déclenché une seule fois à 0.
+  useEffect(() => {
+    if (timeRemaining === null) return
+    if (timeRemaining <= 0) {
+      if (gridId && currentTurn !== null) {
+        skipTurn(gridId, currentTurn)
+          .then(refreshState)
+          .catch(() => {
+            // Échec réseau : le prochain poll resynchronisera l'état, mais on
+            // retente une fois tout de suite pour ne pas rester bloqué à 0
+            // jusqu'au prochain cycle de polling (jusqu'à 2s).
+            setTimeout(() => {
+              skipTurn(gridId, currentTurn).then(refreshState).catch(() => {
+                setError("Impossible de passer le tour, nouvelle tentative au prochain rafraîchissement.")
+              })
+            }, 500)
+          })
+      }
+      return
+    }
+
+    const timer = setTimeout(() => setTimeRemaining((prev) => (prev !== null ? prev - 1 : null)), 1000)
+    return () => clearTimeout(timer)
+  }, [timeRemaining, gridId])
 
   // Couleur d'un finaliste, d'après son rang au classement
   const colorFor = (playerId: number | null) => {
@@ -107,15 +193,35 @@ function MemoryGrid() {
     ])
     setStandings(board.player_scores)
     setCurrentPlayerId(turn.current_player_id)
+    setCurrentTurn(turn.current_turn)
   }
 
   const refreshState = async () => {
     if (!gridId) return
+    // Chaque requête applique son propre résultat dès qu'il arrive (pas de
+    // Promise.all groupé) pour ne pas retarder l'affichage de la grille
+    // derrière les requêtes de classement/tour, qui sont moins urgentes.
+    // Le garde de séquence évite seulement qu'une réponse issue d'un appel
+    // plus ancien n'écrase un état plus récent.
+    const seq = ++refreshSeq.current
     try {
-      setGridState(await getMemoryGridState(gridId))
-      await refreshPlayers(gridId)
+      const state = await getMemoryGridState(gridId)
+      if (seq === refreshSeq.current) setGridState(state)
     } catch (err) {
-      console.error('Erreur refresh:', err)
+      console.error('Erreur refresh (state):', err)
+    }
+    try {
+      const [board, turn] = await Promise.all([
+        getMemoryGridStandings(gridId),
+        getCurrentPlayerTurn(gridId),
+      ])
+      if (seq === refreshSeq.current) {
+        setStandings(board.player_scores)
+        setCurrentPlayerId(turn.current_player_id)
+        setCurrentTurn(turn.current_turn)
+      }
+    } catch (err) {
+      console.error('Erreur refresh (joueurs):', err)
     }
   }
 
@@ -157,12 +263,25 @@ function MemoryGrid() {
         isCorrect: result.is_correct,
         correctAnswer: result.correct_answer,
       })
+      // C-004 Scenario 1 : effet visuel sur la cellule elle-même, en plus de
+      // la modale de feedback ci-dessus.
+      setLastCaptured({ cellId: selectedCell.id, isCorrect: result.is_correct })
+      lastCapturedCellRef.current = selectedCell.id
 
+      // On attend que l'état rafraîchi (score, progression) soit appliqué
+      // AVANT de fermer la modale de la cellule : sinon le plateau affiché
+      // derrière peut brièvement montrer l'ancien score pendant la requête.
+      await refreshState()
       setSelectedCell(null)
       setAnswerText('')
-      await refreshState()
 
       setTimeout(() => setAnswerFeedback(null), 3000)
+      const capturedCellId = selectedCell.id
+      setTimeout(() => {
+        // Ne pas effacer une capture plus récente si une deuxième réponse est
+        // arrivée entre-temps (moins de 1200ms d'écart entre deux captures).
+        if (lastCapturedCellRef.current === capturedCellId) setLastCaptured(null)
+      }, 1200)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur réponse')
     } finally {
@@ -171,11 +290,6 @@ function MemoryGrid() {
   }
 
   const handleEndGame = () => navigate(`/results/${code}`)
-
-  const totalCells = gridState?.cells.length || 0
-  const matchedCells = gridState?.cells.filter((c) => c.status === 'matched').length || 0
-  const progress = totalCells > 0 ? Math.round((matchedCells / totalCells) * 100) : 0
-  const isCompleted = gridState?.memory_grid.is_completed || progress === 100
 
   if (loading) {
     return (
@@ -205,11 +319,21 @@ function MemoryGrid() {
   const cols = gridState.memory_grid.cols || gridState.memory_grid.grid_size || 5
 
   const getCellStyle = (cell: GridCell) => {
+    // C-004 Scenario 1 : effet de capture, différencié bonne/mauvaise réponse.
+    const captureEffect =
+      lastCaptured?.cellId === cell.id
+        ? lastCaptured.isCorrect
+          ? 'animate-success-pulse'
+          : 'animate-error-shake'
+        : ''
+
     if (cell.status === 'matched') {
       const color = colorFor(cell.matched_by_player_id)
-      return color
-        ? `${color.bg} ${color.border} border-2 cursor-not-allowed`
-        : 'bg-game-success/30 border-2 border-game-success cursor-not-allowed'
+      return `${captureEffect} ${
+        color
+          ? `${color.bg} ${color.border} border-2 cursor-not-allowed`
+          : 'bg-game-success/30 border-2 border-game-success cursor-not-allowed'
+      }`
     }
     if (cell.status === 'revealed') {
       return 'bg-game-accent/30 border-2 border-game-accent animate-pulse cursor-not-allowed'
@@ -255,21 +379,30 @@ function MemoryGrid() {
 
         {isCompleted ? (
           <div className="card text-center py-12">
-            <h2 className="text-4xl font-bold text-game-accent mb-4">🎉 Partie terminée !</h2>
+            <div className="text-6xl mb-2 animate-bounce-once">🏆</div>
+            <h2 className="text-4xl font-bold text-game-accent mb-4 animate-fade-in">Partie terminée !</h2>
             <p className="text-slate-400 mb-6">Toutes les cellules ont été découvertes.</p>
-            <div className="max-w-sm mx-auto space-y-2">
-              {standings.map((s, idx) => (
-                <div
-                  key={s.player_id}
-                  className="flex justify-between items-center card py-2 px-4"
-                >
-                  <span className={FINALIST_COLORS[idx % FINALIST_COLORS.length].text}>
-                    {idx === 0 ? '🏆 ' : `${idx + 1}. `}
-                    {s.player_name}
-                  </span>
-                  <span className="font-bold">{s.total_score} pts</span>
-                </div>
-              ))}
+            <div className="max-w-lg mx-auto space-y-2">
+              {standings.map((s, idx) => {
+                const cellsControlled = (s.stolen_cells ?? 0) + (s.own_theme_cells ?? 0) + (s.unassigned_cells ?? 0)
+                const controlPercent = Math.round((cellsControlled / TOTAL_GRID_CELLS) * 100)
+                return (
+                  <div key={s.player_id} className="card py-2 px-4 text-left">
+                    <div className="flex justify-between items-center">
+                      <span className={FINALIST_COLORS[idx % FINALIST_COLORS.length].text}>
+                        {idx === 0 ? '🏆 ' : `${idx + 1}. `}
+                        {s.player_name}
+                      </span>
+                      <span className="font-bold">{s.total_score} pts</span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">
+                      {cellsControlled}/{TOTAL_GRID_CELLS} cellules contrôlées ({controlPercent}%)
+                      {' — '}
+                      {s.own_theme_cells ?? 0} propres, {s.stolen_cells ?? 0} volées, {s.unassigned_cells ?? 0} neutres
+                    </p>
+                  </div>
+                )
+              })}
             </div>
             <button onClick={handleEndGame} className="btn-primary mt-6 text-lg px-8 py-3">
               Voir les résultats →
@@ -311,6 +444,21 @@ function MemoryGrid() {
                 <p className="text-xs text-slate-500 mt-1">
                   Cliquez sur une cellule cachée pour la révéler
                 </p>
+                {timeRemaining !== null && (
+                  <div className="mt-3">
+                    <p className={`text-sm font-bold ${timeRemaining <= 5 ? 'text-game-danger animate-timer-pulse' : 'text-slate-300'}`}>
+                      ⏱ {timeRemaining}s
+                    </p>
+                    <div className="h-2 bg-primary-800 rounded-full overflow-hidden mt-1">
+                      <div
+                        className={`h-full transition-all duration-1000 ease-linear ${
+                          timeRemaining <= 5 ? 'bg-game-danger' : timeRemaining <= 10 ? 'bg-yellow-500' : 'bg-game-success'
+                        }`}
+                        style={{ width: `${(timeRemaining / TURN_DURATION_SECONDS) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               {answerFeedback && (

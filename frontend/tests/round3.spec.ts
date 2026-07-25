@@ -153,8 +153,12 @@ test.describe('Manche 3 - Grille mémoire (E2E réel)', () => {
     // ============================================================
     // Écran de victoire et redirection vers les résultats
     // ============================================================
-    await expect(page.locator('text=🎉 Partie terminée !')).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator('text=Partie terminée !')).toBeVisible({ timeout: 20_000 });
     await expect(page.locator('text=4 finalistes')).toBeVisible();
+
+    // C-004 : statistiques de fin de partie par finaliste (cellules contrôlées).
+    await expect(page.locator('text=/cellules contrôlées/').first()).toBeVisible();
+    await expect(page.locator('text=/propres, \\d+ volées, \\d+ neutres/').first()).toBeVisible();
 
     await page.click('button:has-text("Voir les résultats →")');
     await page.waitForURL(/\/results\//, { timeout: 10_000 });

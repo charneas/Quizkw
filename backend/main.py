@@ -4,6 +4,7 @@ import random
 import string
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 
 from app.database import get_db, engine
 from app import models, schemas
@@ -538,10 +539,20 @@ def create_memory_grid(code: str, db: Session = Depends(get_db)):
     # Vérifier que le jeu est à la manche 3
     if game.current_round != models.RoundType.MANCHE_3:
         raise HTTPException(status_code=400, detail="La grille mémoire est seulement disponible en manche 3")
-    
+
+    # Idempotence (reconnexion / rechargement de page) : une grille non
+    # complétée existe déjà pour cette partie, on la retourne plutôt que
+    # d'en recréer une (et de perdre la progression en cours).
+    existing = db.query(MemoryGrid).filter(
+        MemoryGrid.game_session_id == game.id,
+        MemoryGrid.is_completed == False
+    ).first()
+    if existing:
+        return existing
+
     manager = MemoryGridManager(db)
     memory_grid = manager.create_memory_grid(game.id, rows=7, cols=5)
-    
+
     return memory_grid
 
 @app.post("/games/{code}/memory-grid/start", response_model=schemas.StartMemoryGridRoundResponse)
@@ -561,10 +572,23 @@ def start_memory_grid_round(code: str, db: Session = Depends(get_db)):
     
     if not memory_grid:
         raise HTTPException(status_code=404, detail="Aucune grille mémoire active trouvée")
-    
+
+    # Idempotence (reconnexion / rechargement de page) : un round actif
+    # existe déjà pour cette grille, on le retourne plutôt que d'en créer
+    # un nouveau (qui réinitialiserait le joueur courant).
+    existing_round = db.query(MemoryGridRound).filter(
+        MemoryGridRound.memory_grid_id == memory_grid.id,
+        MemoryGridRound.is_active == True
+    ).first()
+    if existing_round:
+        return {
+            "round_id": existing_round.id,
+            "message": "Tour de grille mémoire déjà en cours"
+        }
+
     manager = MemoryGridManager(db)
     round_obj = manager.start_memory_grid_round(game.id, memory_grid.id)
-    
+
     return {
         "round_id": round_obj.id,
         "message": "Tour de grille mémoire démarré"
@@ -620,6 +644,10 @@ def answer_cell(answer_request: schemas.AnswerCellRequest, db: Session = Depends
             answer_request.cell_id,
             answer_request.player_answer,
         )
+        # Une réponse (correcte ou non) clôt le tour du joueur courant : le
+        # tour passe au finaliste suivant (tourniquet de advance_turn).
+        manager.advance_turn(result["memory_grid_id"])
+        manager.check_completion(result["memory_grid_id"])
         db.commit()
     except LookupError as e:
         db.rollback()
@@ -629,6 +657,43 @@ def answer_cell(answer_request: schemas.AnswerCellRequest, db: Session = Depends
         raise HTTPException(status_code=400, detail=str(e))
 
     return result
+
+@app.post("/memory-grid/{memory_grid_id}/skip-turn")
+def skip_turn(memory_grid_id: int, expected_turn: int = None, db: Session = Depends(get_db)):
+    """
+    Fait passer la grille mémoire au tour suivant sans réponse à une cellule
+    (déclenché par le timer de tour côté client quand il arrive à 0).
+
+    C-003 : chaque client connecté fait tourner son propre timer et peut donc
+    appeler ce endpoint indépendamment pour le même timeout. `expected_turn`
+    (le tour observé par le client au moment où son timer a démarré) permet un
+    compare-and-set : si le tour a déjà avancé depuis (réponse d'un joueur ou
+    skip-turn d'un autre client), cet appel est ignoré au lieu de sauter un
+    tour supplémentaire.
+    """
+    manager = MemoryGridManager(db)
+
+    memory_grid = db.query(MemoryGrid).filter(MemoryGrid.id == memory_grid_id).first()
+    if not memory_grid:
+        raise HTTPException(status_code=404, detail="Memory grid not found")
+
+    if expected_turn is not None and memory_grid.current_turn != expected_turn:
+        return {"memory_grid_id": memory_grid_id, "current_turn": memory_grid.current_turn}
+
+    # La cellule éventuellement révélée par le joueur dont le tour expire
+    # redevient cachée : sinon le joueur suivant hériterait d'une question
+    # déjà exposée gratuitement.
+    revealed_cell = db.query(GridCell).filter(
+        GridCell.memory_grid_id == memory_grid_id,
+        GridCell.status == GridCellStatus.REVEALED
+    ).first()
+    if revealed_cell:
+        revealed_cell.status = GridCellStatus.HIDDEN
+
+    new_turn = manager.advance_turn(memory_grid_id)
+    db.commit()
+
+    return {"memory_grid_id": memory_grid_id, "current_turn": new_turn}
 
 @app.post("/games/{code}/advance-to-phase3")
 def advance_to_phase3(code: str, db: Session = Depends(get_db)):
@@ -1029,10 +1094,30 @@ def advance_round2_phase(game_code: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Game session not found")
     
     manager = Round2Manager(db)
-    
+
+    # H-007 : le bouton "Manche 2 →" n'a jamais appelé qualify-round2 ; sans
+    # PlayerRound2Stats, la qualification n'a jamais eu lieu. On la déclenche
+    # ici pour que /round2/{code}/advance fonctionne seul depuis la Manche 1.
+    if game.current_round == models.RoundType.MANCHE_1:
+        try:
+            result = manager.qualify_players_from_round1(game.id)
+            db.commit()
+        except (LookupError, ValueError) as e:
+            db.rollback()
+            raise HTTPException(status_code=400, detail=str(e))
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="Qualification déjà en cours ou en conflit, réessayez")
+        return schemas.Round2AdvanceResponse(
+            new_phase="16_players",
+            qualified_count=result["qualified_count"],
+            eliminated_count=0,
+            message=f"{result['qualified_count']} joueurs qualifiés pour la Manche 2"
+        )
+
     # Check current phase
     progress = manager.get_tournament_progress(game.id)
-    
+
     if progress.phase == "16_players":
         # Check if all players have finished
         all_players = db.query(models.PlayerRound2Stats).filter(
@@ -1056,8 +1141,24 @@ def advance_round2_phase(game_code: str, db: Session = Depends(get_db)):
         )
     
     elif progress.phase == "8_qualified":
+        # Ne pas promouvoir tant qu'un joueur qualifié joue encore sa Manche 2
+        # (get_tournament_progress passe en "8_qualified" dès que 8 joueurs
+        # ont terminé, même si un 9e est toujours PLAYING).
+        still_playing = db.query(models.PlayerRound2Stats).filter(
+            models.PlayerRound2Stats.game_session_id == game.id,
+            models.PlayerRound2Stats.qualification_status == models.QualificationStatus.PLAYING,
+        ).count()
+        if still_playing:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{still_playing} joueur(s) qualifié(s) n'ont pas encore terminé la Manche 2"
+            )
+
         # Advance to 4 finalists
-        result = manager.advance_to_finalists(game.id)
+        try:
+            result = manager.advance_to_finalists(game.id)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
         return result
     
     else:

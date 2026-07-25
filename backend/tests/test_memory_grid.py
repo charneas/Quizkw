@@ -285,3 +285,67 @@ class TestMemoryGridManager:
 
         assert len(finalists) == 4
         assert finalists == [p.id for p in round3_finalists]
+
+    def test_answer_cell_returns_memory_grid_id(self, memory_grid_manager, db_session,
+                                                sample_game_session, round3_finalists,
+                                                grid_questions):
+        """C-003 : le manager expose memory_grid_id pour que l'endpoint avance le tour."""
+        grid = memory_grid_manager.create_memory_grid(
+            game_session_id=sample_game_session.id, rows=7, cols=5
+        )
+        round_obj = memory_grid_manager.start_memory_grid_round(sample_game_session.id, grid.id)
+        player = round3_finalists[0]
+
+        cell = db_session.query(GridCell).filter(GridCell.memory_grid_id == grid.id).first()
+        question = db_session.query(Question).filter(Question.id == cell.question_id).first()
+
+        memory_grid_manager.reveal_cell(round_obj.id, player.id, cell.id)
+        result = memory_grid_manager.answer_cell(
+            round_id=round_obj.id, player_id=player.id, cell_id=cell.id,
+            player_answer=question.correct_answer,
+        )
+
+        assert result["memory_grid_id"] == grid.id
+
+    def test_advance_turn_does_not_commit(self, memory_grid_manager, db_session,
+                                          sample_game_session, monkeypatch):
+        """AD-5 : advance_turn ne doit que flush — l'appelant possède la transaction."""
+        from app.memory_grid import MemoryGrid
+
+        grid = MemoryGrid(game_session_id=sample_game_session.id, rows=7, cols=5, current_turn=0)
+        db_session.add(grid)
+        db_session.commit()
+
+        commit_called = []
+        monkeypatch.setattr(db_session, "commit", lambda: commit_called.append(True))
+
+        result = memory_grid_manager.advance_turn(grid.id)
+
+        assert result == 1
+        assert grid.current_turn == 1  # visible dans la session (flush), sans commit
+        assert commit_called == []  # advance_turn n'a pas appelé commit lui-même
+
+    def test_check_completion_marks_grid_completed(self, memory_grid_manager, db_session,
+                                                    sample_game_session, round3_finalists,
+                                                    grid_questions):
+        """C-003 : toutes les cellules répondues -> is_completed devient vrai."""
+        grid = memory_grid_manager.create_memory_grid(
+            game_session_id=sample_game_session.id, rows=7, cols=5
+        )
+        round_obj = memory_grid_manager.start_memory_grid_round(sample_game_session.id, grid.id)
+        player = round3_finalists[0]
+
+        cells = db_session.query(GridCell).filter(GridCell.memory_grid_id == grid.id).all()
+        for cell in cells:
+            memory_grid_manager.reveal_cell(round_obj.id, player.id, cell.id)
+            question = db_session.query(Question).filter(Question.id == cell.question_id).first()
+            memory_grid_manager.answer_cell(
+                round_id=round_obj.id, player_id=player.id, cell_id=cell.id,
+                player_answer=question.correct_answer,
+            )
+        db_session.commit()
+
+        assert memory_grid_manager.check_completion(grid.id) is True
+        db_session.commit()
+        db_session.refresh(grid)
+        assert grid.is_completed is True
