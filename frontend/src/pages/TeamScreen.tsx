@@ -55,9 +55,18 @@ function TeamScreen() {
   const [duelResult, setDuelResult] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  // E-001 AC1/AC4 : dès que le serveur signale (AD-8) que la partie a quitté
+  // la Manche 1, on l'explique puis on redirige automatiquement vers l'écran
+  // de Manche 2 — jusqu'ici la seule navigation existante était le clic de
+  // l'hôte sur son propre écran, qui ne redirigeait personne d'autre.
+  const [advancingToPhase, setAdvancingToPhase] = useState<string | null>(null)
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const lastDuelRef = useRef<TeamStateData['active_duel']>(null)
   const duelResultRef = useRef<any>(null)
+  // Ref plutôt que le state advancingToPhase lui-même : sinon le mettre à
+  // jour redéclencherait cet effet (il est nécessairement dans les deps pour
+  // le lire) et son nettoyage annulerait le timer qu'il vient de programmer.
+  const hasStartedAdvanceRef = useRef(false)
 
   useEffect(() => {
     if (code && teamIdNum) {
@@ -68,6 +77,19 @@ function TeamScreen() {
       if (pollingRef.current) clearInterval(pollingRef.current)
     }
   }, [code, teamIdNum])
+
+  useEffect(() => {
+    if (!state || state.game_phase === 'manche_1' || hasStartedAdvanceRef.current) return
+
+    hasStartedAdvanceRef.current = true
+    setAdvancingToPhase(state.game_phase)
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current)
+      pollingRef.current = null
+    }
+    const timer = setTimeout(() => navigate(`/game/${code}/round2`), 1800)
+    return () => clearTimeout(timer)
+  }, [state?.game_phase, code, navigate])
 
   // Sauvegarder les données du duel dans le ref tant qu'il est actif
   useEffect(() => {
@@ -189,6 +211,28 @@ function TeamScreen() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-2xl text-slate-400 animate-pulse">Connexion à la partie...</div>
+      </div>
+    )
+  }
+
+  if (advancingToPhase) {
+    // Le libellé reflète la phase réellement observée : un joueur peut charger
+    // cet écran pour la première fois alors que la partie est déjà en Manche 3
+    // (rechargement tardif, onglet ouvert après les deux transitions) — le
+    // texte ne doit pas prétendre que la Manche 1 vient tout juste de finir
+    // dans ce cas (trouvé en revue de code).
+    const message =
+      advancingToPhase === 'manche_3'
+        ? "La partie est déjà en Manche 3. Direction la Manche 2 pour voir où vous en êtes dans le tournoi..."
+        : 'Votre équipe a joué son rôle collectif dans la Manche 1. La suite se joue individuellement — direction la Manche 2 pour choisir votre thème...'
+
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="card text-center max-w-md">
+          <div className="text-5xl mb-4">🏁</div>
+          <h2 className="text-2xl font-bold text-game-accent mb-2">Manche 1 terminée !</h2>
+          <p className="text-slate-400">{message}</p>
+        </div>
       </div>
     )
   }

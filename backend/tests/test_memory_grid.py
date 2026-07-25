@@ -47,6 +47,33 @@ class TestMemoryGridManager:
         # Aucune cellule ne doit être attribuée avant d'avoir été jouée (AD-15)
         assert all(c.points_awarded == 0 for c in cells)
 
+    def test_create_memory_grid_excludes_non_finalists(self, memory_grid_manager, db_session,
+                                                        sample_game_session, round3_finalists,
+                                                        grid_questions):
+        """E-001 AC #3 : un joueur de Manche 2 non retenu comme finaliste ne
+        doit avoir aucune ligne PlayerRound3Stats — il ne doit pas pouvoir
+        se retrouver dans la Manche 3."""
+        from app.models import PlayerRound2Stats
+
+        all_round2_players = db_session.query(PlayerRound2Stats).filter(
+            PlayerRound2Stats.game_session_id == sample_game_session.id
+        ).all()
+        finalist_ids = {p.id for p in round3_finalists}
+        non_finalist_ids = {p.player_id for p in all_round2_players} - finalist_ids
+        assert non_finalist_ids, "la fixture doit contenir des joueurs non finalistes"
+
+        memory_grid_manager.create_memory_grid(
+            game_session_id=sample_game_session.id, rows=7, cols=5
+        )
+
+        stats_player_ids = {
+            s.player_id for s in db_session.query(PlayerRound3Stats).filter(
+                PlayerRound3Stats.game_session_id == sample_game_session.id
+            ).all()
+        }
+        assert stats_player_ids == finalist_ids
+        assert not (stats_player_ids & non_finalist_ids)
+
     def test_create_memory_grid_no_round2_results(self, memory_grid_manager,
                                                   sample_game_session, grid_questions):
         """Sans résultat de Manche 2, aucun finaliste ne peut être désigné."""

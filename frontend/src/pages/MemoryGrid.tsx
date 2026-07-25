@@ -160,22 +160,22 @@ function MemoryGrid() {
       setGame(gameData)
 
       if (gameData.current_round !== 'manche_3') {
-        setInitStep('Passage en Manche 3...')
+        setInitStep('Manche 2 terminée — les 4 finalistes accèdent à la Manche 3...')
         await advanceToPhase3(code!)
       }
 
-      setInitStep('Création de la grille mémoire...')
+      setInitStep('Préparation de la grille mémoire 7×5 pour les 4 finalistes...')
       const grid = await createMemoryGrid(code!)
       setGridId(grid.id)
 
       setInitStep('Chargement des cellules...')
       setGridState(await getMemoryGridState(grid.id))
 
-      setInitStep('Démarrage du round...')
+      setInitStep('Démarrage du tournoi final...')
       const round = await startMemoryGridRound(code!)
       setRoundId(round.round_id)
 
-      setInitStep('Chargement des finalistes...')
+      setInitStep('Détermination du premier tour...')
       await refreshPlayers(grid.id)
 
       setInitStep('')

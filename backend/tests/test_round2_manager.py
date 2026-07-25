@@ -612,6 +612,81 @@ class TestRound1ToRound2Qualification:
         from app.round2_manager import Round2Manager
         return Round2Manager(db_session)
 
+    def test_advance_blocks_promotion_while_a_qualified_player_still_playing(
+        self, test_client, db_session, sample_game_session, sample_theme, sample_questions_for_theme
+    ):
+        """E-001 (Task 1) : get_tournament_progress bascule la phase à
+        "8_qualified" dès que 8 joueurs ont fini, même si un 9e est encore
+        PLAYING. /round2/{code}/advance ne doit pas promouvoir tant que ce
+        9e joueur n'a pas terminé — sinon il reste bloqué en PLAYING pour
+        toujours (finding de revue de code corrigé avant cette story)."""
+        from app import models
+
+        self._make_team(db_session, sample_game_session, "Alpha", 90, 3)
+        self._make_team(db_session, sample_game_session, "Bravo", 70, 3)
+        self._make_team(db_session, sample_game_session, "Charlie", 50, 3)
+
+        qualify_response = test_client.post(f"/round2/{sample_game_session.code}/advance")
+        assert qualify_response.status_code == 200
+        assert qualify_response.json()["qualified_count"] == 9
+
+        stats_list = db_session.query(models.PlayerRound2Stats).filter(
+            models.PlayerRound2Stats.game_session_id == sample_game_session.id
+        ).all()
+
+        # 8 des 9 joueurs terminent leurs 10 questions ; le 9e reste PLAYING.
+        still_playing_stats = stats_list[0]
+        for stats in stats_list[1:]:
+            round2_manager = self._round2_manager(db_session)
+            round2_manager.select_theme(stats.player_id, sample_game_session.id, sample_theme.id)
+            for question in sample_questions_for_theme:
+                round2_manager.submit_answer(
+                    stats.player_id, sample_game_session.id, question.id, question.correct_answer
+                )
+        db_session.commit()
+
+        response = test_client.post(f"/round2/{sample_game_session.code}/advance")
+        assert response.status_code == 400
+        assert "1 joueur" in response.json()["detail"]
+
+        db_session.refresh(still_playing_stats)
+        assert still_playing_stats.qualification_status == models.QualificationStatus.PLAYING
+
+    def test_advance_promotes_once_all_eight_qualified_players_finish(
+        self, test_client, db_session, sample_game_session, sample_theme, sample_questions_for_theme
+    ):
+        """Chemin nominal : exactement 8 qualifiés, tous terminent avant que
+        l'hôte ne clique "avancer" — la promotion 8→4 doit fonctionner sans
+        régression après l'ajout du garde `still_playing`."""
+        from app import models
+
+        self._make_team(db_session, sample_game_session, "Alpha", 90, 3)
+        self._make_team(db_session, sample_game_session, "Bravo", 70, 2)
+        self._make_team(db_session, sample_game_session, "Charlie", 50, 3)
+
+        qualify_response = test_client.post(f"/round2/{sample_game_session.code}/advance")
+        assert qualify_response.status_code == 200
+        assert qualify_response.json()["qualified_count"] == 8
+
+        stats_list = db_session.query(models.PlayerRound2Stats).filter(
+            models.PlayerRound2Stats.game_session_id == sample_game_session.id
+        ).all()
+        for stats in stats_list:
+            round2_manager = self._round2_manager(db_session)
+            round2_manager.select_theme(stats.player_id, sample_game_session.id, sample_theme.id)
+            for question in sample_questions_for_theme:
+                round2_manager.submit_answer(
+                    stats.player_id, sample_game_session.id, question.id, question.correct_answer
+                )
+        db_session.commit()
+
+        response = test_client.post(f"/round2/{sample_game_session.code}/advance")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["new_phase"] == "4_finalists"
+        assert body["qualified_count"] == 4
+        assert body["eliminated_count"] == 4
+
     def test_advance_endpoint_qualifies_from_manche_1_without_manual_api_call(
         self, test_client, db_session, sample_game_session
     ):

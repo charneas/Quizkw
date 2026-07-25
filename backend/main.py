@@ -703,15 +703,34 @@ def advance_to_phase3(code: str, db: Session = Depends(get_db)):
     game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
     if not game:
         raise HTTPException(status_code=404, detail="Game session not found")
-    
+
+    # Idempotent : plusieurs finalistes peuvent atterrir sur l'écran Manche 3
+    # en même temps et déclencher cet appel simultanément (AD-7 : un rejeu ne
+    # doit pas échouer). Vérifié AVANT le garde is_active : un rejeu après que
+    # la partie a été désactivée (ex. fin de partie) reste un no-op réussi
+    # plutôt qu'un faux "Game is not active" trompeur (trouvé en revue de code).
+    if game.current_round == models.RoundType.MANCHE_3:
+        return {
+            "message": "La partie est déjà en Manche 3",
+            "current_round": game.current_round.value
+        }
+
     # Check if game is active and can proceed to phase 3
     if not game.is_active:
         raise HTTPException(status_code=400, detail="Game is not active")
-    
+
+    # AD-7 : la transition part de la Manche 2 — un garde vérifie que la
+    # manche précédente a réellement eu lieu avant de sauter en Manche 3.
+    if game.current_round != models.RoundType.MANCHE_2:
+        raise HTTPException(
+            status_code=400,
+            detail=f"La Manche 3 ne peut démarrer qu'après la Manche 2 ; la partie est en {game.current_round.value}"
+        )
+
     # Advance to round 3
     game.current_round = models.RoundType.MANCHE_3
     db.commit()
-    
+
     return {
         "message": "Successfully advanced to round 3 (memory grid)",
         "current_round": game.current_round.value
