@@ -589,30 +589,45 @@ def reveal_cell(reveal_request: schemas.SelectCellRequest, db: Session = Depends
     Révéler une cellule dans la grille mémoire
     """
     manager = MemoryGridManager(db)
-    result = manager.reveal_cell(reveal_request.round_id, reveal_request.team_id, reveal_request.cell_id)
-    
-    if not result:
-        raise HTTPException(status_code=404, detail="Erreur lors de la révélation de la cellule")
-    
-    if "error" in result:
-        raise HTTPException(status_code=400, detail=result["error"])
-    
+    # AD-5 : l'endpoint possède la transaction. AD-6 : LookupError -> 404, ValueError -> 400.
+    try:
+        result = manager.reveal_cell(
+            reveal_request.round_id, reveal_request.player_id, reveal_request.cell_id
+        )
+        db.commit()
+    except LookupError as e:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+
     return result
 
 @app.post("/memory-grid/answer-cell")
 def answer_cell(answer_request: schemas.AnswerCellRequest, db: Session = Depends(get_db)):
     """
-    Répondre à une cellule révélée dans la grille mémoire
+    Répondre à une cellule révélée dans la grille mémoire.
+
+    AD-3 : le corps porte la RÉPONSE du joueur, pas un verdict de correction.
+    Le serveur compare lui-même à la bonne réponse.
     """
     manager = MemoryGridManager(db)
-    result = manager.answer_cell(answer_request.round_id, answer_request.team_id, answer_request.cell_id, answer_request.is_correct)
-    
-    if not result:
-        raise HTTPException(status_code=404, detail="Erreur lors de la réponse à la cellule")
-    
-    if "error" in result:
-        raise HTTPException(status_code=400, detail=result["error"])
-    
+    try:
+        result = manager.answer_cell(
+            answer_request.round_id,
+            answer_request.player_id,
+            answer_request.cell_id,
+            answer_request.player_answer,
+        )
+        db.commit()
+    except LookupError as e:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+
     return result
 
 @app.post("/games/{code}/advance-to-phase3")
@@ -659,48 +674,102 @@ def create_memory_grid_with_themes(code: str, rows: int = 7, cols: int = 5, db: 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@app.get("/games/{code}/memory-grid/team-ranking")
-def get_team_ranking_from_round2(code: str, db: Session = Depends(get_db)):
+@app.get("/games/{code}/memory-grid/finalists")
+def get_finalists_from_round2(code: str, db: Session = Depends(get_db)):
     """
-    Get team ranking based on Round 2 PlayerRound2Stats scores.
-    Returns list of team IDs sorted by total score (descending).
+    Les 4 finalistes de la Manche 3, classés par score de Manche 2.
+    AD-0 : la Manche 3 est individuelle — on classe des JOUEURS.
     """
     game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
     if not game:
         raise HTTPException(status_code=404, detail="Game session not found")
-    
+
     manager = MemoryGridManager(db)
-    team_ranking = manager.get_team_ranking_from_round2(game.id)
-    
+    try:
+        finalists = manager.get_finalists_from_round2(game.id)
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
     return {
-        "team_ranking": team_ranking,
+        "finalists": finalists,
         "game_session_id": game.id
     }
 
-@app.get("/memory-grid/{memory_grid_id}/current-team-turn")
-def get_current_team_turn(memory_grid_id: int, db: Session = Depends(get_db)):
+@app.post("/games/{code}/qualify-round2")
+def qualify_players_from_round1(code: str, db: Session = Depends(get_db)):
     """
-    Determine which team should play based on current turn and team ranking.
+    Qualifier les 8 joueurs de la Manche 2 depuis les meilleures équipes.
+
+    AD-0 : Manche 1 collective -> Manche 2 individuelle (8 joueurs).
+    AD-7 : c'est cette transition qui pose enfin MANCHE_2.
+    AD-5 : l'endpoint possède la transaction.
+    """
+    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Game session not found")
+
+    manager = Round2Manager(db)
+    try:
+        result = manager.qualify_players_from_round1(game.id)
+        db.commit()
+        return result
+    except LookupError as e:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/games/{code}/memory-grid/standings")
+def get_memory_grid_standings(code: str, db: Session = Depends(get_db)):
+    """
+    Classement final des finalistes de la Manche 3, adressé par code de partie.
+
+    AD-1 : c'est la Manche 3 SEULE qui désigne le vainqueur du tournoi ; aucun
+    score des manches 1 ou 2 n'entre dans ce classement.
+    """
+    from app.memory_grid_enhanced import MemoryGridEnhancer
+
+    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Game session not found")
+
+    memory_grid = db.query(MemoryGrid).filter(
+        MemoryGrid.game_session_id == game.id
+    ).order_by(MemoryGrid.id.desc()).first()
+    if not memory_grid:
+        raise HTTPException(status_code=404, detail="Aucune grille mémoire pour cette partie")
+
+    try:
+        return MemoryGridEnhancer(db).calculate_winner(memory_grid.id)
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.get("/memory-grid/{memory_grid_id}/current-player-turn")
+def get_current_player_turn(memory_grid_id: int, db: Session = Depends(get_db)):
+    """
+    Le finaliste dont c'est le tour, en tourniquet sur le classement de Manche 2.
     """
     manager = MemoryGridManager(db)
-    
-    # Get memory grid
+
     memory_grid = db.query(MemoryGrid).filter(MemoryGrid.id == memory_grid_id).first()
     if not memory_grid:
         raise HTTPException(status_code=404, detail="Memory grid not found")
-    
-    # Get team ranking for this game session
-    team_ranking = manager.get_team_ranking_from_round2(memory_grid.game_session_id)
-    if not team_ranking:
-        raise HTTPException(status_code=400, detail="No team ranking available")
-    
-    current_team_id = manager.get_current_team_turn(memory_grid_id, team_ranking)
-    
+
+    try:
+        finalists = manager.get_finalists_from_round2(memory_grid.game_session_id)
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    current_player_id = manager.get_current_player_turn(memory_grid_id, finalists)
+
     return {
         "memory_grid_id": memory_grid_id,
         "current_turn": memory_grid.current_turn,
-        "team_ranking": team_ranking,
-        "current_team_id": current_team_id
+        "finalists": finalists,
+        "current_player_id": current_player_id
     }
 
 @app.get("/games/{code}/available-colors")
@@ -723,20 +792,28 @@ def get_available_colors(code: str, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting available colors: {str(e)}")
 
-@app.post("/teams/{team_id}/select-color")
-def select_team_color(team_id: int, color: str, db: Session = Depends(get_db)):
+@app.post("/memory-grid/select-color")
+def select_player_color(request: schemas.ColorSelectionRequest, db: Session = Depends(get_db)):
     """
-    Select a color for a team in Round 3.
-    Validates color is available and unique.
+    Attribuer une couleur à un finaliste de la Manche 3.
+
+    AD-0 : les couleurs appartiennent aux joueurs, pas aux équipes.
+    AD-12 : l'entrée passe par le corps de requête, jamais en paramètre d'URL.
+    AD-5 : l'endpoint possède la transaction.
     """
     manager = MemoryGridManager(db)
     try:
-        result = manager.select_team_color(team_id, color)
+        result = manager.select_player_color(
+            request.game_session_id, request.player_id, request.color
+        )
+        db.commit()
         return result
+    except LookupError as e:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:
+        db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error selecting color: {str(e)}")
 
 # Round 2 Endpoints (16→8→4 Tournament)
 @app.get("/round2/{game_code}/themes")

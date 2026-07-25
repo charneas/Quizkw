@@ -226,7 +226,7 @@ class MemoryGridStateResponse(BaseModel):
 
 class SelectCellRequest(BaseModel):
     round_id: int
-    team_id: int
+    player_id: int  # AD-0 : la Manche 3 est individuelle
     cell_id: int
 
 class SelectCellResponse(BaseModel):
@@ -244,9 +244,11 @@ class StartMemoryGridRoundResponse(BaseModel):
 
 class AnswerCellRequest(BaseModel):
     round_id: int
-    team_id: int
+    player_id: int  # AD-0 : la Manche 3 est individuelle
     cell_id: int
-    is_correct: bool
+    # AD-3 : le client soumet SA RÉPONSE, jamais un verdict de correction.
+    # Le serveur seul décide si elle est juste.
+    player_answer: str
 
 class AnswerCellResponse(BaseModel):
     status: str
@@ -361,12 +363,13 @@ class Round2AdvanceResponse(BaseModel):
 # Round 3 Memory Grid Enhancement Schemas
 
 class ColorSelectionRequest(BaseModel):
-    team_id: int
+    game_session_id: int
+    player_id: int  # AD-0 : les couleurs appartiennent aux finalistes
     color: str
 
 class ColorSelectionResponse(BaseModel):
     success: bool
-    team_id: int
+    player_id: int
     color: str
     message: str
 

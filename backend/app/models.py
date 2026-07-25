@@ -167,6 +167,30 @@ class PlayerRound2Stats(Base):
     game_session = relationship("GameSession")
     theme = relationship("Theme", back_populates="player_stats")
 
+class PlayerRound3Stats(Base):
+    """Axe de score individuel de la Manche 3.
+
+    AD-0 : la Manche 3 est individuelle, exactement 4 finalistes.
+    AD-1 : trois axes de score cloisonnés, un par manche. C'est le SEUL endroit
+    où un score de Manche 3 s'écrit — Team.score n'est jamais touché par la
+    Manche 3, et aucun total inter-manches n'existe.
+    """
+    __tablename__ = "player_round3_stats"
+
+    id = Column(Integer, primary_key=True, index=True)
+    player_id = Column(Integer, ForeignKey("players.id"), nullable=False)
+    game_session_id = Column(Integer, ForeignKey("game_sessions.id"), nullable=False)
+    score = Column(Integer, default=0, nullable=False)
+    cells_claimed = Column(Integer, default=0, nullable=False)
+    color = Column(String, nullable=True)  # couleur du finaliste sur la grille
+    selected_theme_ids = Column(JSON, nullable=True)  # 3 thèmes choisis par le finaliste
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relations
+    player = relationship("Player")
+    game_session = relationship("GameSession")
+
+
 class PingPongTheme(Base):
     __tablename__ = "ping_pong_themes"
     
