@@ -327,7 +327,7 @@ function HostGame() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-2xl text-slate-400 animate-pulse">Chargement du jeu...</div>
+        <div className="text-2xl text-text-muted animate-pulse">Chargement du jeu...</div>
       </div>
     )
   }
@@ -336,8 +336,8 @@ function HostGame() {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="card text-center">
-          <h2 className="text-2xl text-game-danger mb-4">Erreur</h2>
-          <p className="text-slate-400">{error}</p>
+          <h2 className="text-2xl text-danger mb-4">Erreur</h2>
+          <p className="text-text-muted">{error}</p>
           <button onClick={() => navigate('/')} className="btn-primary mt-4">Retour</button>
         </div>
       </div>
@@ -354,8 +354,8 @@ function HostGame() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold">Manche 1 — Hôte</h1>
-            <p className="text-slate-400 text-sm">
-              Tour {turnCount + 1} • Code: <span className="font-mono font-bold text-game-accent">{game.code}</span>
+            <p className="text-text-muted text-sm">
+              Tour {turnCount + 1} • Code: <span className="font-display font-semibold text-brand">{game.code}</span>
             </p>
           </div>
           <div className="flex gap-2">
@@ -377,18 +377,18 @@ function HostGame() {
           {/* Zone de contrôle */}
           <div className="lg:col-span-2 space-y-4">
             <div className="card text-center">
-              <p className="text-sm text-slate-400">C'est au tour de</p>
-              <p className="text-2xl font-bold text-game-accent">{currentTeam.name}</p>
+              <p className="text-sm text-text-muted">C'est au tour de</p>
+              <p className="text-2xl font-bold text-brand">{currentTeam.name}</p>
             </div>
 
             {/* Question affichée pour référence (les équipes répondent via leur écran) */}
             {showQuestion && currentQuestion && (
               <div className="card">
                 <h3 className="text-lg font-semibold mb-2">{currentQuestion.question.text}</h3>
-                <p className="text-xs text-slate-500 mb-3">
+                <p className="text-xs text-text-muted mb-3">
                   {currentQuestion.question.category} • {currentQuestion.question.points} pts
                 </p>
-                <p className="text-sm text-slate-400 italic">
+                <p className="text-sm text-text-muted italic">
                   Les équipes répondent sur leur propre écran...
                 </p>
               </div>
@@ -406,16 +406,16 @@ function HostGame() {
 
             {/* Résultat de la validation */}
             {answerResult && answerResult.teams_updated && (
-              <div className="card border-game-success">
-                <h3 className="text-lg font-bold text-game-success mb-3">✅ Réponses validées !</h3>
-                <p className="text-sm text-slate-400 mb-2">
-                  Réponse correcte : <span className="text-white font-semibold">{answerResult.correct_answer}</span>
+              <div className="card border-success">
+                <h3 className="text-lg font-bold text-success mb-3">✅ Réponses validées !</h3>
+                <p className="text-sm text-text-muted mb-2">
+                  Réponse correcte : <span className="text-text font-semibold">{answerResult.correct_answer}</span>
                 </p>
                 <div className="space-y-1 mb-4">
                 {answerResult.teams_updated.map((t: any, idx: number) => (
                     <div key={`${t.team_id}_${idx}`} className="flex justify-between text-sm">
                       <span>{t.team_name}</span>
-                      <span className={t.is_correct ? 'text-game-success' : 'text-game-danger'}>
+                      <span className={t.is_correct ? 'text-success' : 'text-danger'}>
                         {t.is_correct ? `+${t.points_earned} pts` : '✗'}
                       </span>
                     </div>
@@ -523,9 +523,9 @@ function HostGame() {
 
         {/* Erreur */}
         {error && (
-          <div className="fixed bottom-4 right-4 bg-red-900/90 text-white px-4 py-2 rounded-lg text-sm">
+          <div className="fixed bottom-4 right-4 z-[60] bg-danger/90 text-text px-4 py-2 rounded-lg text-sm">
             {error}
-            <button onClick={() => setError('')} className="ml-2 text-red-300 hover:text-white">✕</button>
+            <button onClick={() => setError('')} className="ml-2 hover:opacity-70">✕</button>
           </div>
         )}
       </div>

@@ -9,28 +9,41 @@
 }
 
 @layer components {
+  /* Migré vers les tokens "Neon Pit Lane" (DESIGN.md, story I-001, 2026-07-26).
+     brand-600 (pas brand/DEFAULT) pour les fonds pleins de bouton : corrige un contraste
+     WCAG insuffisant (texte clair sur brand seul = 3.57:1, sous l'AA 4.5:1 ; sur
+     brand-600 = 5.06:1). Micro-interaction hover-scale existante conservée à l'identique. */
   .btn-primary {
-    @apply bg-primary-600 hover:bg-primary-700 text-white font-bold py-3 px-6 rounded-lg transition-all duration-200 transform hover:scale-105 active:scale-95;
+    @apply bg-brand-600 hover:bg-brand-hover text-text font-bold py-3 px-6 rounded-lg transition-all duration-200 transform hover:scale-105 active:scale-95;
   }
 
+  /* Fond transparent conforme à DESIGN.md.components.button-secondary (background: transparent) —
+     le contour border-border + le fond qui apparaît au survol suffisent à la lisibilité,
+     pas besoin d'un remplissage au repos (corrigé en revue de code, 2026-07-26). */
   .btn-secondary {
-    @apply bg-game-card hover:bg-slate-600 text-white font-bold py-3 px-6 rounded-lg border border-slate-500 transition-all duration-200;
+    @apply bg-transparent hover:bg-surface-raised text-text font-bold py-3 px-6 rounded-lg border border-border transition-all duration-200;
   }
 
+  /* Hover en opacité réduite (pas de couleur Tailwind brute type red-600/emerald-600) pour
+     rester dans la teinte du token au lieu de jurer avec la palette Neon Pit Lane au survol
+     (corrigé en revue de code, 2026-07-26). */
   .btn-danger {
-    @apply bg-game-danger hover:bg-red-600 text-white font-bold py-3 px-6 rounded-lg transition-all duration-200;
+    @apply bg-danger hover:bg-danger/80 text-text font-bold py-3 px-6 rounded-lg transition-all duration-200;
   }
 
+  /* text-bg (texte quasi-noir) volontaire ici, PAS une incohérence avec les autres boutons qui
+     utilisent text-text : conforme à DESIGN.md.components.button-success (text: '{colors.bg}'),
+     le vert success est assez clair pour que du texte clair par-dessus manque de contraste. */
   .btn-success {
-    @apply bg-game-success hover:bg-emerald-600 text-white font-bold py-3 px-6 rounded-lg transition-all duration-200;
+    @apply bg-success hover:bg-success/80 text-bg font-bold py-3 px-6 rounded-lg transition-all duration-200;
   }
 
   .card {
-    @apply bg-game-card rounded-xl p-6 shadow-lg border border-slate-700;
+    @apply bg-surface rounded-xl p-6 shadow-lg border border-border;
   }
 
   .input-field {
-    @apply w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-3 text-white placeholder-slate-400 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 transition-colors;
+    @apply w-full bg-surface border border-border rounded-lg px-4 py-3 text-text placeholder-text-muted focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand transition-colors;
   }
 }
 

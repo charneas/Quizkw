@@ -210,7 +210,7 @@ function TeamScreen() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-2xl text-slate-400 animate-pulse">Connexion à la partie...</div>
+        <div className="text-2xl text-text-muted animate-pulse">Connexion à la partie...</div>
       </div>
     )
   }
@@ -230,8 +230,8 @@ function TeamScreen() {
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="card text-center max-w-md">
           <div className="text-5xl mb-4">🏁</div>
-          <h2 className="text-2xl font-bold text-game-accent mb-2">Manche 1 terminée !</h2>
-          <p className="text-slate-400">{message}</p>
+          <h2 className="text-2xl font-bold text-brand mb-2">Manche 1 terminée !</h2>
+          <p className="text-text-muted">{message}</p>
         </div>
       </div>
     )
@@ -241,8 +241,8 @@ function TeamScreen() {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="card text-center max-w-md">
-          <h2 className="text-2xl font-bold text-game-danger mb-4">❌ Équipe non trouvée</h2>
-          <p className="text-slate-400">{error}</p>
+          <h2 className="text-2xl font-bold text-danger mb-4">❌ Équipe non trouvée</h2>
+          <p className="text-text-muted">{error}</p>
           <button onClick={() => navigate('/')} className="btn-primary mt-4">Retour</button>
         </div>
       </div>
@@ -254,25 +254,25 @@ function TeamScreen() {
       <div className="max-w-2xl mx-auto space-y-6">
         {/* Header */}
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-white">{state.team_name}</h1>
-          <p className="text-slate-400">
-            Score : <span className="text-game-accent font-bold">{state.team_score} pts</span>
+          <h1 className="text-2xl font-bold text-text">{state.team_name}</h1>
+          <p className="text-text-muted">
+            Score : <span className="text-brand font-bold">{state.team_score} pts</span>
             {' • '}
-            Manche : <span className="text-white font-semibold">{state.game_phase}</span>
+            Manche : <span className="text-text font-semibold">{state.game_phase}</span>
           </p>
         </div>
 
         {/* Statut des autres équipes */}
         {state.other_teams.length > 0 && (
           <div className="card">
-            <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-3">
+            <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">
               Progression des équipes
             </h3>
             <div className="space-y-2">
               {state.other_teams.map((team) => (
                 <div key={team.team_id} className="flex items-center justify-between">
                   <span className="text-sm">{team.team_name}</span>
-                  <span className={team.has_answered ? 'text-game-success' : 'text-slate-500'}>
+                  <span className={team.has_answered ? 'text-success' : 'text-text-muted'}>
                     {team.has_answered ? '✓ Répondu' : '⏳ En attente'}
                   </span>
                 </div>
@@ -287,7 +287,7 @@ function TeamScreen() {
             <h3 className="text-lg font-semibold mb-3">
               {state.current_question.text}
             </h3>
-            <p className="text-xs text-slate-500 mb-4">
+            <p className="text-xs text-text-muted mb-4">
               {state.current_question.category} • {state.current_question.points} pts
             </p>
 
@@ -298,8 +298,8 @@ function TeamScreen() {
                   onClick={() => setAnswer(option)}
                   className={`w-full text-left p-3 rounded-lg border transition-colors ${
                     answer === option
-                      ? 'border-game-accent bg-game-accent/10 text-white'
-                      : 'border-slate-600 bg-slate-800 text-slate-300 hover:border-slate-400'
+                      ? 'border-brand bg-brand-muted/20 text-text'
+                      : 'border-border bg-surface text-text-muted hover:border-brand'
                   }`}
                 >
                   {option}
@@ -329,16 +329,16 @@ function TeamScreen() {
 
         {/* Résultats validés (auto-validation quand toutes les équipes ont répondu) */}
         {state.validation_result && (
-          <div className="card border-game-success">
-            <h3 className="text-lg font-bold text-game-success mb-3">✅ Réponses validées !</h3>
-            <p className="text-sm text-slate-400 mb-2">
-              Réponse correcte : <span className="text-white font-semibold">{state.validation_result.correct_answer}</span>
+          <div className="card border-success">
+            <h3 className="text-lg font-bold text-success mb-3">✅ Réponses validées !</h3>
+            <p className="text-sm text-text-muted mb-2">
+              Réponse correcte : <span className="text-text font-semibold">{state.validation_result.correct_answer}</span>
             </p>
             <div className="space-y-1 mb-4">
               {state.validation_result.teams.map((t, idx) => (
                 <div key={idx} className="flex justify-between text-sm">
                   <span>{t.team_name}</span>
-                  <span className={t.is_correct ? 'text-game-success' : 'text-game-danger'}>
+                  <span className={t.is_correct ? 'text-success' : 'text-danger'}>
                     {t.is_correct ? `+${t.points_earned} pts` : '✗'}
                   </span>
                 </div>
@@ -352,17 +352,17 @@ function TeamScreen() {
 
         {/* Réponse envoyée — en attente des autres équipes */}
         {state.has_answered && !state.validation_result && (
-          <div className="card text-center py-8 border-game-accent">
+          <div className="card text-center py-8 border-brand">
             <div className="text-6xl mb-4">📤</div>
-            <p className="text-xl text-game-accent font-semibold">
+            <p className="text-xl text-brand font-semibold">
               Réponse envoyée !
             </p>
             {answerResult && (
-              <p className={`text-sm mt-2 ${answerResult.is_correct ? 'text-game-success' : 'text-game-danger'}`}>
+              <p className={`text-sm mt-2 ${answerResult.is_correct ? 'text-success' : 'text-danger'}`}>
                 {answerResult.is_correct ? '✅ Bonne réponse !' : '❌ Mauvaise réponse'}
               </p>
             )}
-            <p className="text-sm text-slate-400 mt-2">
+            <p className="text-sm text-text-muted mt-2">
               ⏳ En attente des autres équipes...
             </p>
           </div>
@@ -372,7 +372,7 @@ function TeamScreen() {
         {!state.current_question && !state.has_answered && !state.validation_result && !state.active_duel && (
           <div className="card text-center py-8">
             <div className="text-6xl mb-4">🎯</div>
-            <p className="text-xl text-slate-400 mb-4">
+            <p className="text-xl text-text-muted mb-4">
               Pas de question en cours
             </p>
             <button onClick={handleNextQuestion} className="btn-primary">
@@ -445,9 +445,9 @@ function TeamScreen() {
 
         {/* Erreur */}
         {error && (
-          <div className="fixed bottom-4 right-4 bg-red-900/90 text-white px-4 py-2 rounded-lg text-sm">
+          <div className="fixed bottom-4 right-4 z-[60] bg-danger/90 text-text px-4 py-2 rounded-lg text-sm">
             {error}
-            <button onClick={() => setError('')} className="ml-2 text-red-300 hover:text-white">✕</button>
+            <button onClick={() => setError('')} className="ml-2 hover:opacity-70">✕</button>
           </div>
         )}
       </div>

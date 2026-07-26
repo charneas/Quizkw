@@ -329,7 +329,7 @@ function Game() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-2xl text-slate-400 animate-pulse">Chargement du jeu...</div>
+        <div className="text-2xl text-text-muted animate-pulse">Chargement du jeu...</div>
       </div>
     )
   }
@@ -338,8 +338,8 @@ function Game() {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="card text-center">
-          <h2 className="text-2xl text-game-danger mb-4">Erreur</h2>
-          <p className="text-slate-400">{error}</p>
+          <h2 className="text-2xl text-danger mb-4">Erreur</h2>
+          <p className="text-text-muted">{error}</p>
           <button onClick={() => navigate('/')} className="btn-primary mt-4">Retour</button>
         </div>
       </div>
@@ -356,7 +356,7 @@ function Game() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold">Manche 1</h1>
-            <p className="text-slate-400 text-sm">Tour {turnCount + 1} • Code: {game.code}</p>
+            <p className="text-text-muted text-sm">Tour {turnCount + 1} • Code: {game.code}</p>
           </div>
           <button
             onClick={handleAdvanceToPhase2}
@@ -373,8 +373,8 @@ function Game() {
 
           <div className="lg:col-span-2 space-y-4">
             <div className="card text-center">
-              <p className="text-sm text-slate-400">C'est au tour de</p>
-              <p className="text-2xl font-bold text-game-accent">{currentTeam.name}</p>
+              <p className="text-sm text-text-muted">C'est au tour de</p>
+              <p className="text-2xl font-bold text-brand">{currentTeam.name}</p>
             </div>
 
             {currentQuestion && !answerResult && !waitingForTeams && (
@@ -391,20 +391,20 @@ function Game() {
             )}
 
             {answerResult && (
-              <div className={`card text-center ${answerResult.is_correct ? 'border-game-success' : 'border-game-danger'}`}>
+              <div className={`card text-center ${answerResult.is_correct ? 'border-success' : 'border-danger'}`}>
                 <div className="text-4xl mb-3">
                   {answerResult.is_correct ? '✅' : '❌'}
                 </div>
-                <h3 className={`text-xl font-bold ${answerResult.is_correct ? 'text-game-success' : 'text-game-danger'}`}>
+                <h3 className={`text-xl font-bold ${answerResult.is_correct ? 'text-success' : 'text-danger'}`}>
                   {answerResult.is_correct ? 'Bonne réponse !' : 'Mauvaise réponse !'}
                 </h3>
                 {!answerResult.is_correct && (
-                  <p className="text-slate-400 mt-2">
-                    Réponse correcte : <span className="text-white font-semibold">{answerResult.correct_answer}</span>
+                  <p className="text-text-muted mt-2">
+                    Réponse correcte : <span className="text-text font-semibold">{answerResult.correct_answer}</span>
                   </p>
                 )}
-                <p className="text-slate-400 mt-2">
-                  Points gagnés : <span className="text-game-accent font-bold">+{answerResult.points_earned}</span>
+                <p className="text-text-muted mt-2">
+                  Points gagnés : <span className="text-brand font-bold">+{answerResult.points_earned}</span>
                 </p>
                 <button onClick={handleNextTurn} className="btn-primary mt-4">
                   Tour suivant →
@@ -417,9 +417,9 @@ function Game() {
         </div>
 
         {error && (
-          <div className="fixed bottom-4 right-4 bg-red-900/90 text-white px-4 py-2 rounded-lg text-sm">
+          <div className="fixed bottom-4 right-4 z-[60] bg-danger/90 text-text px-4 py-2 rounded-lg text-sm">
             {error}
-            <button onClick={() => setError('')} className="ml-2 text-red-300 hover:text-white">✕</button>
+            <button onClick={() => setError('')} className="ml-2 hover:opacity-70">✕</button>
           </div>
         )}
 

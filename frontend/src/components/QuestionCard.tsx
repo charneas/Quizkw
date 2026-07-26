@@ -38,11 +38,11 @@ function QuestionCard({ question, onAnswer }: QuestionCardProps) {
           <span className={`text-xs px-2 py-1 rounded border ${difficultyColors[question.question.difficulty]}`}>
             {difficultyLabels[question.question.difficulty]}
           </span>
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-text-muted">
             {question.question.category}
           </span>
         </div>
-        <span className="text-game-accent font-bold">
+        <span className="text-brand font-bold">
           {question.question.points} pts
         </span>
       </div>
@@ -61,11 +61,11 @@ function QuestionCard({ question, onAnswer }: QuestionCardProps) {
             disabled={confirmed}
             className={`p-4 rounded-lg text-left transition-all border-2 ${
               selectedAnswer === option
-                ? 'bg-primary-900/50 border-primary-500 text-white'
-                : 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-500 hover:bg-slate-750'
+                ? 'bg-brand-muted/30 border-brand text-text'
+                : 'bg-surface border-border text-text-muted hover:border-brand hover:bg-surface-raised'
             } ${confirmed ? 'cursor-not-allowed opacity-75' : 'cursor-pointer'}`}
           >
-            <span className="text-sm font-medium text-slate-500 mr-2">
+            <span className="text-sm font-medium text-text-muted mr-2">
               {String.fromCharCode(65 + index)}.
             </span>
             {option}
