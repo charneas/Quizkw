@@ -117,6 +117,33 @@ Ce script créera :
 - PostgreSQL recommandé pour la production
 - Migrations avec Alembic (à implémenter)
 
+### Test de fumée PostgreSQL
+
+La suite de tests principale (`pytest tests/`) tourne exclusivement sur
+SQLite en mémoire. Un bug de migration réel (type enum redéclaré) ne s'est
+manifesté que sous PostgreSQL — un test dédié comble cet angle mort.
+
+**⚠️ Ce test exécute `alembic downgrade base` (destructeur, vide le schéma)
+avant `upgrade head`. Ne jamais pointer `POSTGRES_TEST_URL` vers une base
+contenant de vraies données.** Par sécurité, le test refuse de s'exécuter
+(skip explicite) si l'hôte ou le nom de la base ne contient pas `test`.
+
+1. Démarrer un PostgreSQL jetable, par exemple avec Docker :
+   ```bash
+   docker run --rm -e POSTGRES_PASSWORD=test -e POSTGRES_DB=quizkw_test -p 5432:5432 postgres
+   ```
+2. Positionner `POSTGRES_TEST_URL` (nom de base contenant `test`) et lancer le test :
+   ```bash
+   export POSTGRES_TEST_URL="postgresql://postgres:test@localhost:5432/quizkw_test"
+   pytest tests/test_migration_smoke_postgres.py -v
+   ```
+3. Si `POSTGRES_TEST_URL` n'est pas positionnée, si la connexion échoue, ou
+   si l'URL ne contient pas `test` dans l'hôte/la base, le test se marque
+   `skipped` (pas d'échec, pas de faux positif) — c'est le comportement
+   attendu sur une machine sans PostgreSQL jetable disponible.
+
+À exécuter avant de committer toute migration Alembic modifiant le schéma.
+
 ## Développement
 
 ### Structure des données
