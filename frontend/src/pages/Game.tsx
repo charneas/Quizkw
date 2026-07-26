@@ -19,6 +19,8 @@ function Game() {
   const [currentQuestion, setCurrentQuestion] = useState<QuestionResponse | null>(null)
   const [answerResult, setAnswerResult] = useState<AnswerResponse | null>(null)
   const [wheelResult, setWheelResult] = useState<WheelSpinResponse | null>(null)
+  const [isBonusActive, setIsBonusActive] = useState(false)
+  const [timePenalty, setTimePenalty] = useState(0) // Nombre de secondes retirées au chrono
   const [currentTeamIndex, setCurrentTeamIndex] = useState(0)
   const [turnCount, setTurnCount] = useState(0)
   const [showWheel, setShowWheel] = useState(false)
@@ -33,6 +35,7 @@ function Game() {
     all_answered: boolean
   } | null>(null)
   const pollingIntervalRef = useRef<number | null>(null)
+  const [activeTeamTokens, setActiveTeamTokens] = useState<any[]>([])
   
   // Ping-Pong states
   const [showPingPong, setShowPingPong] = useState(false)
@@ -45,7 +48,12 @@ function Game() {
     if (code) loadGame()
   }, [code])
 
-  // Cleanup polling on unmount
+  useEffect(() => {
+    if (game && game.teams && game.teams[currentTeamIndex]) {
+      loadTeamTokens(game.teams[currentTeamIndex].id)
+    }
+  }, [currentTeamIndex, game])
+
   useEffect(() => {
     return () => {
       if (pollingIntervalRef.current) {
@@ -66,27 +74,36 @@ function Game() {
     }
   }
 
-  const loadQuestion = async () => {
+  const loadTeamTokens = async (teamId: number) => {
     try {
-      // Synchronisation: récupérer la question courante pour toutes les équipes
+      const tokens = await getTeamTokens(teamId)
+      setActiveTeamTokens(Array.isArray(tokens) ? tokens : [])
+    } catch (err) {
+      console.error("Erreur lors de la récupération des jetons:", err)
+      setActiveTeamTokens([])
+    }
+  }
+
+  const loadQuestion = async () => {
+    // 🔄 Réinitialise les bonus/pénalités pour la nouvelle question
+    setIsBonusActive(false)
+    setTimePenalty(0)
+
+    try {
       const status = await getAnswersStatus(code!)
       setAnswersStatus(status)
       
       if (status.all_answered || !status.question_id) {
-        // Si toutes les équipes ont déjà répondu ou pas de question courante, définir une nouvelle question
         const question = await getRandomQuestion()
         await setCurrentQuestion(code!, question.question.id)
         setCurrentQuestion(question)
         setWaitingForTeams(false)
-        // Réinitialiser le statut pour la nouvelle question
         const newStatus = await getAnswersStatus(code!)
         setAnswersStatus(newStatus)
       } else {
-        // Récupérer la question courante synchronisée
         const question = await getCurrentQuestion(code!)
         setCurrentQuestion(question)
         
-        // Vérifier si l'équipe courante a déjà répondu
         if (game && status.answered_teams.includes(game.teams[currentTeamIndex].id)) {
           setWaitingForTeams(true)
           startPolling()
@@ -101,19 +118,16 @@ function Game() {
   }
 
   const startPolling = () => {
-    // Arrêter le polling existant
     if (pollingIntervalRef.current) {
       clearInterval(pollingIntervalRef.current)
     }
 
-    // Démarrer un nouveau polling toutes les 2 secondes
     pollingIntervalRef.current = setInterval(async () => {
       try {
         const status = await getAnswersStatus(code!)
         setAnswersStatus(status)
         
         if (status.all_answered) {
-          // Toutes les équipes ont répondu, arrêter le polling
           stopPolling()
         }
       } catch (err) {
@@ -132,7 +146,6 @@ function Game() {
   const handleAllAnswered = async () => {
     stopPolling()
     setWaitingForTeams(false)
-    // Charger automatiquement la prochaine question
     await handleNextTurn()
   }
 
@@ -146,20 +159,28 @@ function Game() {
         team_id: currentTeam.id,
         player_answer: answer,
       })
-      setAnswerResult(result)
+
+      // ⭐ Si le BONUS est actif, on double les points gagnés !
+      const finalPoints = isBonusActive ? result.points_earned * 2 : result.points_earned
+      const updatedResult = { ...result, points_earned: finalPoints }
+
+      setAnswerResult(updatedResult)
       
-      // Mettre à jour le score local
       setGame(prev => {
         if (!prev) return prev
         const updatedTeams = [...prev.teams]
+        
+        // Calcul du nouveau score avec le bonus éventuel
+        const pointDifference = finalPoints - result.points_earned
+        const newScore = result.team_score + pointDifference
+
         updatedTeams[currentTeamIndex] = {
           ...updatedTeams[currentTeamIndex],
-          score: result.team_score,
+          score: newScore,
         }
         return { ...prev, teams: updatedTeams }
       })
 
-      // Mettre à jour le statut des réponses
       const status = await getAnswersStatus(code!)
       setAnswersStatus(status)
       
@@ -174,13 +195,11 @@ function Game() {
     const newTurnCount = turnCount + 1
     setTurnCount(newTurnCount)
     
-    // Ping-Pong tous les 5 tours
     if (newTurnCount % 5 === 0) {
       await startPingPong()
       return
     }
     
-    // Passer à l'équipe suivante
     setCurrentTeamIndex((prev) => (prev + 1) % game.teams.length)
     await loadQuestion()
   }, [game, turnCount])
@@ -209,7 +228,6 @@ function Game() {
 
       setPingPongResult(result)
       
-      // Update score locally
       setGame(prev => {
         if (!prev) return prev
         const updatedTeams = [...prev.teams]
@@ -220,16 +238,13 @@ function Game() {
         return { ...prev, teams: updatedTeams }
       })
 
-      // Check if all teams have answered
       const results = await getPingPongResults(code!, pingPongTheme.id)
       if (results.all_teams_answered) {
         setPingPongResults(results)
         setShowPingPong(false)
         setShowPingPongResults(true)
       } else {
-        // Move to next team
         setCurrentTeamIndex((prev) => (prev + 1) % game.teams.length)
-        // Keep showing ping-pong for next team
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur ping-pong')
@@ -242,7 +257,6 @@ function Game() {
     setPingPongResult(null)
     setPingPongResults(null)
     
-    // Continue to next turn
     if (game) {
       setCurrentTeamIndex((prev) => (prev + 1) % game.teams.length)
       await loadQuestion()
@@ -273,18 +287,31 @@ function Game() {
   const handleUseToken = async (tokenType: TokenType) => {
     if (!game) return
     const currentTeam = game.teams[currentTeamIndex]
-    
+    const normalizedType = tokenType.toUpperCase()
+
     try {
-      await useToken({ team_id: currentTeam.id, token_type: tokenType })
+      console.log(`🎮 Utilisation du jeton : ${normalizedType}`)
       
-      if (tokenType === 'swap') {
+      // 1. Consomme le jeton en BDD
+      await useToken({ team_id: currentTeam.id, token_type: normalizedType })
+
+      // 2. Déclenche l'effet du jeton
+      if (normalizedType === 'SWAP') {
         await loadQuestion()
+      } else if (normalizedType === 'PENALTY' || normalizedType === 'PÉNALITÉ') {
+        // ⚡ Enlève 10 secondes au chrono actuel
+        setTimePenalty(10)
+      } else if (normalizedType === 'BONUS') {
+        // ⭐ Active le multiplicateur x2
+        setIsBonusActive(true)
       }
       
-      // Rafraîchir les données du jeu
-      await loadGame()
+      // 3. Rafraîchit les jetons
+      await loadTeamTokens(currentTeam.id)
+
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erreur jeton')
+      console.error(`Erreur jeton ${normalizedType} :`, err)
+      await loadTeamTokens(currentTeam.id).catch(() => null)
     }
   }
 
@@ -317,13 +344,12 @@ function Game() {
     )
   }
 
-  const currentTeam = game.teams[currentTeamIndex]
+  const currentTeam = game?.teams?.[currentTeamIndex]
 
   return (
     <div className="min-h-screen p-4">
       <DevHelper code={code!} />
       <div className="max-w-6xl mx-auto">
-        {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold">Manche 1</h1>
@@ -338,29 +364,28 @@ function Game() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Colonne gauche: Scoreboard */}
           <div className="lg:col-span-1">
             <Scoreboard teams={game.teams} currentTeamIndex={currentTeamIndex} />
           </div>
 
-          {/* Colonne centrale: Question */}
           <div className="lg:col-span-2 space-y-4">
-            {/* Indicateur équipe active */}
-            <div className="card text-center">
-              <p className="text-sm text-slate-400">C'est au tour de</p>
-              <p className="text-2xl font-bold text-game-accent">{currentTeam.name}</p>
-            </div>
+            {currentTeam && (
+              <div className="card text-center">
+                <p className="text-sm text-slate-400">C'est au tour de</p>
+                <p className="text-2xl font-bold text-game-accent">{currentTeam.name}</p>
+              </div>
+            )}
 
-            {/* Question */}
             {currentQuestion && !answerResult && !waitingForTeams && (
               <QuestionCard
                 question={currentQuestion}
                 onAnswer={handleAnswer}
+                isBonusActive={isBonusActive}
+                timePenalty={timePenalty}
               />
             )}
 
-            {/* Écran d'attente pour les autres équipes */}
-            {waitingForTeams && answersStatus && (
+            {waitingForTeams && answersStatus && currentTeam && (
               <WaitingForTeams
                 gameCode={code!}
                 currentTeam={currentTeam}
@@ -370,7 +395,6 @@ function Game() {
               />
             )}
 
-            {/* Résultat de la réponse */}
             {answerResult && (
               <div className={`card text-center ${answerResult.is_correct ? 'border-game-success' : 'border-game-danger'}`}>
                 <div className="text-4xl mb-3">
@@ -393,15 +417,13 @@ function Game() {
               </div>
             )}
 
-            {/* Jetons */}
             <TokenPanel
-              teamId={currentTeam.id}
+              tokens={activeTeamTokens}
               onUseToken={handleUseToken}
             />
           </div>
         </div>
 
-        {/* Erreur */}
         {error && (
           <div className="fixed bottom-4 right-4 bg-red-900/90 text-white px-4 py-2 rounded-lg text-sm">
             {error}
@@ -409,7 +431,6 @@ function Game() {
           </div>
         )}
 
-        {/* Modal Roue */}
         {showWheel && (
           <WheelModal
             onSpin={handleSpinWheel}
@@ -418,8 +439,7 @@ function Game() {
           />
         )}
 
-        {/* Modal Ping-Pong */}
-        {showPingPong && pingPongTheme && (
+        {showPingPong && pingPongTheme && currentTeam && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
             <div className="max-w-2xl w-full max-h-[90vh] overflow-y-auto">
               <PingPongQuestion
@@ -432,8 +452,7 @@ function Game() {
           </div>
         )}
 
-        {/* Modal Ping-Pong Results */}
-        {showPingPongResults && pingPongResults && (
+        {showPingPongResults && pingPongResults && currentTeam && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
             <div className="max-w-4xl w-full max-h-[90vh] overflow-y-auto">
               <PingPongResults

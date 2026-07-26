@@ -1,19 +1,5 @@
-import type {
-  GameSession,
-  QuestionResponse,
-  AnswerResponse,
-  WheelSpinResponse,
-  MemoryGridState,
-  CreateGameRequest,
-  CreateTeamRequest,
-  SubmitAnswerRequest,
-  UseTokenRequest,
-  SelectCellRequest,
-  AnswerCellRequest,
-  Team,
-} from '../types'
-
-const API_BASE = '/api'
+// On cible le port 8000 du backend Python
+const API_BASE = 'http://localhost:8000'
 
 async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${endpoint}`, {
@@ -34,194 +20,143 @@ async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> 
 
 // === Sessions de jeu ===
 
-export async function createGame(data: CreateGameRequest) {
-  return fetchApi<{ game: GameSession; message: string }>('/games/', {
+export async function createGame(data: any) {
+  return fetchApi<any>('/games/', {
     method: 'POST',
     body: JSON.stringify(data),
   })
 }
 
 export async function getGame(code: string) {
-  return fetchApi<GameSession>(`/games/${code}`)
+  return fetchApi<any>(`/games/${code}`)
 }
 
 export async function startGame(code: string) {
-  return fetchApi<{ message: string; teams: number }>(`/games/${code}/start`, {
+  return fetchApi<any>(`/games/${code}/start`, {
     method: 'POST',
   })
 }
 
-export async function advanceToPhase3(code: string) {
-  return fetchApi<{ message: string; current_round: string }>(`/games/${code}/advance-to-phase3`, {
-    method: 'POST',
-  })
-}
+// === Équipes et Joueurs ===
 
-// === Équipes ===
-
-export async function createTeam(code: string, data: CreateTeamRequest) {
-  return fetchApi<Team>(`/games/${code}/teams/`, {
+export async function createTeam(gameCode: string, data: any) {
+  return fetchApi<any>(`/games/${gameCode}/teams/`, {
     method: 'POST',
     body: JSON.stringify(data),
   })
 }
 
-// === Questions ===
-
-export async function getRandomQuestion(category?: string, difficulty?: string) {
-  const params = new URLSearchParams()
-  if (category) params.set('category', category)
-  if (difficulty) params.set('difficulty', difficulty)
-  const query = params.toString() ? `?${params.toString()}` : ''
-  return fetchApi<QuestionResponse>(`/questions/random${query}`)
+export async function createPlayer(gameCode: string, data: { name: string }) {
+  return fetchApi<any>(`/games/${gameCode}/players/`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
 }
 
-export async function getCurrentQuestion(gameCode: string) {
-  return fetchApi<QuestionResponse>(`/games/${gameCode}/current-question`)
+// === Jetons (Tokens) ===
+
+export async function getTeamTokens(teamId: number) {
+  const data = await fetchApi<any>(`/teams/${teamId}/tokens`)
+  if (data && data.tokens) {
+    return data.tokens
+  }
+  return data
+}
+
+export async function useToken(data: { team_id: number; token_type: string }) {
+  return fetchApi<any>('/tokens/use', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+// === Déroulement du jeu (Manche 1) ===
+
+export async function getRandomQuestion() {
+  return fetchApi<any>('/questions/random')
 }
 
 export async function setCurrentQuestion(gameCode: string, questionId: number) {
-  return fetchApi<{ message: string; question: string; question_id: number }>(`/games/${gameCode}/set-current-question`, {
+  return fetchApi<any>(`/games/${gameCode}/set-current-question`, {
     method: 'POST',
     body: JSON.stringify({ question_id: questionId }),
   })
 }
 
-export async function getAnswersStatus(gameCode: string, questionId?: number) {
-  const query = questionId ? `?question_id=${questionId}` : ''
-  return fetchApi<{
-    question_id: number | null;
-    total_teams: number;
-    answered_teams: number[];
-    remaining_teams: number[];
-    all_answered: boolean;
-  }>(`/games/${gameCode}/answers-status${query}`)
+export async function getCurrentQuestion(gameCode: string) {
+  return fetchApi<any>(`/games/${gameCode}/current-question`)
 }
 
-export async function getTeamTokens(teamId: number) {
-  return fetchApi<{ tokens: { id: number; token_type: string; is_used: boolean }[] }>(`/teams/${teamId}/tokens`)
+export async function getAnswersStatus(gameCode: string) {
+  return fetchApi<any>(`/games/${gameCode}/answers-status`)
 }
 
-// === Réponses ===
-
-export async function submitAnswer(data: SubmitAnswerRequest) {
-  return fetchApi<AnswerResponse>('/answers/', {
+export async function submitAnswer(data: any) {
+  return fetchApi<any>('/answers/', {
     method: 'POST',
     body: JSON.stringify(data),
   })
 }
 
-// === Jetons ===
-
-export async function useToken(data: UseTokenRequest) {
-  return fetchApi<{ message: string; effect: string; token_id: number }>('/tokens/use', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  })
-}
-
-// === Roue ===
+// === Roue Bonus/Malus ===
 
 export async function spinWheel(teamId: number) {
-  return fetchApi<WheelSpinResponse>('/wheel/spin', {
+  return fetchApi<any>('/wheel/spin', {
     method: 'POST',
     body: JSON.stringify({ team_id: teamId }),
   })
 }
 
-// === Grille Mémoire ===
+// === Manche 2 (Tournoi) ===
 
-export async function createMemoryGrid(code: string) {
-  return fetchApi<MemoryGridState>(`/games/${code}/memory-grid/create`, {
-    method: 'POST',
-  })
-}
-
-export async function startMemoryGridRound(code: string) {
-  return fetchApi<{ round_id: number; message: string }>(`/games/${code}/memory-grid/start`, {
-    method: 'POST',
-  })
-}
-
-export async function getMemoryGridState(memoryGridId: number) {
-  return fetchApi<MemoryGridState>(`/memory-grid/${memoryGridId}/state`)
-}
-
-export async function revealCell(data: SelectCellRequest) {
-  return fetchApi<{ status: string; cell: unknown }>('/memory-grid/reveal-cell', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  })
-}
-
-export async function answerCell(data: AnswerCellRequest) {
-  return fetchApi<{ status: string; is_correct: boolean; points_awarded: number }>('/memory-grid/answer-cell', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  })
-}
-
-// === Round 2 (16→8→4 Tournament) ===
-
-import type {
-  Theme,
-  ThemeSelectionRequest,
-  ThemeSelectionResponse,
-  Round2QuestionResponse,
-  Round2AnswerRequest,
-  Round2AnswerResponse,
-  TournamentProgress,
-  IntermediateLeaderboardResponse,
-  Round2AdvanceResponse,
-} from '../types'
-
+// CORRECTION DES EXPORTS POUR S'ALIGNER AVEC ROUND2.TSX
 export async function getRound2Themes(gameCode: string) {
-  return fetchApi<{ themes: Theme[]; game_session_id: number }>(`/round2/${gameCode}/themes`)
+  return fetchApi<any>(`/round2/${gameCode}/themes`)
 }
+export { getRound2Themes as getThemes }
 
-export async function selectTheme(gameCode: string, data: ThemeSelectionRequest) {
-  return fetchApi<ThemeSelectionResponse>(`/round2/${gameCode}/select-theme`, {
+export async function selectRound2Theme(gameCode: string, data: { player_id: number; theme_id: number }) {
+  return fetchApi<any>(`/round2/${gameCode}/select-theme`, {
     method: 'POST',
     body: JSON.stringify(data),
   })
 }
+export { selectRound2Theme as selectTheme }
 
 export async function getRound2Question(gameCode: string, playerId: number) {
-  return fetchApi<Round2QuestionResponse>(`/round2/${gameCode}/question?player_id=${playerId}`)
+  return fetchApi<any>(`/round2/${gameCode}/question?player_id=${playerId}`)
 }
+export { getRound2Question as getRound2QuestionData }
 
-export async function submitRound2Answer(gameCode: string, data: Round2AnswerRequest) {
-  return fetchApi<Round2AnswerResponse>(`/round2/${gameCode}/answer`, {
+export async function submitRound2Answer(gameCode: string, data: { player_id: number; question_id: number; player_answer: string }) {
+  return fetchApi<any>(`/round2/${gameCode}/answer`, {
     method: 'POST',
     body: JSON.stringify(data),
   })
 }
+export { submitRound2Answer as submitAnswerRound2 }
 
 export async function getRound2Leaderboard(gameCode: string) {
-  return fetchApi<IntermediateLeaderboardResponse>(`/round2/${gameCode}/leaderboard`)
+  return fetchApi<any>(`/round2/${gameCode}/leaderboard`)
 }
+export { getRound2Leaderboard as getLeaderboard }
 
 export async function advanceRound2Phase(gameCode: string) {
-  return fetchApi<Round2AdvanceResponse>(`/round2/${gameCode}/advance`, {
+  return fetchApi<any>(`/round2/${gameCode}/advance`, {
     method: 'POST',
   })
 }
+export { advanceRound2Phase as advancePhase }
 
 export async function getRound2Progress(gameCode: string) {
-  return fetchApi<TournamentProgress>(`/round2/${gameCode}/progress`)
+  return fetchApi<any>(`/round2/${gameCode}/progress`)
 }
+export { getRound2Progress as getProgress }
 
 // === Ping-Pong ===
 
 export async function getRandomPingPongTheme() {
-  return fetchApi<{
-    id: number
-    title: string
-    description: string | null
-    correct_answers: string[]
-    min_answers_to_win: number
-    created_at: string
-  }>('/ping-pong/random')
+  return fetchApi<any>('/ping-pong/random')
 }
 
 export async function submitPingPongAnswer(data: {
@@ -230,37 +165,44 @@ export async function submitPingPongAnswer(data: {
   team_id: number
   answers_given: string[]
 }) {
-  return fetchApi<{
-    correct_count: number
-    total_possible: number
-    points_earned: number
-    correct_answers_given: string[]
-    missed_answers: string[]
-    team_score: number
-    is_winner: boolean
-  }>('/ping-pong/answer', {
+  return fetchApi<any>('/ping-pong/answer', {
     method: 'POST',
     body: JSON.stringify(data),
   })
 }
 
 export async function getPingPongResults(gameCode: string, themeId: number) {
-  return fetchApi<{
-    theme: {
-      id: number
-      title: string
-      description: string | null
-      correct_answers: string[]
-      min_answers_to_win: number
-    }
-    team_results: Array<{
-      team_id: number
-      team_name: string
-      correct_count: number
-      points: number
-      answers: string[]
-    }>
-    winner_team_id: number | null
-    all_teams_answered: boolean
-  }>(`/games/${gameCode}/ping-pong-results/${themeId}`)
+  return fetchApi<any>(`/games/${gameCode}/ping-pong-results/${themeId}`)
+}
+
+// === Manche 3 (Grille Mémoire) ===
+
+export async function createMemoryGrid(gameCode: string) {
+  return fetchApi<any>(`/games/${gameCode}/memory-grid/create`, {
+    method: 'POST',
+  })
+}
+
+export async function startMemoryGridRound(gameCode: string) {
+  return fetchApi<any>(`/games/${gameCode}/memory-grid/start`, {
+    method: 'POST',
+  })
+}
+
+export async function getMemoryGridState(gridId: number) {
+  return fetchApi<any>(`/memory-grid/${gridId}/state`)
+}
+
+export async function revealCell(data: any) {
+  return fetchApi<any>('/memory-grid/reveal-cell', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+export async function answerCell(data: any) {
+  return fetchApi<any>('/memory-grid/answer-cell', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
 }
