@@ -22,24 +22,22 @@ function Scoreboard({ teams, currentTeamIndex }: ScoreboardProps) {
             key={team.id}
             className={`flex items-center justify-between p-3 rounded-lg transition-all ${
               team.originalIndex === currentTeamIndex
-                ? 'bg-primary-900/50 border border-primary-500 scale-[1.02]'
-                : 'bg-slate-800 border border-transparent'
+                ? 'bg-brand-muted/30 border border-accent scale-[1.02]'
+                : 'bg-surface-raised border border-transparent'
             }`}
           >
             <div className="flex items-center gap-2">
-              <span className="text-sm font-bold text-slate-500 w-5">
+              <span className="text-sm font-bold text-text-muted w-5">
                 {rank + 1}.
               </span>
-              <span className={`font-medium ${
-                team.originalIndex === currentTeamIndex ? 'text-primary-300' : 'text-white'
-              }`}>
+              <span className={`font-medium ${team.originalIndex === currentTeamIndex ? 'text-accent' : 'text-text'}`}>
                 {team.name}
               </span>
               {team.originalIndex === currentTeamIndex && (
-                <span className="text-xs text-primary-400">◄</span>
+                <span className="text-xs text-accent">◄</span>
               )}
             </div>
-            <span className="font-bold text-game-accent text-lg">
+            <span className="font-bold text-brand text-lg">
               {team.score}
             </span>
           </div>

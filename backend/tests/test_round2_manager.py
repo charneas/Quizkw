@@ -289,18 +289,20 @@ class TestRound2Manager:
         
         leaderboard = round2_manager.calculate_intermediate_leaderboard(sample_game_session.id)
         
-        assert len(leaderboard.qualified_players) == 8
-        assert len(leaderboard.eliminated_players) == 2
-        assert leaderboard.cutoff_score == 35  # Score du 8ème joueur
+        # Tolérance partagée avec advance_to_finalists (8 ou 9) : ne tronque
+        # qu'au-delà de 9, jamais à 8 pile (cf. finding revue de code).
+        assert len(leaderboard.qualified_players) == 9
+        assert len(leaderboard.eliminated_players) == 1
+        assert leaderboard.cutoff_score == 30  # Score du 9ème joueur
         
         # Vérifier que les statuts ont été mis à jour
-        for player, stats in created_players[:8]:
+        for player, stats in created_players[:9]:
             fresh_stats = round2_manager.db.query(PlayerRound2Stats).filter(
                 PlayerRound2Stats.player_id == player.id
             ).first()
             assert fresh_stats.qualification_status == QualificationStatus.QUALIFIED
-            
-        for player, stats in created_players[8:]:
+
+        for player, stats in created_players[9:]:
             fresh_stats = round2_manager.db.query(PlayerRound2Stats).filter(
                 PlayerRound2Stats.player_id == player.id
             ).first()
@@ -347,7 +349,35 @@ class TestRound2Manager:
         # Les 4 suivants devraient être ELIMINATED
         for i in range(4, 8):
             assert all_stats[i].qualification_status == QualificationStatus.ELIMINATED
-            
+
+    def test_advance_to_finalists_accepts_nine_qualified(self, round2_manager, sample_game_session):
+        """AC #4 : 9 qualifiés (équipe de 3 en surnombre) doit rester accepté."""
+        from app.models import Player, PlayerRound2Stats
+
+        for i in range(9):
+            player = Player(name=f"QualifiedPlayer{i}", team_id=None)
+            round2_manager.db.add(player)
+            round2_manager.db.flush()
+
+            stats = PlayerRound2Stats(
+                player_id=player.id,
+                game_session_id=sample_game_session.id,
+                score=100 - i * 10,
+                questions_answered=10,
+                correct_answers=8,
+                current_question_index=10,
+                qualification_status=QualificationStatus.QUALIFIED
+            )
+            round2_manager.db.add(stats)
+
+        round2_manager.db.commit()
+
+        result = round2_manager.advance_to_finalists(sample_game_session.id)
+
+        assert result.new_phase == "4_finalists"
+        assert result.qualified_count == 4
+        assert result.eliminated_count == 5
+
     def test_get_tournament_progress(self, round2_manager, sample_game_session):
         """Test récupération de la progression du tournoi."""
         from app.models import Player, PlayerRound2Stats
@@ -440,3 +470,244 @@ class TestRound2Manager:
         
         stats2 = round2_manager.get_player_stats(player2.id, sample_game_session.id)
         assert stats2.player_id == player2.id, f"BUG DÉTECTÉ: ID de joueur incorrect pour le deuxième joueur"
+
+class TestRound1ToRound2Qualification:
+    """AD-0 / AD-7 : passage de la Manche 1 collective à la Manche 2 individuelle."""
+
+    def _make_team(self, db_session, game, name, score, player_count):
+        from app import models
+        team = models.Team(name=name, game_session_id=game.id, score=score)
+        db_session.add(team)
+        db_session.flush()
+        for i in range(player_count):
+            db_session.add(models.Player(name=f"{name}-J{i}", team_id=team.id))
+        db_session.commit()
+        return team
+
+    def test_best_teams_qualify_whole_teams_without_truncation(self, round2_manager, db_session,
+                                                           sample_game_session):
+        from app import models
+        # 4 équipes de 3, scores décroissants : les 3 meilleures fournissent 9
+        # joueurs entiers, qualifiés sans être tronqués (AC #4 : pas de [:8]).
+        self._make_team(db_session, sample_game_session, "Alpha", 90, 3)
+        self._make_team(db_session, sample_game_session, "Bravo", 70, 3)
+        self._make_team(db_session, sample_game_session, "Charlie", 50, 3)
+        weakest = self._make_team(db_session, sample_game_session, "Delta", 10, 3)
+
+        result = round2_manager.qualify_players_from_round1(sample_game_session.id)
+        db_session.commit()
+
+        assert result["qualified_count"] == 9
+        assert result["current_round"] == "manche_2"
+
+        weakest_player_ids = {p.id for p in weakest.players}
+        assert not (set(result["qualified_player_ids"]) & weakest_player_ids), \
+            "l'équipe la moins bien classée ne doit pas être qualifiée"
+
+        # AD-1 : chaque qualifié démarre à zéro
+        stats = db_session.query(models.PlayerRound2Stats).filter(
+            models.PlayerRound2Stats.game_session_id == sample_game_session.id
+        ).all()
+        assert len(stats) == 9
+        assert all(s.score == 0 for s in stats)
+
+    def test_mixed_team_sizes_are_not_split(self, round2_manager, db_session, sample_game_session):
+        """AC #4 : équipes de 2 et 3 mélangées, aucune équipe n'est coupée en plein milieu."""
+        from app import models
+        team_a = self._make_team(db_session, sample_game_session, "Alpha", 90, 3)
+        team_b = self._make_team(db_session, sample_game_session, "Bravo", 70, 2)
+        team_c = self._make_team(db_session, sample_game_session, "Charlie", 50, 3)
+        weakest = self._make_team(db_session, sample_game_session, "Delta", 10, 2)
+
+        result = round2_manager.qualify_players_from_round1(sample_game_session.id)
+        db_session.commit()
+
+        # Alpha(3) + Bravo(2) + Charlie(3) = 8 : somme exacte des équipes entières retenues
+        assert result["qualified_count"] == 8
+
+        for team in (team_a, team_b, team_c):
+            team_player_ids = {p.id for p in team.players}
+            assert team_player_ids.issubset(set(result["qualified_player_ids"])), \
+                f"l'équipe {team.name} ne doit pas être coupée"
+
+        weakest_player_ids = {p.id for p in weakest.players}
+        assert not (set(result["qualified_player_ids"]) & weakest_player_ids)
+
+    def test_transition_sets_manche_2(self, round2_manager, db_session, sample_game_session):
+        """AD-7 : la phase la plus manquante du tournoi est enfin écrite."""
+        from app import models
+        self._make_team(db_session, sample_game_session, "Alpha", 50, 2)
+
+        assert sample_game_session.current_round == models.RoundType.MANCHE_1
+
+        round2_manager.qualify_players_from_round1(sample_game_session.id)
+        db_session.commit()
+        db_session.refresh(sample_game_session)
+
+        assert sample_game_session.current_round == models.RoundType.MANCHE_2
+
+    def test_qualifying_twice_is_rejected(self, round2_manager, db_session, sample_game_session):
+        """AD-7 : le compare-and-set empêche une double qualification."""
+        self._make_team(db_session, sample_game_session, "Alpha", 50, 2)
+
+        round2_manager.qualify_players_from_round1(sample_game_session.id)
+        db_session.commit()
+
+        with pytest.raises(ValueError):
+            round2_manager.qualify_players_from_round1(sample_game_session.id)
+
+    def test_no_teams_raises(self, round2_manager, sample_game_session):
+        with pytest.raises(ValueError) as exc_info:
+            round2_manager.qualify_players_from_round1(sample_game_session.id)
+        assert "Aucune équipe" in str(exc_info.value)
+
+    def test_full_pipeline_nine_qualified_reach_finalists_via_advance_endpoint(
+        self, test_client, db_session, sample_game_session, sample_theme, sample_questions_for_theme
+    ):
+        """Pipeline réaliste complet (AC #3, #4) : 9 qualifiés (3 équipes de 3) qui
+        terminent chacun leurs 10 questions de Manche 2 via submit_answer (le vrai
+        chemin qui bascule leur statut à QUALIFIED) — sans passer par un test unitaire
+        qui insère les stats QUALIFIED directement. On vérifie que le simple appel
+        HTTP à /round2/{code}/advance gère les 9 qualifiés et produit 4 finalistes,
+        sans jamais requérir exactement 8."""
+        from app import models
+
+        self._make_team(db_session, sample_game_session, "Alpha", 90, 3)
+        self._make_team(db_session, sample_game_session, "Bravo", 70, 3)
+        self._make_team(db_session, sample_game_session, "Charlie", 50, 3)
+
+        qualify_response = test_client.post(f"/round2/{sample_game_session.code}/advance")
+        assert qualify_response.status_code == 200
+        assert qualify_response.json()["qualified_count"] == 9
+
+        stats_list = db_session.query(models.PlayerRound2Stats).filter(
+            models.PlayerRound2Stats.game_session_id == sample_game_session.id
+        ).all()
+        assert len(stats_list) == 9
+
+        # Chaque joueur choisit le thème de test puis répond à ses 10 questions
+        # (le vrai chemin qui fait passer son statut PLAYING -> QUALIFIED, ligne
+        # submit_answer:172-174).
+        for stats in stats_list:
+            round2_manager = self._round2_manager(db_session)
+            round2_manager.select_theme(stats.player_id, sample_game_session.id, sample_theme.id)
+            for question in sample_questions_for_theme:
+                round2_manager.submit_answer(
+                    stats.player_id, sample_game_session.id, question.id, question.correct_answer
+                )
+
+        db_session.commit()
+
+        # get_tournament_progress calcule directement la phase "8_qualified" ici,
+        # sans jamais passer par calculate_intermediate_leaderboard (qui coupe à 8) —
+        # advance_to_finalists doit donc accepter les 9 qualifiés reçus tels quels.
+        finalists_response = test_client.post(f"/round2/{sample_game_session.code}/advance")
+        assert finalists_response.status_code == 200
+        body = finalists_response.json()
+        assert body["new_phase"] == "4_finalists"
+        assert body["qualified_count"] == 4
+        assert body["eliminated_count"] == 5
+
+    def _round2_manager(self, db_session):
+        from app.round2_manager import Round2Manager
+        return Round2Manager(db_session)
+
+    def test_advance_blocks_promotion_while_a_qualified_player_still_playing(
+        self, test_client, db_session, sample_game_session, sample_theme, sample_questions_for_theme
+    ):
+        """E-001 (Task 1) : get_tournament_progress bascule la phase à
+        "8_qualified" dès que 8 joueurs ont fini, même si un 9e est encore
+        PLAYING. /round2/{code}/advance ne doit pas promouvoir tant que ce
+        9e joueur n'a pas terminé — sinon il reste bloqué en PLAYING pour
+        toujours (finding de revue de code corrigé avant cette story)."""
+        from app import models
+
+        self._make_team(db_session, sample_game_session, "Alpha", 90, 3)
+        self._make_team(db_session, sample_game_session, "Bravo", 70, 3)
+        self._make_team(db_session, sample_game_session, "Charlie", 50, 3)
+
+        qualify_response = test_client.post(f"/round2/{sample_game_session.code}/advance")
+        assert qualify_response.status_code == 200
+        assert qualify_response.json()["qualified_count"] == 9
+
+        stats_list = db_session.query(models.PlayerRound2Stats).filter(
+            models.PlayerRound2Stats.game_session_id == sample_game_session.id
+        ).all()
+
+        # 8 des 9 joueurs terminent leurs 10 questions ; le 9e reste PLAYING.
+        still_playing_stats = stats_list[0]
+        for stats in stats_list[1:]:
+            round2_manager = self._round2_manager(db_session)
+            round2_manager.select_theme(stats.player_id, sample_game_session.id, sample_theme.id)
+            for question in sample_questions_for_theme:
+                round2_manager.submit_answer(
+                    stats.player_id, sample_game_session.id, question.id, question.correct_answer
+                )
+        db_session.commit()
+
+        response = test_client.post(f"/round2/{sample_game_session.code}/advance")
+        assert response.status_code == 400
+        assert "1 joueur" in response.json()["detail"]
+
+        db_session.refresh(still_playing_stats)
+        assert still_playing_stats.qualification_status == models.QualificationStatus.PLAYING
+
+    def test_advance_promotes_once_all_eight_qualified_players_finish(
+        self, test_client, db_session, sample_game_session, sample_theme, sample_questions_for_theme
+    ):
+        """Chemin nominal : exactement 8 qualifiés, tous terminent avant que
+        l'hôte ne clique "avancer" — la promotion 8→4 doit fonctionner sans
+        régression après l'ajout du garde `still_playing`."""
+        from app import models
+
+        self._make_team(db_session, sample_game_session, "Alpha", 90, 3)
+        self._make_team(db_session, sample_game_session, "Bravo", 70, 2)
+        self._make_team(db_session, sample_game_session, "Charlie", 50, 3)
+
+        qualify_response = test_client.post(f"/round2/{sample_game_session.code}/advance")
+        assert qualify_response.status_code == 200
+        assert qualify_response.json()["qualified_count"] == 8
+
+        stats_list = db_session.query(models.PlayerRound2Stats).filter(
+            models.PlayerRound2Stats.game_session_id == sample_game_session.id
+        ).all()
+        for stats in stats_list:
+            round2_manager = self._round2_manager(db_session)
+            round2_manager.select_theme(stats.player_id, sample_game_session.id, sample_theme.id)
+            for question in sample_questions_for_theme:
+                round2_manager.submit_answer(
+                    stats.player_id, sample_game_session.id, question.id, question.correct_answer
+                )
+        db_session.commit()
+
+        response = test_client.post(f"/round2/{sample_game_session.code}/advance")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["new_phase"] == "4_finalists"
+        assert body["qualified_count"] == 4
+        assert body["eliminated_count"] == 4
+
+    def test_advance_endpoint_qualifies_from_manche_1_without_manual_api_call(
+        self, test_client, db_session, sample_game_session
+    ):
+        """H-007 : le vrai clic UI n'appelle que /round2/{code}/advance — cette
+        seule requête doit qualifier les joueurs et faire passer la partie en
+        Manche 2, sans appel manuel à /games/{code}/qualify-round2."""
+        from app import models
+
+        self._make_team(db_session, sample_game_session, "Alpha", 50, 2)
+
+        response = test_client.post(f"/round2/{sample_game_session.code}/advance")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["new_phase"] == "16_players"
+        assert body["qualified_count"] == 2
+
+        db_session.refresh(sample_game_session)
+        assert sample_game_session.current_round == models.RoundType.MANCHE_2
+
+        stats = db_session.query(models.PlayerRound2Stats).filter(
+            models.PlayerRound2Stats.game_session_id == sample_game_session.id
+        ).all()
+        assert len(stats) == 2

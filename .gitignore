@@ -92,8 +92,10 @@ temp/
 
 # Backend specific
 backend/quizkw.db
-backend/alembic/versions/*.py
-!backend/alembic/versions/__init__.py
+# Les révisions Alembic DOIVENT être versionnées (AD-14) : une migration qui
+# n'atteint pas le dépôt n'atteint ni un autre poste ni la production. Elles
+# étaient exclues ici, ce qui rendait la règle inapplicable par construction.
+backend/alembic/versions/__pycache__/
 
 # BMad
 _bmad-output/
@@ -112,3 +114,5 @@ restart_test.py
 # Exceptions - keep real test files in backend/tests/
 !backend/tests/
 !backend/tests/**/*.py
+*.tsbuildinfo
+*.db.bak-*

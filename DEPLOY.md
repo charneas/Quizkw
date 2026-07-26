@@ -42,7 +42,6 @@ cd /opt/Quizkw/backend
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-pip install gunicorn
 ```
 
 ### 3.2 Variables d'environnement

@@ -1,67 +1,47 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import type { Team } from '../types'
 
-interface PingPongTheme {
-  id: number
-  title: string
-  description: string | null
-  correct_answers: string[]
-  min_answers_to_win: number
+interface PingPongDuelProps {
+  theme: {
+    id: number
+    title: string
+    description: string | null
+    correct_answers: string[]
+    min_answers_to_win: number
+  }
+  team1: Team
+  team2: Team
+  currentTurnTeamId: number
+  answersUsed: string[]
+  turnNumber: number
+  isCurrentTeam: boolean
+  onSubmit: (answer: string) => void
+  onPass: () => void
+  disabled: boolean
 }
 
-interface PingPongQuestionProps {
-  theme: PingPongTheme
-  currentTeam: Team
-  onSubmit: (answers: string[]) => void
-  timeLimit?: number
-}
-
-function PingPongQuestion({ theme, currentTeam, onSubmit, timeLimit = 60 }: PingPongQuestionProps) {
-  const [answers, setAnswers] = useState<string[]>([''])
-  const [timeLeft, setTimeLeft] = useState(timeLimit)
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setTimeLeft(prev => {
-        if (prev <= 1) {
-          clearInterval(timer)
-          // Auto-submit when time runs out
-          handleSubmit()
-          return 0
-        }
-        return prev - 1
-      })
-    }, 1000)
-
-    return () => clearInterval(timer)
-  }, [])
-
-  const addAnswer = () => {
-    setAnswers([...answers, ''])
-  }
-
-  const updateAnswer = (index: number, value: string) => {
-    const newAnswers = [...answers]
-    newAnswers[index] = value
-    setAnswers(newAnswers)
-  }
-
-  const removeAnswer = (index: number) => {
-    if (answers.length > 1) {
-      const newAnswers = answers.filter((_, i) => i !== index)
-      setAnswers(newAnswers)
-    }
-  }
+function PingPongQuestion({
+  theme,
+  team1,
+  team2,
+  currentTurnTeamId,
+  answersUsed,
+  turnNumber,
+  isCurrentTeam,
+  onSubmit,
+  onPass,
+  disabled,
+}: PingPongDuelProps) {
+  const [answer, setAnswer] = useState('')
 
   const handleSubmit = () => {
-    // Filter out empty answers
-    const validAnswers = answers.filter(a => a.trim().length > 0)
-    if (validAnswers.length > 0) {
-      onSubmit(validAnswers)
+    if (answer.trim().length > 0) {
+      onSubmit(answer.trim())
+      setAnswer('')
     }
   }
 
-  const validAnswersCount = answers.filter(a => a.trim().length > 0).length
+  const currentTeam = currentTurnTeamId === team1.id ? team1 : team2
 
   return (
     <div className="card">
@@ -69,7 +49,7 @@ function PingPongQuestion({ theme, currentTeam, onSubmit, timeLimit = 60 }: Ping
       <div className="text-center mb-6">
         <div className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 rounded-full mb-4">
           <span className="text-2xl">🏓</span>
-          <span className="font-bold text-white">PING-PONG</span>
+          <span className="font-bold text-white">DUEL PING-PONG</span>
         </div>
         <h2 className="text-2xl font-bold mb-2">{theme.title}</h2>
         {theme.description && (
@@ -77,123 +57,118 @@ function PingPongQuestion({ theme, currentTeam, onSubmit, timeLimit = 60 }: Ping
         )}
       </div>
 
-      {/* Instructions */}
-      <div className="bg-slate-700/50 rounded-lg p-4 mb-6">
-        <div className="flex items-start gap-3">
-          <div className="text-2xl">ℹ️</div>
-          <div className="flex-1">
-            <p className="text-sm text-slate-300 mb-2">
-              <strong className="text-white">Règles :</strong>
-            </p>
-            <ul className="text-sm text-slate-400 space-y-1">
-              <li>• Citez le plus de réponses correctes possible</li>
-              <li>• <strong className="text-game-accent">+2 points</strong> par réponse correcte</li>
-              <li>• <strong className="text-game-success">+3 points bonus</strong> si vous trouvez toutes les réponses</li>
-              <li>• Minimum {theme.min_answers_to_win} réponses pour gagner</li>
-            </ul>
+      {/* Affrontement */}
+      <div className="grid grid-cols-2 gap-4 mb-6">
+        <div
+          className={`p-4 rounded-lg border-2 text-center transition-colors ${
+            currentTurnTeamId === team1.id
+              ? 'border-game-accent bg-game-accent/10'
+              : 'border-slate-700 bg-slate-800/50'
+          }`}
+        >
+          <p className="text-sm text-slate-400">Équipe 1</p>
+          <p className="text-xl font-bold">{team1.name}</p>
+          {currentTurnTeamId === team1.id && (
+            <span className="inline-block mt-1 px-2 py-0.5 bg-game-accent text-black text-xs rounded-full font-bold">
+              JOUE
+            </span>
+          )}
+        </div>
+
+        <div
+          className={`p-4 rounded-lg border-2 text-center transition-colors ${
+            currentTurnTeamId === team2.id
+              ? 'border-game-accent bg-game-accent/10'
+              : 'border-slate-700 bg-slate-800/50'
+          }`}
+        >
+          <p className="text-sm text-slate-400">Équipe 2</p>
+          <p className="text-xl font-bold">{team2.name}</p>
+          {currentTurnTeamId === team2.id && (
+            <span className="inline-block mt-1 px-2 py-0.5 bg-game-accent text-black text-xs rounded-full font-bold">
+              JOUE
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Turn indicator */}
+      <div className="text-center mb-4">
+        <p className="text-slate-400 text-sm">
+          Tour {turnNumber} • Au tour de{' '}
+          <span className="font-bold text-game-accent">{currentTeam.name}</span>
+        </p>
+      </div>
+
+      {/* Réponses déjà données */}
+      {answersUsed.length > 0 && (
+        <div className="bg-slate-700/30 rounded-lg p-4 mb-6">
+          <h4 className="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-2">
+            Réponses déjà données ({answersUsed.length})
+          </h4>
+          <div className="flex flex-wrap gap-2">
+            {answersUsed.map((ans, i) => (
+              <span
+                key={i}
+                className="px-3 py-1 bg-slate-600 text-white rounded-full text-sm"
+              >
+                {ans}
+              </span>
+            ))}
           </div>
         </div>
-      </div>
+      )}
 
-      {/* Timer */}
-      <div className="mb-6">
-        <div className="flex justify-between items-center mb-2">
-          <span className="text-sm text-slate-400">Temps restant</span>
-          <span className={`text-2xl font-bold ${
-            timeLeft <= 10 ? 'text-game-danger animate-pulse' : 'text-game-accent'
-          }`}>
-            {timeLeft}s
-          </span>
-        </div>
-        <div className="w-full bg-slate-700 rounded-full h-2 overflow-hidden">
-          <div 
-            className={`h-full transition-all duration-1000 ${
-              timeLeft <= 10 ? 'bg-game-danger' : 'bg-game-accent'
-            }`}
-            style={{ width: `${(timeLeft / timeLimit) * 100}%` }}
-          />
-        </div>
-      </div>
-
-      {/* Équipe courante */}
-      <div className="text-center mb-6 p-3 bg-slate-700/30 rounded-lg">
-        <p className="text-sm text-slate-400">C'est au tour de</p>
-        <p className="text-xl font-bold text-game-accent">{currentTeam.name}</p>
-      </div>
-
-      {/* Answer inputs */}
-      <div className="space-y-3 mb-6">
-        {answers.map((answer, index) => (
-          <div key={index} className="flex gap-2">
-            <div className="flex-shrink-0 w-8 h-10 bg-slate-700 rounded flex items-center justify-center text-sm font-bold text-slate-400">
-              {index + 1}
-            </div>
+      {/* Zone de réponse */}
+      {isCurrentTeam ? (
+        <div className="space-y-4">
+          <div>
             <input
               type="text"
               value={answer}
-              onChange={(e) => updateAnswer(index, e.target.value)}
+              onChange={(e) => setAnswer(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && answer.trim()) {
+                if (e.key === 'Enter' && answer.trim() && !disabled) {
                   e.preventDefault()
-                  addAnswer()
-                  // Focus next input after a short delay
-                  setTimeout(() => {
-                    const inputs = document.querySelectorAll('input[type="text"]')
-                    const nextInput = inputs[index + 1] as HTMLInputElement
-                    if (nextInput) nextInput.focus()
-                  }, 50)
+                  handleSubmit()
                 }
               }}
               placeholder="Votre réponse..."
-              className="flex-1 px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg focus:outline-none focus:border-game-accent transition-colors"
-              autoFocus={index === 0}
+              className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg focus:outline-none focus:border-game-accent transition-colors text-lg"
+              autoFocus
+              disabled={disabled}
             />
-            {answers.length > 1 && (
-              <button
-                onClick={() => removeAnswer(index)}
-                className="flex-shrink-0 w-10 h-10 bg-red-900/50 hover:bg-red-900 text-red-300 rounded-lg transition-colors"
-                title="Supprimer"
-              >
-                ✕
-              </button>
-            )}
           </div>
-        ))}
-      </div>
 
-      {/* Add answer button */}
-      <button
-        onClick={addAnswer}
-        className="w-full py-2 mb-4 border-2 border-dashed border-slate-600 hover:border-game-accent text-slate-400 hover:text-game-accent rounded-lg transition-colors"
-      >
-        + Ajouter une réponse
-      </button>
+          <div className="flex gap-3">
+            <button
+              onClick={handleSubmit}
+              disabled={disabled || answer.trim().length === 0}
+              className="btn-primary flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Valider la réponse
+            </button>
+            <button
+              onClick={onPass}
+              disabled={disabled}
+              className="btn-danger px-6 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Abandonner
+            </button>
+          </div>
 
-      {/* Stats */}
-      <div className="flex justify-center gap-8 mb-6 text-sm">
-        <div className="text-center">
-          <div className="text-2xl font-bold text-game-accent">{validAnswersCount}</div>
-          <div className="text-slate-400">Réponses</div>
+          <p className="text-center text-xs text-slate-500">
+            Une seule réponse à la fois • +2 points par bonne réponse au gagnant
+          </p>
         </div>
-        <div className="text-center">
-          <div className="text-2xl font-bold text-game-success">{validAnswersCount * 2}</div>
-          <div className="text-slate-400">Points potentiels</div>
+      ) : (
+        <div className="text-center py-6 bg-slate-700/30 rounded-lg">
+          <p className="text-slate-400 text-lg">
+            ⏳ En attente de la réponse de{' '}
+            <span className="font-bold text-game-accent">{currentTeam.name}</span>...
+          </p>
         </div>
-      </div>
-
-      {/* Submit button */}
-      <button
-        onClick={handleSubmit}
-        disabled={validAnswersCount === 0}
-        className="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        Valider {validAnswersCount > 0 && `(${validAnswersCount} ${validAnswersCount > 1 ? 'réponses' : 'réponse'})`}
-      </button>
-
-      {/* Hint */}
-      <p className="text-center text-xs text-slate-500 mt-4">
-        Appuyez sur Entrée pour ajouter rapidement une nouvelle réponse
-      </p>
+      )}
     </div>
   )
 }

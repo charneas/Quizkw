@@ -12,6 +12,7 @@ function Lobby() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [creating, setCreating] = useState(false)
+  const [gameStarted, setGameStarted] = useState(false)
 
   useEffect(() => {
     if (code) {
@@ -49,7 +50,8 @@ function Lobby() {
     if (!code) return
     try {
       await startGame(code)
-      navigate(`/game/${code}`)
+      setGameStarted(true)
+      await loadGame()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Impossible de démarrer')
     }
@@ -58,7 +60,7 @@ function Lobby() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-2xl text-slate-400 animate-pulse">Chargement...</div>
+        <div className="text-2xl text-text-muted animate-pulse">Chargement...</div>
       </div>
     )
   }
@@ -67,8 +69,8 @@ function Lobby() {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="card text-center max-w-md">
-          <h2 className="text-2xl font-bold text-game-danger mb-4">❌ Session non trouvée</h2>
-          <p className="text-slate-400 mb-4">{error}</p>
+          <h2 className="text-2xl font-bold text-danger mb-4">❌ Session non trouvée</h2>
+          <p className="text-text-muted mb-4">{error}</p>
           <button onClick={() => navigate('/')} className="btn-primary">
             Retour à l'accueil
           </button>
@@ -81,18 +83,18 @@ function Lobby() {
 
   return (
     <div className="min-h-screen p-4">
-      <DevHelper code={code!} />
+      {import.meta.env.DEV && <DevHelper code={code!} />}
       <div className="max-w-2xl mx-auto space-y-6">
         {/* Header */}
         <div className="text-center">
-          <h1 className="text-3xl font-bold text-white">Salle d'attente</h1>
-          <div className="mt-2 inline-block bg-game-card border border-slate-600 rounded-lg px-4 py-2">
-            <span className="text-slate-400 text-sm">Code : </span>
-            <span className="text-2xl font-mono font-bold text-game-accent tracking-widest">
+          <h1 className="text-3xl font-display font-semibold text-text">Salle d'attente</h1>
+          <div className="mt-2 inline-block bg-surface border border-border rounded-lg px-4 py-2">
+            <span className="text-text-muted text-sm">Code : </span>
+            <span className="text-2xl font-display font-semibold text-accent tracking-widest">
               {game.code}
             </span>
           </div>
-          <p className="mt-2 text-slate-400">
+          <p className="mt-2 text-text-muted">
             {game.teams.length}/{maxTeams} équipes • {game.players_per_team} joueurs par équipe
           </p>
         </div>
@@ -101,28 +103,37 @@ function Lobby() {
         <div className="card">
           <h2 className="text-xl font-semibold mb-4">👥 Équipes</h2>
           {game.teams.length === 0 ? (
-            <p className="text-slate-500 text-center py-4">Aucune équipe pour le moment...</p>
+            <p className="text-text-muted text-center py-4">Aucune équipe pour le moment...</p>
           ) : (
             <div className="space-y-3">
               {game.teams.map((team, index) => (
                 <div
                   key={team.id}
-                  className="flex items-center justify-between bg-slate-800 rounded-lg p-3 border border-slate-700"
+                  className="flex items-center justify-between bg-surface-raised rounded-lg p-3 border border-border"
                 >
                   <div className="flex items-center gap-3">
                     <span className="text-2xl">
                       {['🔴', '🔵', '🟢', '🟡', '🟣', '🟠'][index % 6]}
                     </span>
                     <div>
-                      <p className="font-semibold">{team.name}</p>
-                      <p className="text-sm text-slate-400">
+                      <p className="font-semibold text-text">{team.name}</p>
+                      <p className="text-sm text-text-muted">
                         {team.players.length}/{game.players_per_team} joueurs
                       </p>
                     </div>
                   </div>
-                  <span className="text-sm text-slate-500">
-                    Score : {team.score}
-                  </span>
+                  {gameStarted ? (
+                    <button
+                      onClick={() => navigate(`/team/${code}/${team.id}`)}
+                      className="btn-primary text-sm px-3 py-1 min-h-[44px]"
+                    >
+                      Rejoindre →
+                    </button>
+                  ) : (
+                    <span className="text-sm text-text-muted">
+                      Score : {team.score}
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
@@ -144,38 +155,60 @@ function Lobby() {
               <button
                 onClick={handleCreateTeam}
                 disabled={!teamName.trim() || creating}
-                className="btn-primary whitespace-nowrap disabled:opacity-50"
+                className="btn-primary whitespace-nowrap disabled:opacity-50 min-h-[44px]"
               >
                 {creating ? '...' : 'Ajouter'}
               </button>
             </div>
-            
-            <p className="text-xs text-slate-400 mt-2">
-              Note: Pour démarrer, utilisez le bouton rouge "DEV: Fast Track" ci-dessus. Il créera automatiquement les joueurs nécessaires pour chaque équipe.
-            </p>
+
+            {import.meta.env.DEV && (
+              <p className="text-xs text-text-muted mt-2">
+                Note: Pour démarrer, utilisez le bouton rouge "DEV: Fast Track" ci-dessus. Il créera automatiquement les joueurs nécessaires pour chaque équipe.
+              </p>
+            )}
           </div>
         )}
 
         {/* Erreur */}
         {error && (
-          <div className="text-game-danger text-sm text-center bg-red-900/20 rounded-lg p-3">
+          <div className="text-danger text-sm text-center bg-danger/10 rounded-lg p-3">
             {error}
           </div>
         )}
 
-        {/* Bouton démarrer */}
-        <div className="flex gap-3">
-          <button onClick={() => navigate('/')} className="btn-secondary flex-1">
-            ← Retour
-          </button>
-          <button
-            onClick={handleStartGame}
-            disabled={game.teams.length < 2}
-            className="btn-success flex-1 text-lg disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            🎯 Démarrer le jeu
-          </button>
-        </div>
+        {/* Boutons d'action */}
+        {gameStarted ? (
+          <div className="space-y-3">
+            <div className="card text-center bg-success/10 border-success">
+              <p className="text-success font-semibold text-lg mb-2">🎯 Jeu démarré !</p>
+              <p className="text-sm text-text-muted">Chaque équipe peut rejoindre en cliquant sur "Rejoindre" ci-dessus.</p>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => navigate('/')} className="btn-secondary flex-1 min-h-[44px]">
+                ← Retour
+              </button>
+              <button
+                onClick={() => navigate(`/game/${code}/host`)}
+                className="btn-secondary flex-1 text-sm min-h-[44px]"
+              >
+                📺 Écran hôte (optionnel)
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex gap-3">
+            <button onClick={() => navigate('/')} className="btn-secondary flex-1 min-h-[44px]">
+              ← Retour
+            </button>
+            <button
+              onClick={handleStartGame}
+              disabled={game.teams.length < 2}
+              className="btn-success flex-1 text-lg disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px]"
+            >
+              🎯 Démarrer le jeu
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

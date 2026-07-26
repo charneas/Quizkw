@@ -412,21 +412,44 @@ function Round2() {
           />
         )}
 
-        {/* Finalists Phase */}
-        {tournamentProgress?.phase === '4_finalists' && (
-          <div className="bg-gray-800 rounded-lg p-8 text-center">
-            <h2 className="text-3xl font-bold text-white mb-4">🎉 You are a Finalist!</h2>
-            <p className="text-gray-300 mb-6">
-              Congratulations! You have qualified for Round 3 (Memory Grid).
-            </p>
-            <button
-              className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg"
-              onClick={() => navigate(`/game/${code}/memory-grid`)}
-            >
-              Continue to Round 3 (Memory Grid)
-            </button>
-          </div>
-        )}
+        {/* Finalists Phase — AD-8 : le statut par joueur vient du serveur
+            (tournamentProgress.top_players), pas seulement de la phase
+            globale. Sans ce garde, un joueur éliminé verrait aussi cet écran
+            dès que la phase globale passe à "4_finalists" et pourrait
+            naviguer vers la grille mémoire (AC #3). */}
+        {tournamentProgress?.phase === '4_finalists' && currentPlayer && (() => {
+          const myStanding = tournamentProgress.top_players.find(
+            (p) => p.player_id === currentPlayer.id
+          )
+          const isFinalist = myStanding?.status === 'finalist'
+
+          if (isFinalist) {
+            return (
+              <div className="bg-gray-800 rounded-lg p-8 text-center">
+                <h2 className="text-3xl font-bold text-white mb-4">🎉 You are a Finalist!</h2>
+                <p className="text-gray-300 mb-6">
+                  Congratulations! You have qualified for Round 3 (Memory Grid).
+                </p>
+                <button
+                  className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg"
+                  onClick={() => navigate(`/game/${code}/memory-grid`)}
+                >
+                  Continue to Round 3 (Memory Grid)
+                </button>
+              </div>
+            )
+          }
+
+          return (
+            <div className="bg-gray-800 rounded-lg p-8 text-center">
+              <h2 className="text-3xl font-bold text-white mb-4">Round 2 terminé</h2>
+              <p className="text-gray-300">
+                Les 4 finalistes ont été désignés pour la Manche 3. Votre parcours dans ce
+                tournoi s'arrête ici — merci d'avoir joué !
+              </p>
+            </div>
+          )
+        })()}
       </div>
     </div>
   )

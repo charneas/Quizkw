@@ -1,9 +1,11 @@
+import logging
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import random
 import string
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 
 from app.database import get_db, engine
 from app import models, schemas
@@ -11,6 +13,18 @@ from app.models import Base
 from app.memory_grid import MemoryGridManager, MemoryGrid, GridCell, MemoryGridRound, GridCellStatus
 from app.round2_manager import Round2Manager
 from main_extended import router
+from main_admin import router as admin_router
+from main_content_gen import router as content_gen_router, player_router as content_flag_router
+
+# E-002 : journalisation minimale au niveau module (voir la spine § Deferred —
+# pas d'infrastructure d'observabilité, seulement logging.getLogger standard
+# aux points de transition de phase et d'erreur).
+# basicConfig est nécessaire : sans configuration explicite, le logger racine
+# reste au niveau WARNING par défaut et les logger.info() ajoutés seraient
+# silencieusement ignorés (trouvé en revue de code — l'objectif même de
+# diagnosticabilité de cette story aurait été vide de sens sans ça).
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logger = logging.getLogger(__name__)
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -36,6 +50,11 @@ from fastapi import Request
 
 # Include extended endpoints for Memory Grid Round 3
 app.include_router(router)
+# Include admin endpoints for content management (Epic F)
+app.include_router(admin_router)
+# Include content generation (F.2) and player flagging endpoints (Epic F)
+app.include_router(content_gen_router)
+app.include_router(content_flag_router)
 
 # Generate a random session code
 def generate_session_code(length=6):
@@ -202,11 +221,15 @@ def get_random_question(category: str = None, difficulty: schemas.DifficultyEnum
     if not question:
         raise HTTPException(status_code=404, detail="Aucune question trouvée")
     
-    # Mélanger les réponses
-    import json
+    # Mélanger les réponses de façon déterministe (basé sur le question_id)
+    # pour que l'ordre soit stable entre les appels de polling
+    import json, hashlib
     wrong_answers = json.loads(question.wrong_answers) if question.wrong_answers else []
     options = wrong_answers + [question.correct_answer]
-    random.shuffle(options)
+    # Seed basé sur le hash du question_id → ordre identique pour chaque équipe
+    seed = int(hashlib.md5(str(question.id).encode()).hexdigest(), 16) % (2**32)
+    rng = random.Random(seed)
+    rng.shuffle(options)
     
     return {
         "question": question,
@@ -249,11 +272,18 @@ def get_current_question(code: str, db: Session = Depends(get_db)):
     
     question = db.query(models.Question).filter(models.Question.id == game.current_question_id).first()
     
-    # Mélanger les réponses
-    import json
+    if not question:
+        raise HTTPException(status_code=404, detail="Question non trouvée")
+    
+    # Mélanger les réponses de façon déterministe (basé sur le question_id)
+    # pour que l'ordre soit stable entre les appels de polling
+    import json, hashlib
     wrong_answers = json.loads(question.wrong_answers) if question.wrong_answers else []
     options = wrong_answers + [question.correct_answer]
-    random.shuffle(options)
+    # Seed basé sur le hash du question_id → ordre identique pour chaque équipe
+    seed = int(hashlib.md5(str(question.id).encode()).hexdigest(), 16) % (2**32)
+    rng = random.Random(seed)
+    rng.shuffle(options)
     
     return {
         "question": question,
@@ -285,7 +315,8 @@ def get_answers_status(code: str, question_id: int = None, db: Session = Depends
         models.Answer.team_id.in_(team_ids)
     ).all()
     
-    answered_ids = [answer.team_id for answer in answered_teams]
+    # Dédupliquer: si une équipe a soumis plusieurs réponses, compter une seule fois
+    answered_ids = list(set([answer.team_id for answer in answered_teams]))
     all_ids = [team.id for team in teams]
     remaining_ids = [id for id in all_ids if id not in answered_ids]
     
@@ -309,47 +340,120 @@ def submit_answer(answer_create: schemas.AnswerCreate, db: Session = Depends(get
     team = db.query(models.Team).filter(models.Team.id == answer_create.team_id).first()
     if not team:
         raise HTTPException(status_code=404, detail="Équipe non trouvée")
-    
-    # Vérifier si la réponse est correcte
+
+    # Empêcher les réponses en double pour la même question/équipe
+    existing = db.query(models.Answer).filter(
+        models.Answer.question_id == answer_create.question_id,
+        models.Answer.team_id == answer_create.team_id,
+    ).first()
+    if existing:
+        # Retourner la réponse existante sans créer de doublon
+        return {
+            "is_correct": existing.is_correct,
+            "correct_answer": question.correct_answer,
+            "points_earned": existing.points_earned,
+            "team_score": team.score,
+            "pending_validation": True,
+        }
+
+    # Vérifier si la réponse est correcte (sans attribuer les points — l'host valide)
     is_correct = answer_create.player_answer.strip().lower() == question.correct_answer.strip().lower()
-    points_earned = question.points if is_correct else 0
     
-    # Ajouter les points à l'équipe
-    team.score += points_earned
-    
-    # Enregistrer la réponse
+    # Ne PAS ajouter les points maintenant — l'host les validera via /validate-answers
+    # On enregistre juste la réponse avec points_earned=0 (sera mis à jour par l'host)
     answer = models.Answer(
         question_id=answer_create.question_id,
         team_id=answer_create.team_id,
         player_answer=answer_create.player_answer,
         is_correct=is_correct,
-        points_earned=points_earned
+        points_earned=0  # Points attribués par l'host lors de la validation
     )
     
     db.add(answer)
     db.commit()
-    db.refresh(team)
-    
-    # Marquer que l'équipe a répondu à cette question
-    game = db.query(models.GameSession).filter(models.GameSession.current_question_id == question.id).first()
-    if game:
-        # Vérifier si toutes les équipes ont répondu
-        teams = db.query(models.Team).filter(models.Team.game_session_id == game.id).all()
-        team_responses = db.query(models.Answer).filter(
-            models.Answer.question_id == question.id,
-            models.Answer.team_id.in_([t.id for t in teams])
-        ).count()
-        
-        if team_responses == len(teams):
-            # All teams have answered, clear current question
-            game.current_question_id = None
-            db.commit()
     
     return {
         "is_correct": is_correct,
         "correct_answer": question.correct_answer,
-        "points_earned": points_earned,
-        "team_score": team.score
+        "points_earned": 0,  # Pas encore de points — en attente de validation
+        "team_score": team.score,
+        "pending_validation": True
+    }
+
+@app.post("/games/{code}/validate-answers")
+def validate_answers(code: str, db: Session = Depends(get_db)):
+    """
+    L'host valide les réponses de toutes les équipes pour la question courante.
+    Attribue les points aux équipes qui ont répondu correctement.
+    """
+    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
+    
+    if not game.current_question_id:
+        raise HTTPException(status_code=400, detail="Pas de question courante à valider")
+    
+    question = db.query(models.Question).filter(models.Question.id == game.current_question_id).first()
+    if not question:
+        raise HTTPException(status_code=404, detail="Question non trouvée")
+    
+    # FIX: Only get answers from teams in THIS game session (not previous games)
+    teams_in_game = db.query(models.Team).filter(models.Team.game_session_id == game.id).all()
+    team_ids_in_game = [t.id for t in teams_in_game]
+    
+    answers = db.query(models.Answer).filter(
+        models.Answer.question_id == game.current_question_id,
+        models.Answer.team_id.in_(team_ids_in_game)
+    ).all()
+    
+    # Attribuer les points pour chaque réponse correcte (idempotent — safe to call multiple times)
+    teams_updated = []
+    teams_processed = set()
+    for answer in answers:
+        if answer.team_id in teams_processed:
+            continue
+        teams_processed.add(answer.team_id)
+        team = db.query(models.Team).filter(models.Team.id == answer.team_id).first()
+        if team and answer.is_correct and answer.points_earned == 0:
+            points = question.points
+            team.score += points
+            answer.points_earned = points
+            teams_updated.append({
+                "team_id": team.id,
+                "team_name": team.name,
+                "is_correct": True,
+                "points_earned": points,
+                "new_score": team.score,
+            })
+        elif team and answer.is_correct:
+            # Already validated — return existing data without double-counting
+            teams_updated.append({
+                "team_id": team.id,
+                "team_name": team.name,
+                "is_correct": True,
+                "points_earned": answer.points_earned,
+                "new_score": team.score,
+            })
+        elif team:
+            teams_updated.append({
+                "team_id": team.id,
+                "team_name": team.name,
+                "is_correct": False,
+                "points_earned": 0,
+                "new_score": team.score,
+            })
+    
+    db.commit()
+    
+    # Effacer la question courante (toutes les équipes ont été validées)
+    game.current_question_id = None
+    db.commit()
+    
+    return {
+        "message": "Réponses validées avec succès",
+        "teams_updated": teams_updated,
+        "question_text": question.text,
+        "correct_answer": question.correct_answer,
     }
 
 @app.get("/teams/{team_id}/tokens")
@@ -424,10 +528,20 @@ def create_memory_grid(code: str, db: Session = Depends(get_db)):
     # Vérifier que le jeu est à la manche 3
     if game.current_round != models.RoundType.MANCHE_3:
         raise HTTPException(status_code=400, detail="La grille mémoire est seulement disponible en manche 3")
-    
+
+    # Idempotence (reconnexion / rechargement de page) : une grille non
+    # complétée existe déjà pour cette partie, on la retourne plutôt que
+    # d'en recréer une (et de perdre la progression en cours).
+    existing = db.query(MemoryGrid).filter(
+        MemoryGrid.game_session_id == game.id,
+        MemoryGrid.is_completed == False
+    ).first()
+    if existing:
+        return existing
+
     manager = MemoryGridManager(db)
     memory_grid = manager.create_memory_grid(game.id, rows=7, cols=5)
-    
+
     return memory_grid
 
 @app.post("/games/{code}/memory-grid/start", response_model=schemas.StartMemoryGridRoundResponse)
@@ -447,16 +561,29 @@ def start_memory_grid_round(code: str, db: Session = Depends(get_db)):
     
     if not memory_grid:
         raise HTTPException(status_code=404, detail="Aucune grille mémoire active trouvée")
-    
+
+    # Idempotence (reconnexion / rechargement de page) : un round actif
+    # existe déjà pour cette grille, on le retourne plutôt que d'en créer
+    # un nouveau (qui réinitialiserait le joueur courant).
+    existing_round = db.query(MemoryGridRound).filter(
+        MemoryGridRound.memory_grid_id == memory_grid.id,
+        MemoryGridRound.is_active == True
+    ).first()
+    if existing_round:
+        return {
+            "round_id": existing_round.id,
+            "message": "Tour de grille mémoire déjà en cours"
+        }
+
     manager = MemoryGridManager(db)
     round_obj = manager.start_memory_grid_round(game.id, memory_grid.id)
-    
+
     return {
         "round_id": round_obj.id,
         "message": "Tour de grille mémoire démarré"
     }
 
-@app.get("/memory-grid/{memory_grid_id}/state", response_model=schemas.MemoryGridStateResponse)
+@app.get("/memory-grid/{memory_grid_id}/state")
 def get_memory_grid_state(memory_grid_id: int, db: Session = Depends(get_db)):
     """
     Obtenir l'état actuel de la grille mémoire
@@ -475,31 +602,87 @@ def reveal_cell(reveal_request: schemas.SelectCellRequest, db: Session = Depends
     Révéler une cellule dans la grille mémoire
     """
     manager = MemoryGridManager(db)
-    result = manager.reveal_cell(reveal_request.round_id, reveal_request.team_id, reveal_request.cell_id)
-    
-    if not result:
-        raise HTTPException(status_code=404, detail="Erreur lors de la révélation de la cellule")
-    
-    if "error" in result:
-        raise HTTPException(status_code=400, detail=result["error"])
-    
+    # AD-5 : l'endpoint possède la transaction. AD-6 : LookupError -> 404, ValueError -> 400.
+    try:
+        result = manager.reveal_cell(
+            reveal_request.round_id, reveal_request.player_id, reveal_request.cell_id
+        )
+        db.commit()
+    except LookupError as e:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+
     return result
 
 @app.post("/memory-grid/answer-cell")
 def answer_cell(answer_request: schemas.AnswerCellRequest, db: Session = Depends(get_db)):
     """
-    Répondre à une cellule révélée dans la grille mémoire
+    Répondre à une cellule révélée dans la grille mémoire.
+
+    AD-3 : le corps porte la RÉPONSE du joueur, pas un verdict de correction.
+    Le serveur compare lui-même à la bonne réponse.
     """
     manager = MemoryGridManager(db)
-    result = manager.answer_cell(answer_request.round_id, answer_request.team_id, answer_request.cell_id, answer_request.is_correct)
-    
-    if not result:
-        raise HTTPException(status_code=404, detail="Erreur lors de la réponse à la cellule")
-    
-    if "error" in result:
-        raise HTTPException(status_code=400, detail=result["error"])
-    
+    try:
+        result = manager.answer_cell(
+            answer_request.round_id,
+            answer_request.player_id,
+            answer_request.cell_id,
+            answer_request.player_answer,
+        )
+        # Une réponse (correcte ou non) clôt le tour du joueur courant : le
+        # tour passe au finaliste suivant (tourniquet de advance_turn).
+        manager.advance_turn(result["memory_grid_id"])
+        manager.check_completion(result["memory_grid_id"])
+        db.commit()
+    except LookupError as e:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+
     return result
+
+@app.post("/memory-grid/{memory_grid_id}/skip-turn")
+def skip_turn(memory_grid_id: int, expected_turn: int = None, db: Session = Depends(get_db)):
+    """
+    Fait passer la grille mémoire au tour suivant sans réponse à une cellule
+    (déclenché par le timer de tour côté client quand il arrive à 0).
+
+    C-003 : chaque client connecté fait tourner son propre timer et peut donc
+    appeler ce endpoint indépendamment pour le même timeout. `expected_turn`
+    (le tour observé par le client au moment où son timer a démarré) permet un
+    compare-and-set : si le tour a déjà avancé depuis (réponse d'un joueur ou
+    skip-turn d'un autre client), cet appel est ignoré au lieu de sauter un
+    tour supplémentaire.
+    """
+    manager = MemoryGridManager(db)
+
+    memory_grid = db.query(MemoryGrid).filter(MemoryGrid.id == memory_grid_id).first()
+    if not memory_grid:
+        raise HTTPException(status_code=404, detail="Memory grid not found")
+
+    if expected_turn is not None and memory_grid.current_turn != expected_turn:
+        return {"memory_grid_id": memory_grid_id, "current_turn": memory_grid.current_turn}
+
+    # La cellule éventuellement révélée par le joueur dont le tour expire
+    # redevient cachée : sinon le joueur suivant hériterait d'une question
+    # déjà exposée gratuitement.
+    revealed_cell = db.query(GridCell).filter(
+        GridCell.memory_grid_id == memory_grid_id,
+        GridCell.status == GridCellStatus.REVEALED
+    ).first()
+    if revealed_cell:
+        revealed_cell.status = GridCellStatus.HIDDEN
+
+    new_turn = manager.advance_turn(memory_grid_id)
+    db.commit()
+
+    return {"memory_grid_id": memory_grid_id, "current_turn": new_turn}
 
 @app.post("/games/{code}/advance-to-phase3")
 def advance_to_phase3(code: str, db: Session = Depends(get_db)):
@@ -509,15 +692,40 @@ def advance_to_phase3(code: str, db: Session = Depends(get_db)):
     game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
     if not game:
         raise HTTPException(status_code=404, detail="Game session not found")
-    
+
+    # Idempotent : plusieurs finalistes peuvent atterrir sur l'écran Manche 3
+    # en même temps et déclencher cet appel simultanément (AD-7 : un rejeu ne
+    # doit pas échouer). Vérifié AVANT le garde is_active : un rejeu après que
+    # la partie a été désactivée (ex. fin de partie) reste un no-op réussi
+    # plutôt qu'un faux "Game is not active" trompeur (trouvé en revue de code).
+    if game.current_round == models.RoundType.MANCHE_3:
+        return {
+            "message": "La partie est déjà en Manche 3",
+            "current_round": game.current_round.value
+        }
+
     # Check if game is active and can proceed to phase 3
     if not game.is_active:
+        logger.warning("advance_to_phase3 refusé pour %s : partie inactive", code)
         raise HTTPException(status_code=400, detail="Game is not active")
-    
+
+    # AD-7 : la transition part de la Manche 2 — un garde vérifie que la
+    # manche précédente a réellement eu lieu avant de sauter en Manche 3.
+    if game.current_round != models.RoundType.MANCHE_2:
+        logger.warning(
+            "advance_to_phase3 refusé pour %s : partie en %s, pas MANCHE_2",
+            code, game.current_round.value,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=f"La Manche 3 ne peut démarrer qu'après la Manche 2 ; la partie est en {game.current_round.value}"
+        )
+
     # Advance to round 3
     game.current_round = models.RoundType.MANCHE_3
     db.commit()
-    
+    logger.info("Manche 2 -> Manche 3 : partie %s avancée", code)
+
     return {
         "message": "Successfully advanced to round 3 (memory grid)",
         "current_round": game.current_round.value
@@ -545,48 +753,102 @@ def create_memory_grid_with_themes(code: str, rows: int = 7, cols: int = 5, db: 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@app.get("/games/{code}/memory-grid/team-ranking")
-def get_team_ranking_from_round2(code: str, db: Session = Depends(get_db)):
+@app.get("/games/{code}/memory-grid/finalists")
+def get_finalists_from_round2(code: str, db: Session = Depends(get_db)):
     """
-    Get team ranking based on Round 2 PlayerRound2Stats scores.
-    Returns list of team IDs sorted by total score (descending).
+    Les 4 finalistes de la Manche 3, classés par score de Manche 2.
+    AD-0 : la Manche 3 est individuelle — on classe des JOUEURS.
     """
     game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
     if not game:
         raise HTTPException(status_code=404, detail="Game session not found")
-    
+
     manager = MemoryGridManager(db)
-    team_ranking = manager.get_team_ranking_from_round2(game.id)
-    
+    try:
+        finalists = manager.get_finalists_from_round2(game.id)
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
     return {
-        "team_ranking": team_ranking,
+        "finalists": finalists,
         "game_session_id": game.id
     }
 
-@app.get("/memory-grid/{memory_grid_id}/current-team-turn")
-def get_current_team_turn(memory_grid_id: int, db: Session = Depends(get_db)):
+@app.post("/games/{code}/qualify-round2")
+def qualify_players_from_round1(code: str, db: Session = Depends(get_db)):
     """
-    Determine which team should play based on current turn and team ranking.
+    Qualifier les 8 joueurs de la Manche 2 depuis les meilleures équipes.
+
+    AD-0 : Manche 1 collective -> Manche 2 individuelle (8 joueurs).
+    AD-7 : c'est cette transition qui pose enfin MANCHE_2.
+    AD-5 : l'endpoint possède la transaction.
+    """
+    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Game session not found")
+
+    manager = Round2Manager(db)
+    try:
+        result = manager.qualify_players_from_round1(game.id)
+        db.commit()
+        return result
+    except LookupError as e:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/games/{code}/memory-grid/standings")
+def get_memory_grid_standings(code: str, db: Session = Depends(get_db)):
+    """
+    Classement final des finalistes de la Manche 3, adressé par code de partie.
+
+    AD-1 : c'est la Manche 3 SEULE qui désigne le vainqueur du tournoi ; aucun
+    score des manches 1 ou 2 n'entre dans ce classement.
+    """
+    from app.memory_grid_enhanced import MemoryGridEnhancer
+
+    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Game session not found")
+
+    memory_grid = db.query(MemoryGrid).filter(
+        MemoryGrid.game_session_id == game.id
+    ).order_by(MemoryGrid.id.desc()).first()
+    if not memory_grid:
+        raise HTTPException(status_code=404, detail="Aucune grille mémoire pour cette partie")
+
+    try:
+        return MemoryGridEnhancer(db).calculate_winner(memory_grid.id)
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.get("/memory-grid/{memory_grid_id}/current-player-turn")
+def get_current_player_turn(memory_grid_id: int, db: Session = Depends(get_db)):
+    """
+    Le finaliste dont c'est le tour, en tourniquet sur le classement de Manche 2.
     """
     manager = MemoryGridManager(db)
-    
-    # Get memory grid
+
     memory_grid = db.query(MemoryGrid).filter(MemoryGrid.id == memory_grid_id).first()
     if not memory_grid:
         raise HTTPException(status_code=404, detail="Memory grid not found")
-    
-    # Get team ranking for this game session
-    team_ranking = manager.get_team_ranking_from_round2(memory_grid.game_session_id)
-    if not team_ranking:
-        raise HTTPException(status_code=400, detail="No team ranking available")
-    
-    current_team_id = manager.get_current_team_turn(memory_grid_id, team_ranking)
-    
+
+    try:
+        finalists = manager.get_finalists_from_round2(memory_grid.game_session_id)
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    current_player_id = manager.get_current_player_turn(memory_grid_id, finalists)
+
     return {
         "memory_grid_id": memory_grid_id,
         "current_turn": memory_grid.current_turn,
-        "team_ranking": team_ranking,
-        "current_team_id": current_team_id
+        "finalists": finalists,
+        "current_player_id": current_player_id
     }
 
 @app.get("/games/{code}/available-colors")
@@ -609,20 +871,28 @@ def get_available_colors(code: str, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting available colors: {str(e)}")
 
-@app.post("/teams/{team_id}/select-color")
-def select_team_color(team_id: int, color: str, db: Session = Depends(get_db)):
+@app.post("/memory-grid/select-color")
+def select_player_color(request: schemas.ColorSelectionRequest, db: Session = Depends(get_db)):
     """
-    Select a color for a team in Round 3.
-    Validates color is available and unique.
+    Attribuer une couleur à un finaliste de la Manche 3.
+
+    AD-0 : les couleurs appartiennent aux joueurs, pas aux équipes.
+    AD-12 : l'entrée passe par le corps de requête, jamais en paramètre d'URL.
+    AD-5 : l'endpoint possède la transaction.
     """
     manager = MemoryGridManager(db)
     try:
-        result = manager.select_team_color(team_id, color)
+        result = manager.select_player_color(
+            request.game_session_id, request.player_id, request.color
+        )
+        db.commit()
         return result
+    except LookupError as e:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:
+        db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error selecting color: {str(e)}")
 
 # Round 2 Endpoints (16→8→4 Tournament)
 @app.get("/round2/{game_code}/themes")
@@ -838,10 +1108,35 @@ def advance_round2_phase(game_code: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Game session not found")
     
     manager = Round2Manager(db)
-    
+
+    # H-007 : le bouton "Manche 2 →" n'a jamais appelé qualify-round2 ; sans
+    # PlayerRound2Stats, la qualification n'a jamais eu lieu. On la déclenche
+    # ici pour que /round2/{code}/advance fonctionne seul depuis la Manche 1.
+    if game.current_round == models.RoundType.MANCHE_1:
+        try:
+            result = manager.qualify_players_from_round1(game.id)
+            db.commit()
+        except (LookupError, ValueError) as e:
+            db.rollback()
+            logger.warning("qualify_players_from_round1 rejeté pour %s : %s", game_code, e)
+            raise HTTPException(status_code=400, detail=str(e))
+        except IntegrityError:
+            db.rollback()
+            logger.warning("qualify_players_from_round1 en conflit pour %s (rejeu concurrent)", game_code)
+            raise HTTPException(status_code=409, detail="Qualification déjà en cours ou en conflit, réessayez")
+        logger.info(
+            "Manche 1 -> Manche 2 : %s joueurs qualifiés pour %s", result["qualified_count"], game_code
+        )
+        return schemas.Round2AdvanceResponse(
+            new_phase="16_players",
+            qualified_count=result["qualified_count"],
+            eliminated_count=0,
+            message=f"{result['qualified_count']} joueurs qualifiés pour la Manche 2"
+        )
+
     # Check current phase
     progress = manager.get_tournament_progress(game.id)
-    
+
     if progress.phase == "16_players":
         # Check if all players have finished
         all_players = db.query(models.PlayerRound2Stats).filter(
@@ -865,8 +1160,30 @@ def advance_round2_phase(game_code: str, db: Session = Depends(get_db)):
         )
     
     elif progress.phase == "8_qualified":
+        # Ne pas promouvoir tant qu'un joueur qualifié joue encore sa Manche 2
+        # (get_tournament_progress passe en "8_qualified" dès que 8 joueurs
+        # ont terminé, même si un 9e est toujours PLAYING).
+        still_playing = db.query(models.PlayerRound2Stats).filter(
+            models.PlayerRound2Stats.game_session_id == game.id,
+            models.PlayerRound2Stats.qualification_status == models.QualificationStatus.PLAYING,
+        ).count()
+        if still_playing:
+            logger.info(
+                "Manche 2 -> Manche 3 différée pour %s : %s joueur(s) encore en jeu",
+                game_code, still_playing,
+            )
+            raise HTTPException(
+                status_code=400,
+                detail=f"{still_playing} joueur(s) qualifié(s) n'ont pas encore terminé la Manche 2"
+            )
+
         # Advance to 4 finalists
-        result = manager.advance_to_finalists(game.id)
+        try:
+            result = manager.advance_to_finalists(game.id)
+        except ValueError as e:
+            logger.warning("advance_to_finalists rejeté pour %s : %s", game_code, e)
+            raise HTTPException(status_code=400, detail=str(e))
+        logger.info("Manche 2 -> Manche 3 : 4 finalistes désignés pour %s", game_code)
         return result
     
     else:
@@ -886,145 +1203,396 @@ def get_round2_progress(game_code: str, db: Session = Depends(get_db)):
     
     return progress
 
-# Ping-Pong Endpoints
-@app.get("/ping-pong/random", response_model=schemas.PingPongTheme)
+# Ping-Pong Duel Endpoints
+@app.get("/ping-pong/random-theme", response_model=schemas.PingPongTheme)
 def get_random_ping_pong_theme(db: Session = Depends(get_db)):
     """
-    Get a random ping-pong theme for the 5-turn challenge
+    Get a random ping-pong theme for a duel
     """
-    from app.models import PingPongTheme
+    from app.ping_pong_manager import PingPongManager
     
-    theme = db.query(PingPongTheme).order_by(func.random()).first()
+    manager = PingPongManager(db)
+    theme = manager.get_random_theme()
     
     if not theme:
         raise HTTPException(status_code=404, detail="No ping-pong themes available")
     
     return theme
 
-@app.post("/ping-pong/answer", response_model=schemas.PingPongDuelResponse)
-def submit_ping_pong_answer(answer_request: schemas.SubmitPingPongAnswerRequest, db: Session = Depends(get_db)):
+@app.post("/ping-pong/duel/start", response_model=schemas.PingPongDuelResponse)
+def start_ping_pong_duel(request: schemas.StartPingPongDuelRequest, db: Session = Depends(get_db)):
     """
-    Submit ping-pong answers for a team
+    Démarrer un duel ping-pong entre 2 équipes.
+    team1_id = équipe qui a tourné la roue (elle commence le duel).
     """
-    from app.models import PingPongTheme, PingPongAnswer
+    from app.ping_pong_manager import PingPongManager
     
-    # Get theme
-    theme = db.query(PingPongTheme).filter(PingPongTheme.id == answer_request.theme_id).first()
-    if not theme:
-        raise HTTPException(status_code=404, detail="Ping-pong theme not found")
+    manager = PingPongManager(db)
     
-    # Get team
-    team = db.query(models.Team).filter(models.Team.id == answer_request.team_id).first()
-    if not team:
-        raise HTTPException(status_code=404, detail="Team not found")
+    try:
+        duel = manager.start_duel(
+            game_session_id=request.game_session_id,
+            theme_id=request.theme_id,
+            team1_id=request.team1_id,
+            team2_id=request.team2_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     
-    # Normalize answers (case-insensitive comparison)
-    correct_answers_lower = [ans.strip().lower() for ans in theme.correct_answers]
-    given_answers_lower = [ans.strip().lower() for ans in answer_request.answers_given]
+    # Construire la réponse
+    theme = db.query(models.PingPongTheme).filter(models.PingPongTheme.id == duel.theme_id).first()
+    team1 = db.query(models.Team).filter(models.Team.id == duel.team1_id).first()
+    team2 = db.query(models.Team).filter(models.Team.id == duel.team2_id).first()
     
-    # Find correct answers
-    correct_given = []
-    for given in answer_request.answers_given:
-        if given.strip().lower() in correct_answers_lower:
-            correct_given.append(given.strip())
-    
-    correct_count = len(correct_given)
-    
-    # Calculate points: +2 points per correct answer
-    points_earned = correct_count * 2
-    
-    # Check if winner (has minimum required answers)
-    is_winner = correct_count >= theme.min_answers_to_win
-    
-    # Bonus si toutes les réponses sont correctes
-    if correct_count == len(theme.correct_answers):
-        points_earned += 3  # Bonus de 3 points
-    
-    # Update team score
-    team.score += points_earned
-    
-    # Save answer
-    ping_pong_answer = PingPongAnswer(
-        game_session_id=answer_request.game_session_id,
-        theme_id=answer_request.theme_id,
-        team_id=answer_request.team_id,
-        answers_given=answer_request.answers_given,
-        correct_count=correct_count,
-        points_earned=points_earned
-    )
-    
-    db.add(ping_pong_answer)
-    db.commit()
-    db.refresh(team)
-    
-    # Find missed answers
-    missed = [ans for ans in theme.correct_answers if ans.strip().lower() not in given_answers_lower]
-    
-    return schemas.PingPongAnswerResponse(
-        correct_count=correct_count,
-        total_possible=len(theme.correct_answers),
-        points_earned=points_earned,
-        correct_answers_given=correct_given,
-        missed_answers=missed,
-        team_score=team.score,
-        is_winner=is_winner
+    return schemas.PingPongDuelResponse(
+        duel_id=duel.id,
+        theme=schemas.PingPongTheme(
+            id=theme.id,
+            title=theme.title,
+            description=theme.description,
+            correct_answers=theme.correct_answers,
+            min_answers_to_win=theme.min_answers_to_win,
+            created_at=theme.created_at,
+        ),
+        team1={"id": team1.id, "name": team1.name},
+        team2={"id": team2.id, "name": team2.name},
+        current_turn_team_id=duel.current_turn_team_id,
+        turn_number=1,
+        answers_used=duel.answers_used or [],
+        is_completed=duel.is_completed,
+        winner_team_id=duel.winner_team_id,
     )
 
-@app.get("/games/{code}/ping-pong-results/{theme_id}", response_model=schemas.PingPongDuelResultsResponse)
-def get_ping_pong_results(code: str, theme_id: int, db: Session = Depends(get_db)):
+@app.post("/ping-pong/duel/answer", response_model=schemas.SubmitPingPongAnswerResponse)
+def submit_ping_pong_duel_answer(request: schemas.SubmitPingPongAnswerRequest, db: Session = Depends(get_db)):
     """
-    Get results for a ping-pong session
+    Soumettre une réponse dans un duel ping-pong.
     """
-    from app.models import PingPongTheme, PingPongAnswer
+    from app.ping_pong_manager import PingPongManager
     
-    # Get game
+    manager = PingPongManager(db)
+    
+    try:
+        result = manager.submit_answer(
+            duel_id=request.duel_id,
+            team_id=request.team_id,
+            answer=request.answer,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
+    return schemas.SubmitPingPongAnswerResponse(
+        is_correct=result["is_correct"],
+        answer=result["answer"],
+        turn_number=result["turn_number"],
+        duel_continues=result["duel_continues"],
+        winner_team_id=result["winner_team_id"],
+        winner_team_name=result["winner_team_name"],
+        next_turn_team_id=result["next_turn_team_id"],
+        message=result["message"],
+    )
+
+@app.get("/ping-pong/duel/{duel_id}")
+def get_ping_pong_duel_state(duel_id: int, db: Session = Depends(get_db)):
+    """
+    Récupérer l'état actuel d'un duel ping-pong.
+    """
+    from app.ping_pong_manager import PingPongManager
+    
+    manager = PingPongManager(db)
+    
+    try:
+        state = manager.get_duel_state(duel_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    
+    return state
+
+@app.get("/ping-pong/duel/{duel_id}/results")
+def get_ping_pong_duel_results(duel_id: int, db: Session = Depends(get_db)):
+    """
+    Récupérer les résultats finaux d'un duel ping-pong.
+    """
+    from app.ping_pong_manager import PingPongManager
+    
+    manager = PingPongManager(db)
+    
+    try:
+        results = manager.get_duel_results(duel_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    
+    return results
+
+# Team-specific state endpoint (multi-screen architecture)
+@app.get("/game/{code}/team/{team_id}/state")
+def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_db)):
+    """
+    Retourne l'état spécifique à UNE équipe pour le jeu multi-écrans.
+    
+    Chaque équipe peut avoir son propre appareil et voir :
+    - Si c'est son tour de répondre
+    - La question courante (si elle n'a pas déjà répondu)
+    - Les duels ping-pong en cours (si elle est impliquée)
+    - Ses jetons disponibles
+    - Son score actuel
+    """
     game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
     if not game:
-        raise HTTPException(status_code=404, detail="Game session not found")
-    
-    # Get theme
-    theme = db.query(PingPongTheme).filter(PingPongTheme.id == theme_id).first()
-    if not theme:
-        raise HTTPException(status_code=404, detail="Ping-pong theme not found")
-    
-    # Get all answers for this theme in this game
-    answers = db.query(PingPongAnswer).filter(
-        PingPongAnswer.game_session_id == game.id,
-        PingPongAnswer.theme_id == theme_id
+        raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
+
+    # Récupérer l'équipe
+    team = db.query(models.Team).filter(
+        models.Team.id == team_id,
+        models.Team.game_session_id == game.id,
+    ).first()
+    if not team:
+        raise HTTPException(status_code=404, detail="Équipe non trouvée dans cette session")
+
+    from app.ping_pong_manager import PingPongManager
+    from app.round2_manager import Round2Manager
+
+    # --- Statut de la question courante ---
+    current_question_data = None
+    has_answered = False
+    is_my_turn = True  # par défaut
+
+    if game.current_question_id:
+        question = db.query(models.Question).filter(
+            models.Question.id == game.current_question_id
+        ).first()
+
+        if question:
+            # Vérifier si cette équipe a déjà répondu à cette question
+            existing_answer = db.query(models.Answer).filter(
+                models.Answer.question_id == question.id,
+                models.Answer.team_id == team_id,
+            ).first()
+
+            has_answered = existing_answer is not None
+
+            # Mélanger les réponses de façon déterministe (basé sur le question_id)
+            # pour que l'ordre soit stable entre les appels de polling
+            import json, hashlib
+            wrong_answers = json.loads(question.wrong_answers) if question.wrong_answers else []
+            options = wrong_answers + [question.correct_answer]
+            # Seed basé sur le hash du question_id → ordre identique pour chaque équipe
+            seed = int(hashlib.md5(str(question.id).encode()).hexdigest(), 16) % (2**32)
+            rng = random.Random(seed)
+            rng.shuffle(options)
+
+            current_question_data = {
+                "id": question.id,
+                "text": question.text,
+                "category": question.category,
+                "difficulty": question.difficulty.value,
+                "points": question.points,
+                "correct_answer": question.correct_answer if has_answered else None,  # Ne révéler qu'après réponse
+                "options": options,
+            }
+
+    # Vérifier le statut des réponses pour déterminer si c'est le tour
+    if game.current_question_id:
+        teams_in_game = db.query(models.Team).filter(
+            models.Team.game_session_id == game.id
+        ).all()
+        team_ids_in_game = [t.id for t in teams_in_game]
+
+        answered_teams = db.query(models.Answer).filter(
+            models.Answer.question_id == game.current_question_id,
+            models.Answer.team_id.in_(team_ids_in_game),
+        ).all()
+        # Dédupliquer: une équipe peut avoir soumis plusieurs réponses
+        answered_ids = list(set([a.team_id for a in answered_teams]))
+
+        # Si toutes les équipes ont répondu, personne n'a "le tour"
+        if len(answered_ids) == len(team_ids_in_game):
+            is_my_turn = False
+
+    # --- Duel Ping-Pong en cours ---
+    ping_pong_manager = PingPongManager(db)
+    active_duel_for_team = None
+
+    # Chercher un duel actif où cette équipe est impliquée
+    active_duel = db.query(models.PingPongDuel).filter(
+        models.PingPongDuel.game_session_id == game.id,
+        models.PingPongDuel.is_completed == False,
+        models.PingPongDuel.team1_id == team_id,
+    ).first()
+
+    if not active_duel:
+        active_duel = db.query(models.PingPongDuel).filter(
+            models.PingPongDuel.game_session_id == game.id,
+            models.PingPongDuel.is_completed == False,
+            models.PingPongDuel.team2_id == team_id,
+        ).first()
+
+    if active_duel:
+        try:
+            duel_state = ping_pong_manager.get_duel_state(active_duel.id)
+            active_duel_for_team = {
+                "duel_id": active_duel.id,
+                "theme": duel_state["theme"],
+                "team1": duel_state["team1"],
+                "team2": duel_state["team2"],
+                "current_turn_team_id": duel_state["current_turn_team_id"],
+                "current_turn_team_name": duel_state["current_turn_team_name"],
+                "turn_number": duel_state["turn_number"],
+                "answers_used": duel_state["answers_used"],
+                "is_completed": duel_state["is_completed"],
+                "winner_team_id": duel_state["winner_team_id"],
+                "is_my_turn_in_duel": active_duel.current_turn_team_id == team_id,
+            }
+        except Exception:
+            pass  # Duel not found or error — leave as None
+
+    # --- Jetons ---
+    tokens = db.query(models.Token).filter(
+        models.Token.team_id == team_id,
+        models.Token.is_used == False,
     ).all()
-    
-    # Get teams
-    teams = db.query(models.Team).filter(models.Team.game_session_id == game.id).all()
-    
-    # Build results
-    team_results = []
-    max_correct = 0
-    winner_team_id = None
-    
-    for team in teams:
-        team_answer = next((a for a in answers if a.team_id == team.id), None)
-        if team_answer:
-            correct_count = team_answer.correct_count
-            if correct_count > max_correct:
-                max_correct = correct_count
-                winner_team_id = team.id
-            
-            team_results.append({
-                "team_id": team.id,
-                "team_name": team.name,
-                "correct_count": correct_count,
-                "points": team_answer.points_earned,
-                "answers": team_answer.answers_given
+
+    tokens_data = [
+        {"id": t.id, "token_type": t.token_type.value, "is_used": t.is_used}
+        for t in tokens
+    ]
+
+    # --- Statut des autres équipes ---
+    if game.current_question_id:
+        teams_in_game = db.query(models.Team).filter(
+            models.Team.game_session_id == game.id
+        ).all()
+        other_teams_status = []
+        for t in teams_in_game:
+            if t.id == team_id:
+                continue
+            other_teams_status.append({
+                "team_id": t.id,
+                "team_name": t.name,
+                "has_answered": t.id in answered_ids if game.current_question_id else False,
             })
+    else:
+        other_teams_status = []
+
+    # --- Auto-validation (no-host mode) ---
+    # When all teams have answered AND no host is present, auto-validate and return results.
+    # When a host IS present, the host validates manually via /validate-answers.
+    all_teams_answered = False
+    validation_result_data = None
+
+    if game.current_question_id:
+        all_teams_answered = (
+            len(answered_ids) == len(team_ids_in_game) and len(team_ids_in_game) > 0
+        )
+
+        if all_teams_answered and not game.has_host:
+            # No host → auto-validate answers and award points
+            question = db.query(models.Question).filter(
+                models.Question.id == game.current_question_id
+            ).first()
+
+            if question:
+                # Get answers for this game's teams only
+                game_answers = db.query(models.Answer).filter(
+                    models.Answer.question_id == game.current_question_id,
+                    models.Answer.team_id.in_(team_ids_in_game),
+                ).all()
+
+                # Auto-validate: award points (idempotent — won't double-count)
+                needs_validation = any(
+                    a.is_correct and a.points_earned == 0 for a in game_answers
+                )
+                if needs_validation:
+                    processed = set()
+                    for a in game_answers:
+                        if a.team_id in processed:
+                            continue
+                        processed.add(a.team_id)
+                        t = db.query(models.Team).filter(models.Team.id == a.team_id).first()
+                        if t and a.is_correct and a.points_earned == 0:
+                            a.points_earned = question.points
+                            t.score += question.points
+                    db.commit()
+                    # Refresh this team's score after auto-validation
+                    db.refresh(team)
+
+                # Build validation result
+                teams_results = []
+                processed = set()
+                for a in game_answers:
+                    if a.team_id in processed:
+                        continue
+                    processed.add(a.team_id)
+                    t = db.query(models.Team).filter(models.Team.id == a.team_id).first()
+                    if t:
+                        teams_results.append({
+                            "team_name": t.name,
+                            "is_correct": a.is_correct,
+                            "points_earned": a.points_earned,
+                        })
+
+                validation_result_data = {
+                    "correct_answer": question.correct_answer,
+                    "teams": teams_results,
+                }
+
+    return {
+        "team_id": team_id,
+        "team_name": team.name,
+        "team_score": team.score,
+        "game_phase": game.current_round.value,
+        "is_my_turn": is_my_turn,
+        "has_answered": has_answered,
+        "current_question": current_question_data,
+        "active_duel": active_duel_for_team,
+        "tokens": tokens_data,
+        "other_teams": other_teams_status,
+        "all_answered": all_teams_answered,
+        "validation_result": validation_result_data,
+    }
+
+@app.post("/games/{code}/register-host")
+def register_host(code: str, db: Session = Depends(get_db)):
+    """
+    Enregistre qu'un hôte est connecté à cette session.
+    Quand un hôte est présent, la validation des réponses est manuelle (par l'hôte).
+    Sans hôte, les réponses sont auto-validées quand toutes les équipes ont répondu.
+    """
+    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
     
-    all_answered = len(answers) == len(teams)
+    game.has_host = True
+    db.commit()
     
-    return schemas.PingPongResultsResponse(
-        theme=theme,
-        team_results=team_results,
-        winner_team_id=winner_team_id,
-        all_teams_answered=all_answered
-    )
+    return {"message": "Hôte enregistré", "has_host": True}
+
+
+@app.post("/games/{code}/next-question")
+def next_question(code: str, db: Session = Depends(get_db)):
+    """
+    Passer à la question suivante (utilisable sans hôte).
+    Choisit une question aléatoire et la définit comme question courante.
+    """
+    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
+
+    # Choisir une question aléatoire
+    question = db.query(models.Question).order_by(func.random()).first()
+    if not question:
+        raise HTTPException(status_code=404, detail="Aucune question disponible")
+
+    # Définir comme question courante
+    game.current_question_id = question.id
+    db.commit()
+
+    return {
+        "message": "Nouvelle question définie",
+        "question_id": question.id,
+        "question_text": question.text,
+    }
+
 
 @app.post("/tokens/use")
 def use_token(data: dict, db: Session = Depends(get_db)):

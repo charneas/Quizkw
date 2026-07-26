@@ -191,9 +191,13 @@ class Round2Manager:
             models.PlayerRound2Stats.qualification_status == models.QualificationStatus.QUALIFIED
         ).order_by(desc(models.PlayerRound2Stats.score)).all()
         
-        # Pour MVP: top 8 qualifiés
-        qualified_players = all_players[:8] if len(all_players) >= 8 else all_players
-        eliminated_players = all_players[8:] if len(all_players) > 8 else []
+        # Le round1 qualifie déjà des équipes entières (8 ou 9 joueurs au
+        # total, jamais plus) : ne jamais couper une équipe qualifiée ici non
+        # plus. Cette coupe ne doit intervenir qu'au-delà de la tolérance
+        # partagée avec advance_to_finalists.
+        cutoff = self.ROUND2_SLOTS + 1
+        qualified_players = all_players[:cutoff] if len(all_players) > cutoff else all_players
+        eliminated_players = all_players[cutoff:] if len(all_players) > cutoff else []
         
         # Mettre à jour les statuts
         cutoff_score = qualified_players[-1].score if qualified_players else 0
@@ -221,8 +225,11 @@ class Round2Manager:
             models.PlayerRound2Stats.qualification_status == models.QualificationStatus.QUALIFIED
         ).order_by(desc(models.PlayerRound2Stats.score)).all()
         
-        if len(qualified_players) != 8:
-            raise ValueError(f"Attendu 8 joueurs qualifiés, trouvé {len(qualified_players)}")
+        if len(qualified_players) not in (self.ROUND2_SLOTS, self.ROUND2_SLOTS + 1):
+            raise ValueError(
+                f"Attendu {self.ROUND2_SLOTS} ou {self.ROUND2_SLOTS + 1} joueurs qualifiés, "
+                f"trouvé {len(qualified_players)}"
+            )
         
         # Top 4 deviennent finalistes
         finalists = qualified_players[:4]
@@ -317,3 +324,95 @@ class Round2Manager:
             players.extend(team.players)
         
         return players
+
+    # --- Qualification Manche 1 -> Manche 2 ---
+
+    ROUND2_SLOTS = 8
+
+    def qualify_players_from_round1(self, game_session_id: int) -> Dict:
+        """Qualifier les joueurs de la Manche 1 vers la Manche 2.
+
+        AD-0 : la Manche 1 est COLLECTIVE, la Manche 2 est INDIVIDUELLE (8 joueurs).
+        On prend donc les meilleures équipes et TOUS leurs joueurs jusqu'à
+        atteindre 8 — personne n'est éliminé individuellement dans une manche
+        qui ne note que des équipes.
+
+        AD-1 : la Manche 1 ne sert qu'à qualifier. Son score n'est pas reporté :
+        chaque qualifié démarre la Manche 2 à zéro.
+
+        AD-7 : c'est ici que GameSession.current_round passe à MANCHE_2 — la
+        seule transition qui manquait au tournoi. Compare-and-set : un second
+        appel concurrent échoue au lieu de dupliquer la qualification.
+
+        AD-5 : pas de commit ici, l'endpoint possède la transaction.
+        """
+        game = self.db.query(models.GameSession).filter(
+            models.GameSession.id == game_session_id
+        ).first()
+        if not game:
+            raise LookupError(f"Session de jeu {game_session_id} non trouvée")
+
+        if game.current_round != models.RoundType.MANCHE_1:
+            raise ValueError(
+                f"La qualification part de la Manche 1 ; la partie est en "
+                f"{game.current_round.value}"
+            )
+
+        teams = self.db.query(models.Team).filter(
+            models.Team.game_session_id == game_session_id
+        ).order_by(models.Team.score.desc()).all()
+        if not teams:
+            raise ValueError("Aucune équipe à qualifier")
+
+        qualified: List[models.Player] = []
+        for team in teams:
+            if len(qualified) >= self.ROUND2_SLOTS:
+                break
+            qualified.extend(team.players)
+
+        if not qualified:
+            raise ValueError("Aucun joueur à qualifier : les équipes sont vides")
+
+        if len(qualified) > self.ROUND2_SLOTS + 1:
+            raise ValueError(
+                f"La qualification par équipes entières a dépassé la tolérance "
+                f"({len(qualified)} joueurs, max {self.ROUND2_SLOTS + 1}) : "
+                "composition d'équipes incompatible avec le nombre de places Manche 2"
+            )
+
+        # Chaque qualifié démarre la Manche 2 à zéro (AD-1)
+        for player in qualified:
+            existing = self.db.query(models.PlayerRound2Stats).filter(
+                models.PlayerRound2Stats.game_session_id == game_session_id,
+                models.PlayerRound2Stats.player_id == player.id,
+            ).first()
+            if not existing:
+                self.db.add(models.PlayerRound2Stats(
+                    game_session_id=game_session_id,
+                    player_id=player.id,
+                    score=0,
+                    questions_answered=0,
+                    correct_answers=0,
+                    current_question_index=0,
+                    qualification_status=models.QualificationStatus.PLAYING,
+                ))
+
+        # AD-7 : compare-and-set sur la phase
+        updated = self.db.query(models.GameSession).filter(
+            models.GameSession.id == game_session_id,
+            models.GameSession.current_round == models.RoundType.MANCHE_1,
+        ).update(
+            {models.GameSession.current_round: models.RoundType.MANCHE_2},
+            synchronize_session=False,
+        )
+        if updated == 0:
+            raise ValueError("La partie a déjà quitté la Manche 1")
+
+        self.db.flush()
+
+        return {
+            "game_session_id": game_session_id,
+            "current_round": models.RoundType.MANCHE_2.value,
+            "qualified_player_ids": [p.id for p in qualified],
+            "qualified_count": len(qualified),
+        }

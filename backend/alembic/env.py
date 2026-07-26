@@ -2,17 +2,24 @@ from logging.config import fileConfig
 import sys
 import os
 
+from dotenv import load_dotenv
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 
 from alembic import context
 
+load_dotenv()
+
 # Add the app directory to the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import the Base from your models
-from app.database import Base
-from app import models  # Import all models to ensure they're registered
+from app.database import Base, DATABASE_URL
+# Import EVERY module that defines ORM models, so Base.metadata is complete.
+# Missing one makes autogenerate silently propose dropping its tables.
+from app import models  # noqa: F401 — core entities
+from app import memory_grid  # noqa: F401 — Manche 3 grid models
+from app import memory_grid_enhanced  # noqa: F401 — grid colour/result models
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -25,6 +32,20 @@ if config.config_file_name is not None:
 
 # Set the target metadata for autogenerate support
 target_metadata = Base.metadata
+
+# Surcharger sqlalchemy.url avec DATABASE_URL, comme app/database.py (H-008).
+# alembic.ini garde une valeur statique en fallback inerte quand cette
+# surcharge s'applique (via les entrypoints standards run_migrations_*) :
+# sans elle, une migration peut s'exécuter contre la mauvaise base — c'est
+# exactement ce qui est arrivé le 2026-07-26
+# (voir _bmad-output/epic-f-retro-2026-07-26.md).
+# Réutilise app.database.DATABASE_URL (même valeur, même fallback) plutôt
+# que de re-dériver la logique ici. `%%` échappe les `%` littéraux
+# (ex: mot de passe encodé en URL) car ConfigParser interprète `%` sans
+# échappement automatique côté Alembic.
+config.set_main_option(
+    "sqlalchemy.url", (DATABASE_URL or "sqlite:///./quizkw.db").replace("%", "%%")
+)
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:

@@ -67,7 +67,7 @@ class ThemeSelectionResponse(BaseModel):
 class ColorPaletteResponse(BaseModel):
     """Réponse avec la palette de couleurs disponibles."""
     available_colors: List[PlayerColorEnum]
-    taken_colors: Dict[int, PlayerColorEnum]  # team_id -> color
+    taken_colors: Dict[int, PlayerColorEnum]  # player_id -> color
 
 class ThemePaletteResponse(BaseModel):
     """Réponse avec les thèmes disponibles pour sélection."""
@@ -81,8 +81,8 @@ class MemoryGridCellInfo(BaseModel):
     row: int
     col: int
     status: MemoryGridCellStatusEnum
-    assigned_team_id: Optional[int] = None
-    answered_by_team_id: Optional[int] = None
+    assigned_player_id: Optional[int] = None
+    answered_by_player_id: Optional[int] = None
     question: Optional[dict] = None  # Détails de la question si révélée/répondue
 
 class MemoryGridDetailedStateResponse(BaseModel):
@@ -93,13 +93,13 @@ class MemoryGridDetailedStateResponse(BaseModel):
     current_turn: int
     is_completed: bool
     cells: List[MemoryGridCellInfo]
-    current_team_id: Optional[int] = None
+    current_player_id: Optional[int] = None
     current_round: RoundStatusEnum
 
 class GameResultResponse(BaseModel):
     """Résultat du jeu Memory Grid."""
     is_completed: bool
-    team_scores: List[dict]
+    player_scores: List[dict]
     winner: Optional[dict] = None
     is_tie: bool = False
     message: str
@@ -111,13 +111,13 @@ class RoundInfoResponse(BaseModel):
     current_turn: int
     is_sudden_death: bool = False
     sudden_death_round: int = 0
-    teams_in_sudden_death: List[int] = []
+    players_in_sudden_death: List[int] = []
 
 class TurnAdvanceResponse(BaseModel):
     """Réponse d'avancement de tour."""
     turn_number: int
-    current_team_id: Optional[int] = None
-    next_team_id: Optional[int] = None
+    current_player_id: Optional[int] = None
+    next_player_id: Optional[int] = None
     message: str
 
 class MemoryGridCreateRequest(BaseModel):
@@ -130,26 +130,26 @@ class MemoryGridRevealRequest(BaseModel):
     """Requête pour révéler une cellule."""
     memory_grid_id: int
     round_id: int
-    team_id: int
+    player_id: int
     cell_id: int
 
 class MemoryGridAnswerRequest(BaseModel):
     """Requête pour répondre à une cellule."""
     memory_grid_id: int
     round_id: int
-    team_id: int
+    player_id: int
     cell_id: int
     answer: str
-    is_correct: Optional[bool] = None  # Peut être déterminé côté serveur
+    # AD-3 : le serveur seul juge — pas de verdict transmis par le client
 
 class MemoryGridAnswerResponse(BaseModel):
     """Réponse après réponse à une cellule."""
     status: str
     is_correct: bool
     points_awarded: int
-    team_score: int
+    player_score: int
     cell_type: str  # "own_theme", "stolen", "unassigned"
-    next_team_id: Optional[int] = None
+    next_player_id: Optional[int] = None
     game_completed: bool = False
 
 class PlayerSetupStatusResponse(BaseModel):

@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, Enum as SQLAlchemyEnum, JSON
 from sqlalchemy.orm import relationship
-from app.models import Base, Question, Team
+from app.models import Base, Question
 import enum
 import random
 import json
@@ -33,13 +33,19 @@ class GridCell(Base):
     col = Column(Integer)
     question_id = Column(Integer, ForeignKey("questions.id"))
     status = Column(SQLAlchemyEnum(GridCellStatus), default=GridCellStatus.HIDDEN)
-    assigned_team_id = Column(Integer, ForeignKey("teams.id"), nullable=True)  # Which team owns this cell initially
-    answered_by_team_id = Column(Integer, ForeignKey("teams.id"), nullable=True)  # Which team answered it
-    
+    # AD-0 : la Manche 3 est individuelle — les cellules appartiennent à des
+    # JOUEURS, pas à des équipes.
+    assigned_player_id = Column(Integer, ForeignKey("players.id"), nullable=True)  # Finaliste propriétaire initial
+    answered_by_player_id = Column(Integer, ForeignKey("players.id"), nullable=True)  # Finaliste qui a répondu
+    # AD-15 : sentinelle d'idempotence. L'attribution est un update gardé sur
+    # cette colonne encore à 0 ; le statut de cellule est de l'état de jeu et
+    # ne sert jamais de garde.
+    points_awarded = Column(Integer, default=0, nullable=False)
+
     memory_grid = relationship("MemoryGrid", back_populates="cells")
     question = relationship("Question")
-    assigned_team = relationship("Team", foreign_keys=[assigned_team_id])
-    answered_by_team = relationship("Team", foreign_keys=[answered_by_team_id])
+    assigned_player = relationship("Player", foreign_keys=[assigned_player_id])
+    answered_by_player = relationship("Player", foreign_keys=[answered_by_player_id])
 
 class MemoryGridRound(Base):
     __tablename__ = "memory_grid_rounds"
@@ -47,12 +53,13 @@ class MemoryGridRound(Base):
     id = Column(Integer, primary_key=True, index=True)
     game_session_id = Column(Integer, ForeignKey("game_sessions.id"))
     memory_grid_id = Column(Integer, ForeignKey("memory_grids.id"))
-    current_team_id = Column(Integer, ForeignKey("teams.id"), nullable=True)
+    # AD-0 : la Manche 3 est individuelle — c'est le tour d'un JOUEUR.
+    current_player_id = Column(Integer, ForeignKey("players.id"), nullable=True)
     is_active = Column(Boolean, default=True)
-    
+
     game_session = relationship("GameSession")
     memory_grid = relationship("MemoryGrid")
-    current_team = relationship("Team")
+    current_player = relationship("Player")
 
 # Memory grid logic
 class MemoryGridManager:
@@ -70,35 +77,39 @@ class MemoryGridManager:
         self.db.commit()
         self.db.refresh(memory_grid)
         
-        # Get all teams for this game session
-        teams = self.db.query(Team).filter(Team.game_session_id == game_session_id).all()
-        if not teams:
-            raise ValueError("No teams found for this game session")
-        
+        # AD-0 : la Manche 3 oppose 4 FINALISTES individuels, pas des équipes.
+        finalists = self.get_finalists_from_round2(game_session_id)
+        if not finalists:
+            raise ValueError("Aucun finaliste : la Manche 2 n'a pas désigné de qualifiés")
+
+        # Chaque finaliste démarre à 0 (AD-1) : on matérialise sa ligne tout de
+        # suite pour que le classement soit lisible dès le premier écran.
+        for player_id in finalists:
+            self._get_or_create_round3_stats(game_session_id, player_id)
+
         # Get questions for the grid
         questions = self.db.query(Question).all()
         total_cells = rows * cols
-        
+
         if len(questions) < total_cells:
             raise ValueError(f"Not enough questions for the memory grid. Need {total_cells}, have {len(questions)}")
-        
+
         # Shuffle questions
         random.shuffle(questions)
-        
+
         # Create grid cells
         cells = []
         question_index = 0
-        
-        # Assign 5 cells per team (their color/theme)
-        cells_per_team = 5
+
+        # 5 cellules par finaliste (sa couleur)
+        cells_per_player = 5
         assigned_cells = []
-        
-        # Assign cells to teams
-        for team in teams:
-            for _ in range(cells_per_team):
+
+        for player_id in finalists:
+            for _ in range(cells_per_player):
                 # Note: The check "if question_index >= len(questions): break" was removed
                 # because line 80 ensures len(questions) >= total_cells (35)
-                # and we only assign 20 cells to teams (4 teams * 5 = 20)
+                # and we only assign 20 cells to finalists (4 players * 5 = 20)
                 
                 # Find an unassigned cell position
                 while True:
@@ -115,7 +126,7 @@ class MemoryGridManager:
                     col=col,
                     question_id=questions[question_index].id,
                     status=GridCellStatus.HIDDEN,
-                    assigned_team_id=team.id
+                    assigned_player_id=player_id
                 )
                 cells.append(cell)
                 question_index += 1
@@ -133,7 +144,7 @@ class MemoryGridManager:
                         col=col,
                         question_id=questions[question_index].id,
                         status=GridCellStatus.HIDDEN,
-                        assigned_team_id=None  # Unassigned cell
+                        assigned_player_id=None  # Cellule neutre
                     )
                     cells.append(cell)
                     question_index += 1
@@ -154,81 +165,113 @@ class MemoryGridManager:
         self.db.refresh(round_obj)
         return round_obj
     
-    def reveal_cell(self, round_id, team_id, cell_id):
-        """Reveal a cell in the memory grid"""
-        # Set current team in round if provided
+    def reveal_cell(self, round_id, player_id, cell_id):
+        """Révéler une cellule. AD-6 : on lève, on ne retourne pas None.
+        AD-5 : pas de commit ici, l'endpoint possède la transaction."""
         round_obj = self.db.query(MemoryGridRound).filter(MemoryGridRound.id == round_id).first()
-        if round_obj:
-            round_obj.current_team_id = team_id
-            self.db.commit()
+        if not round_obj:
+            raise LookupError(f"Manche de grille {round_id} introuvable")
 
         cell = self.db.query(GridCell).filter(GridCell.id == cell_id).first()
-        
-        if not round_obj or not cell:
-            return None
-        
-        # Can't reveal an already answered cell
+        if not cell:
+            raise LookupError(f"Cellule {cell_id} introuvable")
+
         if cell.status == GridCellStatus.ANSWERED:
-            return None
-        
-        # Update cell status
+            raise ValueError("Cette cellule a déjà reçu une réponse")
+
+        round_obj.current_player_id = player_id
         cell.status = GridCellStatus.REVEALED
-        self.db.commit()
-        self.db.refresh(cell)
-        
+        self.db.flush()
+
         return {"status": "cell_revealed", "cell_id": cell.id}
     
-    def answer_cell(self, round_id, team_id, cell_id, is_correct):
-        """Answer a revealed cell in the memory grid"""
+    def answer_cell(self, round_id, player_id, cell_id, player_answer):
+        """Répondre à une cellule révélée.
+
+        AD-3 : le SERVEUR juge la correction. `player_answer` est le texte
+        soumis ; le client ne transmet plus de booléen de correction.
+        AD-15 : `cell.points_awarded` est la sentinelle d'idempotence — un
+        rejeu n'attribue pas deux fois.
+        AD-1 : le score s'écrit dans PlayerRound3Stats, jamais dans Team.score.
+        AD-5 : on ne commit pas ici ; l'endpoint possède la transaction.
+        """
         round_obj = self.db.query(MemoryGridRound).filter(MemoryGridRound.id == round_id).first()
+        if not round_obj:
+            raise LookupError(f"Manche de grille {round_id} introuvable")
+
         cell = self.db.query(GridCell).filter(GridCell.id == cell_id).first()
-        
-        if not round_obj or not cell:
-            return None
-        
-        # Cell must be revealed to be answered
+        if not cell:
+            raise LookupError(f"Cellule {cell_id} introuvable")
+
         if cell.status != GridCellStatus.REVEALED:
-            return {"error": "Cell must be revealed before answering"}
-        
-        # Update cell status
+            raise ValueError("La cellule doit être révélée avant d'y répondre")
+
+        # AD-15 : sentinelle. Le statut est de l'état de jeu, pas une garde.
+        if cell.points_awarded != 0:
+            raise ValueError("Cette cellule a déjà été attribuée")
+
+        # AD-3 : correction calculée côté serveur, même normalisation que les
+        # manches 1 et 2 — strip + lower, rien d'autre.
+        question = self.db.query(Question).filter(Question.id == cell.question_id).first()
+        if not question:
+            raise LookupError(f"Question {cell.question_id} introuvable pour la cellule {cell_id}")
+
+        submitted = (player_answer or "").strip().lower()
+        is_correct = submitted == question.correct_answer.strip().lower()
+
         cell.status = GridCellStatus.ANSWERED
-        cell.answered_by_team_id = team_id
-        
-        # Calculate points
+        cell.answered_by_player_id = player_id
+
+        # Barème : 2 de base, +1 si c'est sa propre cellule, +1 si elle est volée
         points = 0
         if is_correct:
-            # Base points for correct answer
             points = 2
-            
-            # Bonus if answering own assigned cell
-            if cell.assigned_team_id == team_id:
+            if cell.assigned_player_id == player_id:
                 points += 1
-            
-            # Bonus if stealing from another team
-            if cell.assigned_team_id and cell.assigned_team_id != team_id:
+            elif cell.assigned_player_id:
                 points += 1
-        
-        # Determine cell type
+
         cell_type = "unassigned"
-        if cell.assigned_team_id:
-            if cell.assigned_team_id == team_id:
-                cell_type = "own"
-            else:
-                cell_type = "stolen"
-        
-        # Update team score if points > 0
+        if cell.assigned_player_id:
+            cell_type = "own" if cell.assigned_player_id == player_id else "stolen"
+
         if points > 0:
-            team = self.db.query(Team).filter(Team.id == team_id).first()
-            if team:
-                team.score += points
-        self.db.commit()
-        self.db.refresh(cell)
-        
+            cell.points_awarded = points  # arme la sentinelle
+            stats = self._get_or_create_round3_stats(round_obj.game_session_id, player_id)
+            stats.score += points
+            stats.cells_claimed += 1
+
+        self.db.flush()
+
         return {
             "status": "answered",
+            "is_correct": is_correct,
+            "correct_answer": question.correct_answer,
             "points_awarded": points,
-            "cell_type": cell_type
+            "cell_type": cell_type,
+            "memory_grid_id": round_obj.memory_grid_id,
         }
+
+    def _get_or_create_round3_stats(self, game_session_id, player_id):
+        """Ligne de score Manche 3 du joueur, créée à la volée si absente."""
+        from app.models import PlayerRound3Stats
+
+        stats = self.db.query(PlayerRound3Stats).filter(
+            PlayerRound3Stats.game_session_id == game_session_id,
+            PlayerRound3Stats.player_id == player_id,
+        ).first()
+
+        if not stats:
+            stats = PlayerRound3Stats(
+                game_session_id=game_session_id,
+                player_id=player_id,
+                score=0,
+                cells_claimed=0,
+            )
+            self.db.add(stats)
+            self.db.flush()
+
+        return stats
     
     def get_grid_state(self, memory_grid_id):
         """Get the current state of the memory grid"""
@@ -236,137 +279,172 @@ class MemoryGridManager:
         if not memory_grid:
             return None
         
-        cells = self.db.query(GridCell).filter(GridCell.memory_grid_id == memory_grid_id).all()
+        cells = self.db.query(GridCell).filter(
+            GridCell.memory_grid_id == memory_grid_id
+        ).order_by(GridCell.row, GridCell.col).all()
         
-        # Convert to dict format
-        grid_state = []
+        # Map status: backend 'answered' → frontend 'matched'
+        def map_status(status):
+            if status == GridCellStatus.ANSWERED:
+                return 'matched'
+            return status.value
+        
+        # Convert to dict format matching frontend MemoryGridState type
+        cells_data = []
         for cell in cells:
-            grid_state.append({
+            # Load question text if cell is revealed/answered
+            question_data = None
+            if cell.status != GridCellStatus.HIDDEN and cell.question_id:
+                q = self.db.query(Question).filter(Question.id == cell.question_id).first()
+                if q:
+                    question_data = {
+                        'id': q.id,
+                        'text': q.text,
+                        'category': q.category,
+                        'difficulty': q.difficulty.value,
+                        'points': q.points,
+                        'correct_answer': q.correct_answer,
+                    }
+            
+            cells_data.append({
                 'id': cell.id,
+                'memory_grid_id': memory_grid_id,
                 'row': cell.row,
                 'col': cell.col,
-                'status': cell.status.value,
-                'assigned_team_id': cell.assigned_team_id,
-                'answered_by_team_id': cell.answered_by_team_id,
-                'question_id': cell.question_id
+                'status': map_status(cell.status),
+                'assigned_player_id': cell.assigned_player_id,
+                'matched_by_player_id': cell.answered_by_player_id,
+                'points_awarded': cell.points_awarded,
+                'question': question_data,
             })
         
         return {
-            'memory_grid_id': memory_grid_id,
-            'rows': memory_grid.rows,
-            'cols': memory_grid.cols,
-            'current_turn': memory_grid.current_turn,
-            'is_completed': memory_grid.is_completed,
-            'cells': grid_state
+            'memory_grid': {
+                'id': memory_grid_id,
+                'game_session_id': memory_grid.game_session_id,
+                'rows': memory_grid.rows,
+                'cols': memory_grid.cols,
+                'grid_size': memory_grid.cols,  # alias for frontend
+                'current_turn': memory_grid.current_turn,
+                'is_completed': memory_grid.is_completed,
+            },
+            'cells': cells_data,
         }
     
     def advance_turn(self, memory_grid_id):
-        """Advance to the next turn in the memory grid"""
+        """Advance to the next turn in the memory grid.
+        AD-5 : pas de commit ici, l'endpoint possède la transaction."""
         memory_grid = self.db.query(MemoryGrid).filter(MemoryGrid.id == memory_grid_id).first()
         if not memory_grid:
             return None
-        
+
         memory_grid.current_turn += 1
-        self.db.commit()
-        self.db.refresh(memory_grid)
-        
+        self.db.flush()
+
         return memory_grid.current_turn
-    
+
     def check_completion(self, memory_grid_id):
-        """Check if the memory grid is completed (all cells answered)"""
+        """Check if the memory grid is completed (all cells answered).
+        AD-5 : pas de commit ici, l'endpoint possède la transaction."""
         memory_grid = self.db.query(MemoryGrid).filter(MemoryGrid.id == memory_grid_id).first()
         if not memory_grid:
             return None
-        
+
         cells = self.db.query(GridCell).filter(GridCell.memory_grid_id == memory_grid_id).all()
-        
+
         # Check if all cells are answered
         all_answered = all(cell.status == GridCellStatus.ANSWERED for cell in cells)
-        
+
         if all_answered:
             memory_grid.is_completed = True
-            self.db.commit()
-        
+            self.db.flush()
+
         return all_answered
     
     # Round 3 Enhanced Methods
-    def get_team_ranking_from_round2(self, game_session_id):
+    FINALIST_COUNT = 4
+
+    def get_finalists_from_round2(self, game_session_id):
+        """Les 4 finalistes de la Manche 3, classés par score de Manche 2.
+
+        AD-0 : la Manche 3 est INDIVIDUELLE avec exactement 4 finalistes.
+        AD-1 : la Manche 2 ne sert qu'à qualifier — son score ne suit pas le
+        joueur en Manche 3, il ne sert qu'à ce classement.
+
+        Retourne une liste d'identifiants de JOUEURS, du meilleur au moins bon.
         """
-        Get team ranking based on Round 2 PlayerRound2Stats scores.
-        Returns list of team IDs sorted by total score (descending).
-        """
-        from app.models import PlayerRound2Stats, Player, Team
-        
-        # Get all players with their Round 2 stats for this game session
-        player_stats = self.db.query(PlayerRound2Stats).filter(
+        from app.models import PlayerRound2Stats
+
+        stats = self.db.query(PlayerRound2Stats).filter(
             PlayerRound2Stats.game_session_id == game_session_id
-        ).all()
-        
-        # Group by team and calculate total team score
-        team_scores = {}
-        for stats in player_stats:
-            player = self.db.query(Player).filter(Player.id == stats.player_id).first()
-            if player and player.team_id:
-                team_scores[player.team_id] = team_scores.get(player.team_id, 0) + stats.score
-        
-        # Sort teams by score descending
-        sorted_teams = sorted(team_scores.items(), key=lambda x: x[1], reverse=True)
-        return [team_id for team_id, score in sorted_teams]
-    
-    def get_current_team_turn(self, memory_grid_id, team_ranking):
-        """
-        Determine which team should play based on current turn and team ranking.
-        """
+        ).order_by(PlayerRound2Stats.score.desc()).all()
+
+        if not stats:
+            raise LookupError(
+                f"Aucun résultat de Manche 2 pour la partie {game_session_id} : "
+                "impossible de désigner les finalistes"
+            )
+
+        return [s.player_id for s in stats[:self.FINALIST_COUNT]]
+
+    def get_current_player_turn(self, memory_grid_id, finalist_ranking):
+        """Le finaliste dont c'est le tour, en tourniquet sur le classement."""
         memory_grid = self.db.query(MemoryGrid).filter(MemoryGrid.id == memory_grid_id).first()
-        if not memory_grid or not team_ranking:
+        if not memory_grid or not finalist_ranking:
             return None
-        
-        # Round-robin: current_turn mod number_of_teams gives index in team_ranking
-        turn_index = memory_grid.current_turn % len(team_ranking)
-        return team_ranking[turn_index]
+
+        turn_index = memory_grid.current_turn % len(finalist_ranking)
+        return finalist_ranking[turn_index]
     
     def create_memory_grid_with_themes(self, game_session_id, rows=7, cols=5):
         """
         Create memory grid for Round 3 with theme-based cell assignment.
-        Uses team.selected_theme_ids to assign 5 cells per team based on selected themes.
+        AD-0 : 5 cellules par FINALISTE, d'après les thèmes qu'il a choisis.
         """
-        from app.models import GameSession, Difficulty
-        
+        from app.models import GameSession, Difficulty, Player, PlayerRound3Stats
+
         # Get game session to verify player count
         game = self.db.query(GameSession).filter(GameSession.id == game_session_id).first()
         if not game:
             raise ValueError("Game session not found")
-        
-        # Round 3 requires exactly 4 players
-        if game.total_players != 4:
-            raise ValueError(f"Round 3 requires exactly 4 players, found {game.total_players}")
-        
+
+        # AD-0 : la Manche 3 se joue à exactement 4 finalistes
+        finalists = self.get_finalists_from_round2(game_session_id)
+        if len(finalists) != self.FINALIST_COUNT:
+            raise ValueError(
+                f"La Manche 3 exige exactement {self.FINALIST_COUNT} finalistes, "
+                f"{len(finalists)} qualifiés trouvés"
+            )
+
         memory_grid = MemoryGrid(
             game_session_id=game_session_id,
             rows=rows,
             cols=cols
         )
         self.db.add(memory_grid)
-        self.db.commit()
-        self.db.refresh(memory_grid)
-        
-        # Get all teams for this game session with their selected themes
-        teams = self.db.query(Team).filter(Team.game_session_id == game_session_id).all()
-        if not teams:
-            raise ValueError("No teams found for this game session")
-        
-        # Verify each team has selected exactly 3 themes
+        self.db.flush()
+
+        # Chaque finaliste doit avoir choisi exactement 3 thèmes
         import json
-        for team in teams:
-            if not team.selected_theme_ids:
-                raise ValueError(f"Team {team.id} ({team.name}) has not selected themes for Round 3")
-            
-            # Parse selected theme IDs
-            theme_ids = json.loads(team.selected_theme_ids) if isinstance(team.selected_theme_ids, str) else team.selected_theme_ids
-            
+        finalist_themes = {}
+        for player_id in finalists:
+            stats = self.db.query(PlayerRound3Stats).filter(
+                PlayerRound3Stats.game_session_id == game_session_id,
+                PlayerRound3Stats.player_id == player_id,
+            ).first()
+
+            raw = stats.selected_theme_ids if stats else None
+            if not raw:
+                raise ValueError(f"Le finaliste {player_id} n'a pas choisi ses thèmes de Manche 3")
+
+            theme_ids = json.loads(raw) if isinstance(raw, str) else raw
             if not isinstance(theme_ids, list) or len(theme_ids) != 3:
-                raise ValueError(f"Team {team.id} ({team.name}) must have exactly 3 selected themes, found {len(theme_ids) if isinstance(theme_ids, list) else 'invalid format'}")
-        
+                raise ValueError(
+                    f"Le finaliste {player_id} doit choisir exactement 3 thèmes, "
+                    f"{len(theme_ids) if isinstance(theme_ids, list) else 'format invalide'} trouvé(s)"
+                )
+            finalist_themes[player_id] = theme_ids
+
         # Get difficult questions (difficulty = HARD only for Round 3)
         difficult_questions = self.db.query(Question).filter(
             Question.difficulty == Difficulty.HARD
@@ -384,15 +462,13 @@ class MemoryGridManager:
         question_index = 0
         assigned_cells = []
         
-        # Assign 5 cells per team based on selected themes
-        cells_per_team = 5
-        
-        for team in teams:
-            # Parse selected theme IDs
-            import json
-            theme_ids = json.loads(team.selected_theme_ids) if isinstance(team.selected_theme_ids, str) else team.selected_theme_ids
-            
-            for _ in range(cells_per_team):
+        # 5 cellules par finaliste, d'après ses thèmes
+        cells_per_player = 5
+
+        for player_id in finalists:
+            theme_ids = finalist_themes[player_id]
+
+            for _ in range(cells_per_player):
                 # Find an unassigned cell position
                 while True:
                     row = random.randint(0, rows - 1)
@@ -408,7 +484,7 @@ class MemoryGridManager:
                     col=col,
                     question_id=difficult_questions[question_index].id,
                     status=GridCellStatus.HIDDEN,
-                    assigned_team_id=team.id
+                    assigned_player_id=player_id
                 )
                 cells.append(cell)
                 question_index += 1
@@ -423,7 +499,7 @@ class MemoryGridManager:
                         col=col,
                         question_id=difficult_questions[question_index].id,
                         status=GridCellStatus.HIDDEN,
-                        assigned_team_id=None  # Unassigned cell
+                        assigned_player_id=None  # Cellule neutre
                     )
                     cells.append(cell)
                     question_index += 1
@@ -434,56 +510,55 @@ class MemoryGridManager:
         return memory_grid
     
     def get_available_colors(self, game_session_id):
-        """
-        Get available colors for selection in Round 3.
-        Returns list of PlayerColor enum values that are not already taken.
-        """
+        """Couleurs encore libres pour les finalistes de la Manche 3 (AD-0)."""
         from app.memory_grid_enhanced import PlayerColor
-        teams = self.db.query(Team).filter(Team.game_session_id == game_session_id).all()
-        
-        taken_colors = set()
-        for team in teams:
-            if team.color:
-                taken_colors.add(team.color)
-        
-        available_colors = []
-        for color_enum in PlayerColor:
-            if color_enum.value not in taken_colors:
-                available_colors.append(color_enum.value)
-        
-        return available_colors
-    
-    def select_team_color(self, team_id, color):
-        """
-        Select a color for a team in Round 3.
-        Validates color is available and unique.
-        """
+        from app.models import PlayerRound3Stats
+
+        taken = {
+            s.color for s in self.db.query(PlayerRound3Stats).filter(
+                PlayerRound3Stats.game_session_id == game_session_id
+            ).all() if s.color
+        }
+
+        return [c.value for c in PlayerColor if c.value not in taken]
+
+    def select_player_color(self, game_session_id, player_id, color):
+        """Attribuer une couleur à un finaliste. AD-0 : par joueur, pas par équipe.
+        AD-5 : pas de commit ici. AD-6 : on lève."""
         from app.memory_grid_enhanced import PlayerColor
-        from app.models import Team
-        
-        # Validate color
+        from app.models import PlayerRound3Stats
+
         if not isinstance(color, PlayerColor):
             try:
                 color = PlayerColor(color)
             except ValueError:
-                raise ValueError(f"Invalid color: {color}. Must be one of {[c.value for c in PlayerColor]}")
-        
-        team = self.db.query(Team).filter(Team.id == team_id).first()
-        if not team:
-            raise ValueError(f"Team {team_id} not found")
-        
-        # Check if color is already taken by another team in the same game session
-        existing_team = self.db.query(Team).filter(
-            Team.game_session_id == team.game_session_id,
-            Team.color == color.value,
-            Team.id != team_id
+                raise ValueError(
+                    f"Couleur invalide : {color}. Attendu l'une de {[c.value for c in PlayerColor]}"
+                )
+
+        taken_by = self.db.query(PlayerRound3Stats).filter(
+            PlayerRound3Stats.game_session_id == game_session_id,
+            PlayerRound3Stats.color == color.value,
+            PlayerRound3Stats.player_id != player_id,
         ).first()
-        
-        if existing_team:
-            raise ValueError(f"Color {color.value} is already taken by team {existing_team.name}")
-        
-        # Assign color
-        team.color = color.value
-        self.db.commit()
-        
-        return {"success": True, "team_id": team_id, "color": color.value}
+        if taken_by:
+            raise ValueError(
+                f"La couleur {color.value} est déjà prise par le joueur {taken_by.player_id}"
+            )
+
+        stats = self._get_or_create_round3_stats(game_session_id, player_id)
+        stats.color = color.value
+        self.db.flush()
+
+        return {"success": True, "player_id": player_id, "color": color.value}
+
+    def select_player_themes(self, game_session_id, player_id, theme_ids):
+        """Enregistrer les 3 thèmes d'un finaliste. AD-5 : pas de commit ici."""
+        if not isinstance(theme_ids, list) or len(theme_ids) != 3:
+            raise ValueError("Un finaliste doit choisir exactement 3 thèmes")
+
+        stats = self._get_or_create_round3_stats(game_session_id, player_id)
+        stats.selected_theme_ids = theme_ids
+        self.db.flush()
+
+        return {"success": True, "player_id": player_id, "selected_theme_ids": theme_ids}

@@ -14,8 +14,8 @@
 
 ---
 
-### 2. Questions Ping-Pong tous les 5 tours
-**Problème:** Infrastructure créée, implémentation à compléter
+### 2. ✅ Questions Ping-Pong tous les 5 tours - COMPLÉTÉ
+**Statut:** ✅ TERMINÉ ET FONCTIONNEL
 **Description:** Tous les 5 tours, DUEL 1v1 entre 2 équipes (tour par tour, première sans bonne réponse = perd)
 
 **État actuel:**
@@ -64,24 +64,12 @@
 
 ---
 
-### 4. Bouton d'aide pour les tests
-**Problème:** Un bouton de dev/test est encore visible en production
-**Localisation:** Probablement dans `DevHelper.tsx` ou pages de jeu
-**Action requise:**
-- Identifier le bouton concerné
-- Le masquer en production (utiliser `import.meta.env.DEV`)
-- Ou le supprimer complètement
-
-**Fichiers concernés:**
-- `frontend/src/components/DevHelper.tsx`
-- Pages contenant des boutons de debug
-
-**Code suggéré:**
-```tsx
-{import.meta.env.DEV && (
-  <button>Debug Button</button>
-)}
-```
+### 4. ✅ Bouton d'aide pour les tests - COMPLÉTÉ
+**Statut:** ✅ MASQUÉ EN PRODUCTION
+**Solution:** Ajout de `import.meta.env.DEV` autour de `<DevHelper>` dans `Game.tsx` et `Lobby.tsx`, ainsi que le texte de référence dans Lobby.
+**Fichiers modifiés:**
+- `frontend/src/pages/Game.tsx`
+- `frontend/src/pages/Lobby.tsx`
 
 ---
 
@@ -90,53 +78,53 @@
 ✅ **Complété:**
 - ✅ 52/52 tests backend passent (100%)
 - ✅ Synchronisation des questions COMPLÈTE
-- ✅ Infrastructure ping-pong créée
-- ✅ 232 questions en base
-- ✅ 85 questions Round 3 importées
-- ✅ Documentation complète
+- ✅ Ping-Pong duels COMPLET (17 thèmes, modèles, UI, résultats)
+- ✅ 147 questions + 10 thèmes + 17 thèmes ping-pong en base (vérifié 2026-07-25
+  dans `backend/quizkw.db` — l'ancien chiffre de 232 était inexact)
+- ✅ **Manche 3 — Grille Mémoire COMPLÈTE** (backend + frontend)
+  - Backend: `create_memory_grid`, `reveal_cell`, `answer_cell`, `get_grid_state`
+  - Frontend: `MemoryGrid.tsx` avec grille 7×5, couleurs par équipe, popup question, scoring
+  - Format API aligné: `{memory_grid: {...}, cells: [...]}`
+  - Navigation: HostGame → Manche 3, Round2 → Manche 3
 
-⚠️ **En cours:**
-- ⚠️ Ping-pong: modèles créés, implémentation à terminer
+⚠️ **En cours / À tester:**
+- ⚠️ Manche 3: test end-to-end en conditions réelles (lancer serveur + navigateur)
 
 ❌ **À corriger:**
-- ❌ Jetons non disponibles
-- ❌ Bouton de test visible
+- ❌ Jetons non disponibles dans le jeu (Manche 1)
 
 ---
 
 ## 🎯 Prochaines Étapes Recommandées
 
-### Étape 1: Terminer Ping-Pong (6-8h) 
-Voir `PING_PONG_TODO.md` pour le plan détaillé
-1. Créer PingPongManager
-2. Implémenter endpoints de duel
-3. Adapter composants React
-4. Intégration complète
-5. Seed des 17 thèmes
+### Étape 1: Test E2E Manche 3 (30min)
+1. Lancer backend + frontend
+2. Créer partie, avancer en Manche 3
+3. Tester grille: cliquer cellule → voir question → répondre → score
+4. Tester complétion
 
-### Étape 2: Corriger les Jetons (1-2h)
+### Étape 2: Polissage Manche 3 (1-2h)
+1. Timer par question (30s)
+2. Son/animation de révélation
+3. Meilleure indication de la cellule sélectionnée
+4. Page de résultats finaux
+
+### Étape 3: Corriger les Jetons Manche 1 (1-2h)
 1. Débugger TokenPanel
-2. Vérifier création en base
+2. Vérifier création en base lors du setup
 3. Tester utilisation
-
-### Étape 3: Nettoyer DevHelper (15min)
-1. Masquer en production
-2. Tester build production
 
 ---
 
 ## 📝 Notes
 
-**Priorité:** 
-1. Terminer Ping-Pong (infrastructure déjà créée)
-2. Corriger les jetons
-3. Nettoyer le code de dev
-
-**Questions Ping-Pong:** Nécessite une conception plus approfondie (format de réponse, scoring, UI).
-
-**Tests:** Ajouter des tests E2E pour ces nouvelles fonctionnalités une fois implémentées.
+**Architecture Manche 3:**
+- Backend: `backend/app/memory_grid.py` (MemoryGridManager)
+- Frontend: `frontend/src/pages/MemoryGrid.tsx`
+- Grille 7×5 = 35 cellules, 5 par équipe (couleur) + 15 neutres
+- Points: 2 base + 1 bonus cellule propre OU +1 bonus vol
 
 ---
 
 Date de création: 2026-05-25
-Dernière mise à jour: 2026-05-25
+Dernière mise à jour: 2026-07-19

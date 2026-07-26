@@ -47,6 +47,7 @@ class GameSession(Base):
     total_players = Column(Integer, nullable=False)
     players_per_team = Column(Integer, nullable=False)  # 2 ou 3 selon règles
     is_active = Column(Boolean, default=True)
+    has_host = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relations
@@ -166,6 +167,30 @@ class PlayerRound2Stats(Base):
     game_session = relationship("GameSession")
     theme = relationship("Theme", back_populates="player_stats")
 
+class PlayerRound3Stats(Base):
+    """Axe de score individuel de la Manche 3.
+
+    AD-0 : la Manche 3 est individuelle, exactement 4 finalistes.
+    AD-1 : trois axes de score cloisonnés, un par manche. C'est le SEUL endroit
+    où un score de Manche 3 s'écrit — Team.score n'est jamais touché par la
+    Manche 3, et aucun total inter-manches n'existe.
+    """
+    __tablename__ = "player_round3_stats"
+
+    id = Column(Integer, primary_key=True, index=True)
+    player_id = Column(Integer, ForeignKey("players.id"), nullable=False)
+    game_session_id = Column(Integer, ForeignKey("game_sessions.id"), nullable=False)
+    score = Column(Integer, default=0, nullable=False)
+    cells_claimed = Column(Integer, default=0, nullable=False)
+    color = Column(String, nullable=True)  # couleur du finaliste sur la grille
+    selected_theme_ids = Column(JSON, nullable=True)  # 3 thèmes choisis par le finaliste
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relations
+    player = relationship("Player")
+    game_session = relationship("GameSession")
+
+
 class PingPongTheme(Base):
     __tablename__ = "ping_pong_themes"
     
@@ -215,3 +240,54 @@ class PingPongTurn(Base):
 
 # Mise à jour de GameSession pour la progression 16→8→4
 # Ajout de champs pour suivre le tournoi
+
+# Story F.2 : génération semi-automatique de contenu (Wikipedia + Claude)
+
+class SuggestionStatus(enum.Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+class ContentSuggestion(Base):
+    """Contenu généré par le pipeline Wikipedia -> LLM, en attente de validation
+    humaine. Rien n'est écrit dans Theme/Question avant approve (AC #2)."""
+    __tablename__ = "content_suggestions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    topic = Column(String, nullable=False)
+    wikipedia_extract = Column(String, nullable=False)
+    generated_theme_name = Column(String, nullable=False)
+    generated_category = Column(SQLEnum(ThemeCategory), nullable=False)
+    generated_questions = Column(JSON, nullable=False)  # liste de dicts bruts, validés par schémas Pydantic avant écriture ici
+    status = Column(SQLEnum(SuggestionStatus), nullable=False, default=SuggestionStatus.PENDING)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    rejection_reason = Column(String, nullable=True)
+    created_theme_id = Column(Integer, ForeignKey("themes.id"), nullable=True)  # rempli à l'approve
+
+class ContentFlag(Base):
+    """Signalement d'une question par un joueur (AC #4)."""
+    __tablename__ = "content_flags"
+
+    id = Column(Integer, primary_key=True, index=True)
+    question_id = Column(Integer, ForeignKey("questions.id"), nullable=False)
+    reason = Column(String, nullable=False)
+    flagged_at = Column(DateTime(timezone=True), server_default=func.now())
+    resolved = Column(Boolean, nullable=False, default=False)
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+    resolution_note = Column(String, nullable=True)
+
+    question = relationship("Question")
+
+class ContentHistory(Base):
+    """Journal d'audit des écritures de contenu (AC #5) : F.1 (thèmes/questions)
+    et F.2 (génération, approve/reject, résolution de signalement)."""
+    __tablename__ = "content_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    entity_type = Column(String, nullable=False)  # "theme" | "question" | "suggestion" | "flag"
+    entity_id = Column(Integer, nullable=False)
+    action = Column(String, nullable=False)  # "created" | "updated" | "deleted" | "generated" | "approved" | "rejected" | "flagged" | "resolved"
+    detail = Column(String, nullable=True)
+    actor = Column(String, nullable=False, default="admin")  # pas d'identité (spine différée) : valeur fixe
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

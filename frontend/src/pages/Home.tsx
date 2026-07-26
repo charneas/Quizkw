@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { createGame } from '../services/api'
+import logo from '../assets/knights-of-wheels-logo.png'
 
 function Home() {
   const navigate = useNavigate()
@@ -36,12 +37,15 @@ function Home() {
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
       <div className="max-w-md w-full space-y-8">
-        {/* Logo / Titre */}
-        <div className="text-center">
-          <h1 className="text-6xl font-bold bg-gradient-to-r from-primary-400 to-game-accent bg-clip-text text-transparent">
-            Quizkw
-          </h1>
-          <p className="mt-3 text-slate-400 text-lg">
+        {/* Hero — seul endroit de l'app avec une texture/dégradé décoratif (DESIGN.md) */}
+        <div className="text-center relative py-4">
+          <div className="absolute inset-0 -z-10 bg-gradient-to-b from-brand-muted/50 via-brand-muted/10 to-transparent rounded-full blur-2xl" />
+          <img
+            src={logo}
+            alt="Knights of Wheels"
+            className="mx-auto h-28 w-auto drop-shadow-[0_0_24px_rgba(139,92,246,0.45)]"
+          />
+          <p className="mt-3 text-text-muted text-lg">
             Le jeu de quiz en équipe !
           </p>
         </div>
@@ -83,7 +87,7 @@ function Home() {
           ) : (
             <div className="space-y-4">
               <div>
-                <label className="block text-sm text-slate-400 mb-1">
+                <label className="block text-sm text-text-muted mb-1">
                   Nombre total de joueurs
                 </label>
                 <input
@@ -95,28 +99,28 @@ function Home() {
                   className="input-field"
                 />
               </div>
-              
+
               <div>
-                <label className="block text-sm text-slate-400 mb-1">
+                <label className="block text-sm text-text-muted mb-1">
                   Joueurs par équipe
                 </label>
                 <div className="flex gap-3">
                   <button
                     onClick={() => setPlayersPerTeam(2)}
-                    className={`flex-1 py-2 px-4 rounded-lg border transition-colors ${
+                    className={`flex-1 min-h-[44px] py-2 px-4 rounded-lg border transition-colors ${
                       playersPerTeam === 2
-                        ? 'bg-primary-600 border-primary-500 text-white'
-                        : 'bg-slate-800 border-slate-600 text-slate-300 hover:border-slate-400'
+                        ? 'bg-brand-600 border-brand text-text'
+                        : 'bg-surface border-border text-text-muted hover:border-brand'
                     }`}
                   >
                     2 joueurs
                   </button>
                   <button
                     onClick={() => setPlayersPerTeam(3)}
-                    className={`flex-1 py-2 px-4 rounded-lg border transition-colors ${
+                    className={`flex-1 min-h-[44px] py-2 px-4 rounded-lg border transition-colors ${
                       playersPerTeam === 3
-                        ? 'bg-primary-600 border-primary-500 text-white'
-                        : 'bg-slate-800 border-slate-600 text-slate-300 hover:border-slate-400'
+                        ? 'bg-brand-600 border-brand text-text'
+                        : 'bg-surface border-border text-text-muted hover:border-brand'
                     }`}
                   >
                     3 joueurs
@@ -124,12 +128,12 @@ function Home() {
                 </div>
               </div>
 
-              <div className="text-sm text-slate-400 text-center">
+              <div className="text-sm text-text-muted text-center">
                 {Math.floor(totalPlayers / playersPerTeam)} équipes de {playersPerTeam} joueurs
               </div>
 
               {error && (
-                <div className="text-game-danger text-sm text-center bg-red-900/20 rounded-lg p-2">
+                <div className="text-danger text-sm text-center bg-danger/10 rounded-lg p-2">
                   {error}
                 </div>
               )}
