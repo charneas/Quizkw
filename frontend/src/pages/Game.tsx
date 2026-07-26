@@ -20,6 +20,8 @@ function Game() {
   const [currentQuestion, setCurrentQuestion] = useState<QuestionResponse | null>(null)
   const [answerResult, setAnswerResult] = useState<AnswerResponse | null>(null)
   const [wheelResult, setWheelResult] = useState<WheelSpinResponse | null>(null)
+  const [isBonusActive, setIsBonusActive] = useState(false)
+  const [timePenalty, setTimePenalty] = useState(0) // Nombre de secondes retirées au chrono
   const [currentTeamIndex, setCurrentTeamIndex] = useState(0)
   const [turnCount, setTurnCount] = useState(0)
   const [showWheel, setShowWheel] = useState(false)
@@ -34,6 +36,7 @@ function Game() {
     all_answered: boolean
   } | null>(null)
   const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [activeTeamTokens, setActiveTeamTokens] = useState<any[]>([])
   
   // Ping-Pong Duel states
   const [showPingPong, setShowPingPong] = useState(false)
@@ -47,6 +50,12 @@ function Game() {
   useEffect(() => {
     if (code) loadGame()
   }, [code])
+
+  useEffect(() => {
+    if (game && game.teams && game.teams[currentTeamIndex]) {
+      loadTeamTokens(game.teams[currentTeamIndex].id)
+    }
+  }, [currentTeamIndex, game])
 
   useEffect(() => {
     return () => {
@@ -68,7 +77,21 @@ function Game() {
     }
   }
 
+  const loadTeamTokens = async (teamId: number) => {
+    try {
+      const tokens = await getTeamTokens(teamId)
+      setActiveTeamTokens(Array.isArray(tokens) ? tokens : [])
+    } catch (err) {
+      console.error("Erreur lors de la récupération des jetons:", err)
+      setActiveTeamTokens([])
+    }
+  }
+
   const loadQuestion = async () => {
+    // 🔄 Réinitialise les bonus/pénalités pour la nouvelle question
+    setIsBonusActive(false)
+    setTimePenalty(0)
+
     try {
       const status = await getAnswersStatus(code!)
       setAnswersStatus(status)
@@ -105,7 +128,10 @@ function Game() {
       try {
         const status = await getAnswersStatus(code!)
         setAnswersStatus(status)
-        if (status.all_answered) stopPolling()
+        
+        if (status.all_answered) {
+          stopPolling()
+        }
       } catch (err) {
         console.error('Erreur polling:', err)
       }
@@ -135,14 +161,24 @@ function Game() {
         team_id: currentTeam.id,
         player_answer: answer,
       })
-      setAnswerResult(result)
+
+      // ⭐ Si le BONUS est actif, on double les points gagnés !
+      const finalPoints = isBonusActive ? result.points_earned * 2 : result.points_earned
+      const updatedResult = { ...result, points_earned: finalPoints }
+
+      setAnswerResult(updatedResult)
       
       setGame(prev => {
         if (!prev) return prev
         const updatedTeams = [...prev.teams]
+        
+        // Calcul du nouveau score avec le bonus éventuel
+        const pointDifference = finalPoints - result.points_earned
+        const newScore = result.team_score + pointDifference
+
         updatedTeams[currentTeamIndex] = {
           ...updatedTeams[currentTeamIndex],
-          score: result.team_score,
+          score: newScore,
         }
         return { ...prev, teams: updatedTeams }
       })
@@ -171,6 +207,65 @@ function Game() {
     setCurrentTeamIndex((prev) => (prev + 1) % game.teams.length)
     await loadQuestion()
   }, [game, turnCount])
+
+  const startPingPong = async () => {
+    try {
+      const theme = await getRandomPingPongTheme()
+      setPingPongTheme(theme)
+      setShowPingPong(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur ping-pong')
+    }
+  }
+
+  const handlePingPongSubmit = async (answers: string[]) => {
+    if (!game || !pingPongTheme) return
+    const currentTeam = game.teams[currentTeamIndex]
+
+    try {
+      const result = await submitPingPongAnswer({
+        game_session_id: game.id,
+        theme_id: pingPongTheme.id,
+        team_id: currentTeam.id,
+        answers_given: answers
+      })
+
+      setPingPongResult(result)
+      
+      setGame(prev => {
+        if (!prev) return prev
+        const updatedTeams = [...prev.teams]
+        updatedTeams[currentTeamIndex] = {
+          ...updatedTeams[currentTeamIndex],
+          score: result.team_score,
+        }
+        return { ...prev, teams: updatedTeams }
+      })
+
+      const results = await getPingPongResults(code!, pingPongTheme.id)
+      if (results.all_teams_answered) {
+        setPingPongResults(results)
+        setShowPingPong(false)
+        setShowPingPongResults(true)
+      } else {
+        setCurrentTeamIndex((prev) => (prev + 1) % game.teams.length)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur ping-pong')
+    }
+  }
+
+  const handlePingPongContinue = async () => {
+    setShowPingPongResults(false)
+    setPingPongTheme(null)
+    setPingPongResult(null)
+    setPingPongResults(null)
+    
+    if (game) {
+      setCurrentTeamIndex((prev) => (prev + 1) % game.teams.length)
+      await loadQuestion()
+    }
+  }
 
   const handleSpinWheel = async () => {
     if (!game) return
@@ -305,13 +400,31 @@ function Game() {
   const handleUseToken = async (tokenType: TokenType) => {
     if (!game) return
     const currentTeam = game.teams[currentTeamIndex]
-    
+    const normalizedType = tokenType.toUpperCase()
+
     try {
-      await useToken({ team_id: currentTeam.id, token_type: tokenType })
-      if (tokenType === 'swap') await loadQuestion()
-      await loadGame()
+      console.log(`🎮 Utilisation du jeton : ${normalizedType}`)
+      
+      // 1. Consomme le jeton en BDD
+      await useToken({ team_id: currentTeam.id, token_type: normalizedType })
+
+      // 2. Déclenche l'effet du jeton
+      if (normalizedType === 'SWAP') {
+        await loadQuestion()
+      } else if (normalizedType === 'PENALTY' || normalizedType === 'PÉNALITÉ') {
+        // ⚡ Enlève 10 secondes au chrono actuel
+        setTimePenalty(10)
+      } else if (normalizedType === 'BONUS') {
+        // ⭐ Active le multiplicateur x2
+        setIsBonusActive(true)
+      }
+      
+      // 3. Rafraîchit les jetons
+      await loadTeamTokens(currentTeam.id)
+
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erreur jeton')
+      console.error(`Erreur jeton ${normalizedType} :`, err)
+      await loadTeamTokens(currentTeam.id).catch(() => null)
     }
   }
 
@@ -346,13 +459,12 @@ function Game() {
     )
   }
 
-  const currentTeam = game.teams[currentTeamIndex]
+  const currentTeam = game?.teams?.[currentTeamIndex]
 
   return (
     <div className="min-h-screen p-4">
       {import.meta.env.DEV && <DevHelper code={code!} />}
       <div className="max-w-6xl mx-auto">
-        {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold">Manche 1</h1>
@@ -372,47 +484,57 @@ function Game() {
           </div>
 
           <div className="lg:col-span-2 space-y-4">
-            <div className="card text-center">
-              <p className="text-sm text-text-muted">C'est au tour de</p>
-              <p className="text-2xl font-bold text-brand">{currentTeam.name}</p>
-            </div>
+            {currentTeam && (
+        <div className="card text-center">
+          <p className="text-sm text-slate-400">C'est au tour de</p>
+          <p className="text-2xl font-bold text-game-accent">{currentTeam.name}</p>
+        </div>
+      )}
 
-            {currentQuestion && !answerResult && !waitingForTeams && (
-              <QuestionCard question={currentQuestion} onAnswer={handleAnswer} />
-            )}
+      {currentQuestion && !answerResult && !waitingForTeams && (
+        <QuestionCard
+          question={currentQuestion}
+          onAnswer={handleAnswer}
+          isBonusActive={isBonusActive}
+          timePenalty={timePenalty}
+        />
+      )}
 
-            {waitingForTeams && answersStatus && (
-              <WaitingForTeams
-                currentTeam={currentTeam}
-                totalTeams={answersStatus.total_teams}
-                answeredCount={answersStatus.answered_teams.length}
-                onAllAnswered={handleAllAnswered}
-              />
-            )}
+      {waitingForTeams && answersStatus && currentTeam && (
+        <WaitingForTeams
+          currentTeam={currentTeam}
+          totalTeams={answersStatus.total_teams}
+          answeredCount={answersStatus.answered_teams.length}
+          onAllAnswered={handleAllAnswered}
+        />
+      )}
 
-            {answerResult && (
-              <div className={`card text-center ${answerResult.is_correct ? 'border-success' : 'border-danger'}`}>
-                <div className="text-4xl mb-3">
-                  {answerResult.is_correct ? '✅' : '❌'}
-                </div>
-                <h3 className={`text-xl font-bold ${answerResult.is_correct ? 'text-success' : 'text-danger'}`}>
-                  {answerResult.is_correct ? 'Bonne réponse !' : 'Mauvaise réponse !'}
-                </h3>
-                {!answerResult.is_correct && (
-                  <p className="text-text-muted mt-2">
-                    Réponse correcte : <span className="text-text font-semibold">{answerResult.correct_answer}</span>
-                  </p>
-                )}
-                <p className="text-text-muted mt-2">
-                  Points gagnés : <span className="text-brand font-bold">+{answerResult.points_earned}</span>
-                </p>
-                <button onClick={handleNextTurn} className="btn-primary mt-4">
-                  Tour suivant →
-                </button>
-              </div>
-            )}
+      {answerResult && (
+        <div className={`card text-center ${answerResult.is_correct ? 'border-success' : 'border-danger'}`}>
+          <div className="text-4xl mb-3">
+            {answerResult.is_correct ? '✅' : '❌'}
+          </div>
+          <h3 className={`text-xl font-bold ${answerResult.is_correct ? 'text-success' : 'text-danger'}`}>
+            {answerResult.is_correct ? 'Bonne réponse !' : 'Mauvaise réponse !'}
+          </h3>
+          {!answerResult.is_correct && (
+            <p className="text-text-muted mt-2">
+              Réponse correcte : <span className="text-text font-semibold">{answerResult.correct_answer}</span>
+            </p>
+          )}
+          <p className="text-text-muted mt-2">
+            Points gagnés : <span className="text-brand font-bold">+{answerResult.points_earned}</span>
+          </p>
+          <button onClick={handleNextTurn} className="btn-primary mt-4">
+            Tour suivant →
+          </button>
+        </div>
+      )}
 
-            <TokenPanel teamId={currentTeam.id} onUseToken={handleUseToken} />
+            <TokenPanel
+              tokens={activeTeamTokens}
+              onUseToken={handleUseToken}
+            />
           </div>
         </div>
 
@@ -423,7 +545,6 @@ function Game() {
           </div>
         )}
 
-        {/* Modal Roue */}
         {showWheel && (
           <WheelModal
             onSpin={handleSpinWheel}
@@ -466,8 +587,7 @@ function Game() {
           </div>
         )}
 
-        {/* Modal Ping-Pong Results */}
-        {showPingPongResults && pingPongResults && (
+        {showPingPongResults && pingPongResults && currentTeam && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
             <div className="max-w-4xl w-full max-h-[90vh] overflow-y-auto">
               <PingPongResults

@@ -5,9 +5,16 @@ import FlagQuestionButton from './FlagQuestionButton'
 interface QuestionCardProps {
   question: QuestionResponse
   onAnswer: (answer: string) => void
+  isBonusActive?: boolean
+  timePenalty?: number
 }
 
-function QuestionCard({ question, onAnswer }: QuestionCardProps) {
+function QuestionCard({ 
+  question, 
+  onAnswer, 
+  isBonusActive = false, 
+  timePenalty = 0 
+}: QuestionCardProps) {
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null)
   const [confirmed, setConfirmed] = useState(false)
 
@@ -30,21 +37,48 @@ function QuestionCard({ question, onAnswer }: QuestionCardProps) {
     }
   }
 
+  // Calcul des points affichés en direct si le BONUS est actif
+  const displayPoints = isBonusActive 
+    ? question.question.points * 2 
+    : question.question.points
+
   return (
-    <div className="card">
+    <div className="card relative overflow-hidden">
       {/* En-tête de la question */}
       <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className={`text-xs px-2 py-1 rounded border ${difficultyColors[question.question.difficulty]}`}>
             {difficultyLabels[question.question.difficulty]}
           </span>
           <span className="text-xs text-text-muted">
             {question.question.category}
           </span>
+
+          {/* Badge Pénalité si -10s activé */}
+          {timePenalty > 0 && (
+            <span className="text-xs px-2 py-1 rounded bg-red-950/80 border border-red-700 text-red-400 font-bold animate-pulse">
+              ⚡ PÉNALITÉ (-10s)
+            </span>
+          )}
         </div>
+
+        {/* Affichage des points (avec effet BONUS) */}
+        <div className="flex items-center gap-2">
+          {isBonusActive && (
+            <span className="text-xs px-2 py-0.5 rounded bg-amber-500/20 border border-amber-500/50 text-amber-300 font-extrabold tracking-wide uppercase animate-bounce">
+              ⭐ Bonus x2
+            </span>
+          )}
+          <span className={`font-bold ${isBonusActive ? 'text-amber-400 text-lg' : 'text-game-accent'}`}>
+            {displayPoints} pts
+          </span>
+        </div>
+<<<<<<< HEAD
+=======
         <span className="text-brand font-bold">
           {question.question.points} pts
         </span>
+>>>>>>> master
       </div>
 
       {/* Texte de la question */}

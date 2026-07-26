@@ -44,6 +44,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from fastapi.responses import JSONResponse
+from fastapi import Request
+
+
 # Include extended endpoints for Memory Grid Round 3
 app.include_router(router)
 # Include admin endpoints for content management (Epic F)
@@ -462,48 +466,15 @@ def get_team_tokens(team_id: int, db: Session = Depends(get_db)):
         models.Token.is_used == False
     ).all()
     
-    return {
-        "tokens": [
-            {
-                "id": token.id,
-                "token_type": token.token_type.value,
-                "is_used": token.is_used
-            } for token in tokens
-        ]
-    }
+    # CORRECTION : Renvoyer directement le tableau (la liste) attendu par le frontend
+    return [
+        {
+            "id": token.id,
+            "token_type": token.token_type.value,
+            "is_used": token.is_used
+        } for token in tokens
+    ]
 
-@app.post("/tokens/use")
-def use_token(token_use: schemas.TokenUseRequest, db: Session = Depends(get_db)):
-    """
-    Utiliser un jeton
-    """
-    # Chercher un jeton non utilisé du type demandé pour l'équipe
-    token = db.query(models.Token).filter(
-        models.Token.team_id == token_use.team_id,
-        models.Token.token_type == token_use.token_type,
-        models.Token.is_used == False
-    ).first()
-    
-    if not token:
-        raise HTTPException(status_code=404, detail="Jeton non disponible")
-    
-    token.is_used = True
-    db.commit()
-    
-    # Appliquer l'effet du jeton
-    effect_message = ""
-    if token_use.token_type == schemas.TokenTypeEnum.swap:
-        effect_message = "SWAP ! Changement de catégorie activé"
-    elif token_use.token_type == schemas.TokenTypeEnum.penalty:
-        effect_message = "Don de pénalité activé"
-    elif token_use.token_type == schemas.TokenTypeEnum.bonus:
-        effect_message = "Question bonus activée - double des points sur la prochaine question"
-    
-    return {
-        "message": f"Jeton {token_use.token_type} utilisé avec succès",
-        "effect": effect_message,
-        "token_id": token.id
-    }
 
 @app.post("/wheel/spin", response_model=schemas.WheelSpinResponse)
 def spin_wheel(wheel_spin: schemas.WheelSpinRequest, db: Session = Depends(get_db)):
@@ -1623,6 +1594,35 @@ def next_question(code: str, db: Session = Depends(get_db)):
     }
 
 
+@app.post("/tokens/use")
+def use_token(data: dict, db: Session = Depends(get_db)):
+    team_id = data.get("team_id")
+    token_type = data.get("token_type", "").upper()  # Ex: "SWAP", "PENALTY", "BONUS"
+    
+    # Recherche du jeton SPÉCIFIQUE demandé qui n'a pas encore été utilisé
+    chosen_token = db.query(models.Token).filter(
+        models.Token.team_id == team_id,
+        models.Token.token_type == token_type,
+        models.Token.is_used == False
+    ).first()
+
+    # Si le jeton de ce type existe et est disponible, on le consomme
+    if chosen_token:
+        chosen_token.is_used = True
+        db.commit()
+        return {
+            "status": "success", 
+            "message": f"Jeton {token_type} consommé avec succès.", 
+            "token_type": token_type
+        }
+    
+    # S'il n'existe pas ou a déjà été utilisé
+    raise HTTPException(
+        status_code=400, 
+        detail=f"Jeton {token_type} non disponible ou déjà utilisé !"
+    )
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
