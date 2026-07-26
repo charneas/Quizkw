@@ -13,6 +13,8 @@ from app.models import Base
 from app.memory_grid import MemoryGridManager, MemoryGrid, GridCell, MemoryGridRound, GridCellStatus
 from app.round2_manager import Round2Manager
 from main_extended import router
+from main_admin import router as admin_router
+from main_content_gen import router as content_gen_router, player_router as content_flag_router
 
 # E-002 : journalisation minimale au niveau module (voir la spine § Deferred —
 # pas d'infrastructure d'observabilité, seulement logging.getLogger standard
@@ -44,6 +46,11 @@ app.add_middleware(
 
 # Include extended endpoints for Memory Grid Round 3
 app.include_router(router)
+# Include admin endpoints for content management (Epic F)
+app.include_router(admin_router)
+# Include content generation (F.2) and player flagging endpoints (Epic F)
+app.include_router(content_gen_router)
+app.include_router(content_flag_router)
 
 # Generate a random session code
 def generate_session_code(length=6):

@@ -28,6 +28,8 @@ class QuestionBase(BaseModel):
     points: int = Field(..., ge=2, le=6)  # 2, 4, ou 6 points
     correct_answer: str
     wrong_answers: List[str]
+    theme_id: Optional[int] = None
+    question_number: Optional[int] = None
 
 class QuestionCreate(QuestionBase):
     pass

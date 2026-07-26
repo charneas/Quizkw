@@ -41,6 +41,8 @@ export interface Question {
   points: number
   correct_answer: string
   wrong_answers: string[]
+  theme_id: number | null
+  question_number: number | null
   created_at: string
 }
 
@@ -254,4 +256,173 @@ export interface Round2AdvanceResponse {
   qualified_count: number
   eliminated_count: number
   message: string
+}
+
+// === Admin content (Epic F, story F.1) ===
+
+export interface ThemeCreateRequest {
+  name: string
+  category: ThemeCategory
+  difficulty_level: number
+  description?: string | null
+}
+
+export interface ThemeUpdateRequest {
+  name?: string
+  category?: ThemeCategory
+  difficulty_level?: number
+  description?: string | null
+}
+
+// `source_id` : id du thème dans le fichier exporté, utilisé par le serveur
+// uniquement pour remapper les theme_id des questions du même import vers le
+// nouvel id attribué (jamais persisté). Sans lui, réimporter un export
+// rattache les questions à un id de thème périmé.
+export interface ThemeImportEntry extends ThemeCreateRequest {
+  source_id?: number | null
+}
+
+export interface QuestionCreateRequest {
+  text: string
+  category: string
+  difficulty: Difficulty
+  points: number
+  correct_answer: string
+  wrong_answers: string[]
+  theme_id?: number | null
+  question_number?: number | null
+}
+
+export interface QuestionUpdateRequest {
+  text?: string
+  category?: string
+  difficulty?: Difficulty
+  points?: number
+  correct_answer?: string
+  wrong_answers?: string[]
+  theme_id?: number | null
+  question_number?: number | null
+}
+
+export interface ThemeDeleteWarning {
+  theme_id: number
+  theme_name: string
+  question_count: number
+  message: string
+}
+
+export interface ThemeDeleteResponse {
+  deleted_theme_id: number
+  warning: ThemeDeleteWarning | null
+  message: string
+}
+
+export interface QuestionDeleteResponse {
+  deleted_question_id: number
+  warning: ThemeDeleteWarning | null
+  message: string
+}
+
+export interface ContentExport {
+  themes: Theme[]
+  questions: Question[]
+}
+
+export interface ContentImportRequest {
+  themes: ThemeImportEntry[]
+  questions: QuestionCreateRequest[]
+}
+
+export interface ContentImportResponse {
+  themes_created: number
+  questions_created: number
+  message: string
+}
+
+export interface QuestionStatsResponse {
+  question_id: number
+  times_answered: number
+  correct_answers: number
+  success_rate: number
+}
+
+// === Génération de contenu (Epic F, story F.2) ===
+
+export interface GeneratedQuestion {
+  text: string
+  correct_answer: string
+  wrong_answers: string[]
+  difficulty: Difficulty
+}
+
+export type SuggestionStatus = 'pending' | 'approved' | 'rejected'
+
+export interface ContentSuggestion {
+  id: number
+  topic: string
+  wikipedia_extract: string
+  generated_theme_name: string
+  generated_category: ThemeCategory
+  generated_questions: GeneratedQuestion[]
+  status: SuggestionStatus
+  created_at: string
+  reviewed_at: string | null
+  rejection_reason: string | null
+  created_theme_id: number | null
+}
+
+export interface GenerateContentRequest {
+  topic: string
+  category?: ThemeCategory | null
+}
+
+export interface ApproveSuggestionResponse {
+  suggestion_id: number
+  theme_id: number
+  questions_created: number
+  message: string
+}
+
+export interface RejectSuggestionResponse {
+  suggestion_id: number
+  message: string
+}
+
+export interface CategoryMixEntry {
+  category: ThemeCategory
+  current_count: number
+  current_ratio: number
+  target_ratio: number
+}
+
+export interface CategoryMixResponse {
+  total_themes: number
+  mix: CategoryMixEntry[]
+  recommended_category: ThemeCategory
+}
+
+export interface FlagQuestionResponse {
+  flag_id: number
+  question_id: number
+  message: string
+}
+
+export interface ContentFlag {
+  id: number
+  question_id: number
+  reason: string
+  flagged_at: string
+  resolved: boolean
+  resolved_at: string | null
+  resolution_note: string | null
+}
+
+export interface ContentHistoryEntry {
+  id: number
+  entity_type: string
+  entity_id: number
+  action: string
+  detail: string | null
+  actor: string
+  created_at: string
 }

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { QuestionResponse } from '../types'
+import FlagQuestionButton from './FlagQuestionButton'
 
 interface QuestionCardProps {
   question: QuestionResponse
@@ -81,6 +82,10 @@ function QuestionCard({ question, onAnswer }: QuestionCardProps) {
           ✓ Confirmer la réponse
         </button>
       )}
+
+      <div className="mt-3 text-right">
+        <FlagQuestionButton questionId={question.question.id} />
+      </div>
     </div>
   )
 }

@@ -8,6 +8,7 @@ import TeamScreen from './pages/TeamScreen'
 import MemoryGrid from './pages/MemoryGrid'
 import Results from './pages/Results'
 import Round2 from './pages/Round2'
+import Admin from './pages/Admin'
 
 function App() {
   return (
@@ -22,6 +23,7 @@ function App() {
         <Route path="/game/:code/memory-grid" element={<MemoryGrid />} />
         <Route path="/results/:code" element={<Results />} />
         <Route path="/game/:code/round2" element={<Round2 />} />
+        <Route path="/admin" element={<Admin />} />
       </Routes>
     </div>
   )

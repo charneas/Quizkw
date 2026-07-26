@@ -421,6 +421,67 @@ export async function nextQuestion(gameCode: string) {
   })
 }
 
+// === Admin content (Epic F, story F.1) ===
+
+import type {
+  Question,
+  ThemeCreateRequest,
+  ThemeUpdateRequest,
+  QuestionCreateRequest,
+  QuestionUpdateRequest,
+  ThemeDeleteResponse,
+  QuestionDeleteResponse,
+  ContentExport,
+  ContentImportRequest,
+  ContentImportResponse,
+  QuestionStatsResponse,
+} from '../types'
+
+export async function adminListThemes() {
+  return fetchApi<Theme[]>('/admin/themes')
+}
+
+export async function adminCreateTheme(data: ThemeCreateRequest) {
+  return fetchApi<Theme>('/admin/themes', { method: 'POST', body: JSON.stringify(data) })
+}
+
+export async function adminUpdateTheme(themeId: number, data: ThemeUpdateRequest) {
+  return fetchApi<Theme>(`/admin/themes/${themeId}`, { method: 'PUT', body: JSON.stringify(data) })
+}
+
+export async function adminDeleteTheme(themeId: number) {
+  return fetchApi<ThemeDeleteResponse>(`/admin/themes/${themeId}`, { method: 'DELETE' })
+}
+
+export async function adminListQuestions(themeId?: number) {
+  const query = themeId !== undefined ? `?theme_id=${themeId}` : ''
+  return fetchApi<Question[]>(`/admin/questions${query}`)
+}
+
+export async function adminCreateQuestion(data: QuestionCreateRequest) {
+  return fetchApi<Question>('/admin/questions', { method: 'POST', body: JSON.stringify(data) })
+}
+
+export async function adminUpdateQuestion(questionId: number, data: QuestionUpdateRequest) {
+  return fetchApi<Question>(`/admin/questions/${questionId}`, { method: 'PUT', body: JSON.stringify(data) })
+}
+
+export async function adminDeleteQuestion(questionId: number) {
+  return fetchApi<QuestionDeleteResponse>(`/admin/questions/${questionId}`, { method: 'DELETE' })
+}
+
+export async function adminGetQuestionStats(questionId: number) {
+  return fetchApi<QuestionStatsResponse>(`/admin/questions/${questionId}/stats`)
+}
+
+export async function adminExportContent() {
+  return fetchApi<ContentExport>('/admin/content/export')
+}
+
+export async function adminImportContent(data: ContentImportRequest) {
+  return fetchApi<ContentImportResponse>('/admin/content/import', { method: 'POST', body: JSON.stringify(data) })
+}
+
 export async function getPingPongDuelResults(duelId: number) {
   return fetchApi<{
     duel_id: number
@@ -448,4 +509,69 @@ export async function getPingPongDuelResults(duelId: number) {
     total_turns: number
     answers_used: string[]
   }>(`/ping-pong/duel/${duelId}/results`)
+}
+
+// === Génération de contenu (Epic F, story F.2) ===
+
+import type {
+  ContentSuggestion,
+  GenerateContentRequest,
+  ApproveSuggestionResponse,
+  RejectSuggestionResponse,
+  CategoryMixResponse,
+  FlagQuestionResponse,
+  ContentFlag,
+  ContentHistoryEntry,
+} from '../types'
+
+export async function adminGenerateContent(data: GenerateContentRequest) {
+  return fetchApi<ContentSuggestion>('/admin/content/generate', { method: 'POST', body: JSON.stringify(data) })
+}
+
+export async function adminListSuggestions(status?: string) {
+  const query = status ? `?status=${status}` : ''
+  return fetchApi<ContentSuggestion[]>(`/admin/content/suggestions${query}`)
+}
+
+export async function adminApproveSuggestion(suggestionId: number) {
+  return fetchApi<ApproveSuggestionResponse>(`/admin/content/suggestions/${suggestionId}/approve`, { method: 'POST' })
+}
+
+export async function adminRejectSuggestion(suggestionId: number, reason: string) {
+  return fetchApi<RejectSuggestionResponse>(`/admin/content/suggestions/${suggestionId}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  })
+}
+
+export async function adminGetCategoryMix() {
+  return fetchApi<CategoryMixResponse>('/admin/content/category-mix')
+}
+
+export async function adminListFlags(resolved?: boolean) {
+  const query = resolved !== undefined ? `?resolved=${resolved}` : ''
+  return fetchApi<ContentFlag[]>(`/admin/content/flags${query}`)
+}
+
+export async function adminResolveFlag(flagId: number, note?: string) {
+  return fetchApi<ContentFlag>(`/admin/content/flags/${flagId}/resolve`, {
+    method: 'POST',
+    body: JSON.stringify({ note: note ?? null }),
+  })
+}
+
+export async function adminGetHistory(params?: { entity_type?: string; entity_id?: number; limit?: number }) {
+  const query = new URLSearchParams()
+  if (params?.entity_type) query.set('entity_type', params.entity_type)
+  if (params?.entity_id !== undefined) query.set('entity_id', String(params.entity_id))
+  if (params?.limit !== undefined) query.set('limit', String(params.limit))
+  const qs = query.toString() ? `?${query.toString()}` : ''
+  return fetchApi<ContentHistoryEntry[]>(`/admin/content/history${qs}`)
+}
+
+export async function flagQuestion(questionId: number, reason: string) {
+  return fetchApi<FlagQuestionResponse>(`/questions/${questionId}/flag`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  })
 }
