@@ -2,6 +2,8 @@
 
 Ce guide explique comment déployer Quizkw en production sur un serveur Linux avec Gunicorn (backend) et Nginx (reverse proxy + frontend statique).
 
+> **Convention de ce guide** : `<SERVEUR>` = IP ou domaine du serveur, `<UTILISATEUR>` = utilisateur de déploiement, `<CHEMIN_APP>` = répertoire où le dépôt est cloné (ex. `/home/<UTILISATEUR>/Quizkw`, pas nécessairement `/opt/Quizkw`). Remplacer par les valeurs réelles de l'environnement — volontairement non documentées ici car ce dépôt est public.
+
 ## Prérequis
 
 - Serveur Linux (Ubuntu 22.04+ recommandé)
@@ -27,28 +29,31 @@ sudo apt install -y nodejs
 ## 2. Cloner le projet
 
 ```bash
-cd /opt
-sudo git clone https://github.com/charneas/Quizkw.git
-sudo chown -R $USER:$USER /opt/Quizkw
-cd /opt/Quizkw
+cd <CHEMIN_APP_PARENT>
+git clone https://github.com/charneas/Quizkw.git
+cd <CHEMIN_APP>
 ```
+
+Cloner directement en tant qu'utilisateur de déploiement (pas de `sudo git clone` + `chown` nécessaire si l'utilisateur possède déjà le répertoire parent) — évite un aller-retour de permissions inutile.
 
 ## 3. Configuration du Backend
 
 ### 3.1 Environnement virtuel Python
 
 ```bash
-cd /opt/Quizkw/backend
+cd <CHEMIN_APP>/backend
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 ```
 
+**Piège connu (Python 3.13+, ex. Python 3.14)** : `psycopg2-binary` n'a pas toujours de wheel précompilé disponible pour les versions très récentes de Python, et sa compilation depuis les sources échoue (`_PyInterpreterState_Get` introuvable). Comme la production tourne sur **SQLite** par défaut (`DATABASE_URL=sqlite:///./quizkw.db`), `psycopg2-binary` n'est **pas requis** tant que PostgreSQL n'est pas activé (section 8) — un échec de build de ce seul paquet n'est pas bloquant. Vérifier que le reste s'est installé : `python -c "import fastapi, alembic, sqlalchemy; print('ok')"`.
+
 ### 3.2 Variables d'environnement
 
 ```bash
 # Créer un fichier .env pour la production
-cat > /opt/Quizkw/backend/.env << EOF
+cat > <CHEMIN_APP>/backend/.env << EOF
 DATABASE_URL=sqlite:///./quizkw.db
 # Pour PostgreSQL (recommandé en production) :
 # DATABASE_URL=postgresql://quizkw_user:mot_de_passe_securise@localhost/quizkw_db
@@ -58,7 +63,7 @@ EOF
 ### 3.3 Initialiser la base de données
 
 ```bash
-cd /opt/Quizkw/backend
+cd <CHEMIN_APP>/backend
 source venv/bin/activate
 python seed.py
 ```
@@ -66,7 +71,7 @@ python seed.py
 ### 3.4 Tester Gunicorn
 
 ```bash
-cd /opt/Quizkw/backend
+cd <CHEMIN_APP>/backend
 source venv/bin/activate
 gunicorn -w 4 -k uvicorn.workers.UvicornWorker main:app --bind 0.0.0.0:8000
 ```
@@ -84,12 +89,12 @@ Description=Quizkw Backend API (Gunicorn)
 After=network.target
 
 [Service]
-User=$USER
-Group=$USER
-WorkingDirectory=/opt/Quizkw/backend
-Environment="PATH=/opt/Quizkw/backend/venv/bin"
-EnvironmentFile=/opt/Quizkw/backend/.env
-ExecStart=/opt/Quizkw/backend/venv/bin/gunicorn -w 4 -k uvicorn.workers.UvicornWorker main:app --bind 127.0.0.1:8000
+User=<UTILISATEUR>
+Group=<UTILISATEUR>
+WorkingDirectory=<CHEMIN_APP>/backend
+Environment="PATH=<CHEMIN_APP>/backend/venv/bin"
+EnvironmentFile=<CHEMIN_APP>/backend/.env
+ExecStart=<CHEMIN_APP>/backend/venv/bin/gunicorn -w 4 -k uvicorn.workers.UvicornWorker main:app --bind 127.0.0.1:8000
 Restart=always
 RestartSec=3
 
@@ -108,15 +113,36 @@ sudo systemctl start quizkw-backend
 sudo systemctl status quizkw-backend
 ```
 
+### 4.1 Sudoers restreint pour l'utilisateur de déploiement (recommandé)
+
+Plutôt que de donner un accès `sudo` complet à l'utilisateur de déploiement, limiter aux seules commandes nécessaires via `visudo` (`/etc/sudoers.d/quizkw-deploy`) :
+
+```
+<UTILISATEUR> ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart quizkw-backend, \
+  /usr/bin/systemctl status quizkw-backend, \
+  /usr/bin/systemctl daemon-reload, \
+  /usr/bin/systemctl enable quizkw-backend, \
+  /usr/bin/systemctl start quizkw-backend, \
+  /usr/bin/systemctl reload nginx, \
+  /usr/bin/systemctl restart nginx, \
+  /usr/bin/apt-get update, /usr/bin/apt-get install *, \
+  /usr/sbin/nginx -t, \
+  /usr/bin/tee /etc/systemd/system/quizkw-backend.service, \
+  /usr/bin/tee /etc/nginx/sites-available/quizkw, \
+  /usr/bin/ln -sf /etc/nginx/sites-available/quizkw /etc/nginx/sites-enabled/quizkw
+```
+
+**Important** : ces règles matchent la commande **exacte** (chemin absolu, sans arguments additionnels au-delà de ceux listés). `sudo systemctl status quizkw-backend --no-pager -l` échouera même si `sudo /usr/bin/systemctl status quizkw-backend` fonctionne — appeler les binaires par leur chemin absolu (`/usr/bin/systemctl`, `/usr/sbin/nginx`) sans flags supplémentaires quand on script un déploiement avec cet utilisateur.
+
 ## 5. Build du Frontend
 
 ```bash
-cd /opt/Quizkw/frontend
-npm install
+cd <CHEMIN_APP>/frontend
+npm ci
 npm run build
 ```
 
-Le build sera dans `frontend/dist/`. C'est ce dossier que Nginx servira.
+Le build sera dans `frontend/dist/`. C'est ce dossier que Nginx servira. Préférer `npm ci` à `npm install` en déploiement : il installe exactement les versions de `package-lock.json` sans le régénérer (évite un diff parasite sur ce fichier au prochain `git pull`).
 
 ## 6. Configuration Nginx
 
@@ -124,10 +150,10 @@ Le build sera dans `frontend/dist/`. C'est ce dossier que Nginx servira.
 sudo tee /etc/nginx/sites-available/quizkw << EOF
 server {
     listen 80;
-    server_name votre-domaine.com;  # Remplacer par votre domaine ou IP
+    server_name <SERVEUR>;  # IP ou domaine — match exact du Host demandé
 
     # Frontend - fichiers statiques
-    root /opt/Quizkw/frontend/dist;
+    root <CHEMIN_APP>/frontend/dist;
     index index.html;
 
     # Gzip compression
@@ -165,8 +191,7 @@ EOF
 
 ```bash
 # Activer le site
-sudo ln -sf /etc/nginx/sites-available/quizkw /etc/nginx/sites-enabled/
-sudo rm -f /etc/nginx/sites-enabled/default
+sudo ln -sf /etc/nginx/sites-available/quizkw /etc/nginx/sites-enabled/quizkw
 
 # Tester la configuration
 sudo nginx -t
@@ -175,20 +200,24 @@ sudo nginx -t
 sudo systemctl restart nginx
 ```
 
-## 7. HTTPS avec Let's Encrypt (optionnel mais recommandé)
+**Note sur le site `default` de Nginx** : il n'est pas nécessaire de le supprimer (`rm /etc/nginx/sites-enabled/default`) si `server_name` du site `quizkw` matche exactement `<SERVEUR>` — Nginx route par `Host` header, donc une requête avec le bon `Host` atteint bien `quizkw`, et `default` sert simplement de filet pour tout autre nom (y compris `localhost` en test via SSH local, ce qui peut surprendre en diagnostic : tester depuis l'extérieur avec la vraie adresse plutôt que `curl localhost` sur le serveur pour éviter un faux négatif).
+
+## 7. HTTPS avec Let's Encrypt (recommandé — actuellement absent en prod, cf. H-006)
 
 ```bash
 # Installer Certbot
 sudo apt install -y certbot python3-certbot-nginx
 
-# Obtenir un certificat SSL
+# Obtenir un certificat SSL (nécessite un nom de domaine, pas une IP nue)
 sudo certbot --nginx -d votre-domaine.com
 
 # Le renouvellement automatique est configuré via un timer systemd
 sudo systemctl status certbot.timer
 ```
 
-## 8. PostgreSQL (recommandé pour la production)
+**Statut actuel** : la production sert en HTTP simple, sans certificat. Le code d'accès à 6 caractères est le seul jeton d'identité du jeu (aucune authentification) — il transite donc en clair tant que ce chapitre n'est pas appliqué. Non optionnel du point de vue sécurité ; voir la story `H-006` du backlog.
+
+## 8. PostgreSQL (optionnel, pas encore utilisé en prod)
 
 ```bash
 # Installation
@@ -202,13 +231,15 @@ GRANT ALL PRIVILEGES ON DATABASE quizkw_db TO quizkw_user;
 EOF
 
 # Installer le driver Python
-cd /opt/Quizkw/backend
+cd <CHEMIN_APP>/backend
 source venv/bin/activate
 pip install psycopg2-binary
 
 # Mettre à jour le .env
 # DATABASE_URL=postgresql://quizkw_user:mot_de_passe_securise@localhost/quizkw_db
 ```
+
+Si `pip install psycopg2-binary` échoue à la compilation (Python très récent sans wheel précompilé, cf. section 3.1), utiliser `psycopg[binary]` (le paquet successeur, activement maintenu) ou installer un Python legacy dédié au venv backend plutôt que le Python système le plus récent.
 
 ## 9. Firewall
 
@@ -226,51 +257,56 @@ sudo ufw enable
 sudo journalctl -u quizkw-backend -f
 
 # Redémarrer le backend après modification
-sudo systemctl restart quizkw-backend
+sudo /usr/bin/systemctl restart quizkw-backend
 
 # Reconstruire le frontend après modification
-cd /opt/Quizkw/frontend && npm run build
+cd <CHEMIN_APP>/frontend && npm run build
 
 # Mettre à jour depuis GitHub
-cd /opt/Quizkw
+cd <CHEMIN_APP>
+git status                      # vérifier l'absence de modifications locales avant de pull
 git pull
-cd backend && source venv/bin/activate && pip install -r requirements.txt
-cd ../frontend && npm install && npm run build
-sudo systemctl restart quizkw-backend
+cd backend && source venv/bin/activate && pip install -r requirements.txt  # seulement si requirements.txt a changé
+cd ../frontend && npm ci && npm run build
+sudo /usr/bin/systemctl restart quizkw-backend
 ```
 
 ## 11. Script de déploiement rapide
 
-Créer un script `/opt/Quizkw/deploy.sh` :
+Créer un script `<CHEMIN_APP>/deploy.sh` :
 
 ```bash
 #!/bin/bash
 set -e
 
 echo "📦 Mise à jour du code..."
-cd /opt/Quizkw
+cd <CHEMIN_APP>
+git status --short   # à vérifier manuellement : ce script ne pull pas si des fichiers locaux sont modifiés
 git pull
 
 echo "🐍 Mise à jour du backend..."
 cd backend
 source venv/bin/activate
-pip install -r requirements.txt
+# N'exécuter que si requirements.txt a changé dans le diff — un pip install
+# systématique peut échouer sur des paquets non critiques (ex. psycopg2-binary
+# sur un Python très récent) alors que rien n'en a besoin en pratique.
+pip install -r requirements.txt || echo "⚠️  pip install a échoué — vérifier si un paquet non critique (ex. psycopg2-binary) est en cause avant de bloquer le déploiement"
 
 echo "⚛️  Build du frontend..."
 cd ../frontend
-npm install
+npm ci
 npm run build
 
 echo "🔄 Redémarrage des services..."
-sudo systemctl restart quizkw-backend
-sudo systemctl reload nginx
+sudo /usr/bin/systemctl restart quizkw-backend
+sudo /usr/bin/systemctl reload nginx
 
 echo "✅ Déploiement terminé !"
 echo "Santé API: $(curl -s http://localhost:8000/health)"
 ```
 
 ```bash
-chmod +x /opt/Quizkw/deploy.sh
+chmod +x <CHEMIN_APP>/deploy.sh
 ```
 
 ## Architecture déployée
@@ -305,7 +341,10 @@ Client (navigateur)
 | Problème | Solution |
 |----------|----------|
 | 502 Bad Gateway | Vérifier que Gunicorn tourne : `systemctl status quizkw-backend` |
-| Frontend blank | Vérifier le build : `ls /opt/Quizkw/frontend/dist/` |
+| Frontend blank | Vérifier le build : `ls <CHEMIN_APP>/frontend/dist/` |
 | API CORS errors | Vérifier que les requêtes passent par `/api/` et non directement |
-| Permission denied | `sudo chown -R $USER:$USER /opt/Quizkw` |
+| Permission denied | Vérifier que l'utilisateur de déploiement possède `<CHEMIN_APP>` (`ls -la`), pas de `chown` récursif nécessaire si le clone a été fait par cet utilisateur dès le départ |
 | Port 8000 in use | `sudo lsof -i :8000` puis kill le process |
+| `curl localhost/` sert la page par défaut Nginx | Normal si `server_name` du site ne matche pas la chaîne `localhost` — tester avec la vraie adresse publique, ou `curl -H "Host: <SERVEUR>" localhost/` |
+| `pip install -r requirements.txt` échoue sur `psycopg2-binary` | Non bloquant si la prod tourne sur SQLite (`DATABASE_URL=sqlite:...`) ; voir section 3.1 |
+| `sudo <commande>` refusée alors qu'elle est dans la liste `sudo -l` | La commande doit matcher exactement l'entrée sudoers (chemin absolu, mêmes arguments, sans flag additionnel) |
