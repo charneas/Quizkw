@@ -287,6 +287,7 @@ export async function getTeamState(gameCode: string, teamId: number) {
     team_id: number
     team_name: string
     team_score: number
+    game_started: boolean
     game_phase: string
     is_my_turn: boolean
     has_answered: boolean

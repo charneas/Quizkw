@@ -1,6 +1,8 @@
 import { useRef, useState } from 'react'
 import type { TokenType } from '../types'
 
+const PENALTY_POINTS = 2
+
 interface Token {
   id: number
   token_type: string // Changé en string pour accepter les données brutes du backend
@@ -19,7 +21,7 @@ function TokenPanel({ tokens = [], onUseToken }: TokenPanelProps) {
 
   const tokenLabels: Record<string, { label: string; desc: string; icon: string; apiType: TokenType }> = {
     swap: { label: 'SWAP', desc: 'Change de question', icon: '🔄', apiType: 'swap' },
-    penalty: { label: 'PÉNALITÉ', desc: 'Enlève 10s aux adversaires', icon: '⚡', apiType: 'penalty' },
+    penalty: { label: 'PÉNALITÉ', desc: `Retire ${PENALTY_POINTS} points aux adversaires`, icon: '⚡', apiType: 'penalty' },
     bonus: { label: 'BONUS', desc: 'Double les points de la question', icon: '⭐', apiType: 'bonus' },
   }
 

@@ -12,12 +12,20 @@ function Lobby() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [creating, setCreating] = useState(false)
-  const [gameStarted, setGameStarted] = useState(false)
 
   useEffect(() => {
     if (code) {
       loadGame()
     }
+  }, [code])
+
+  // Rafraîchit la liste des équipes/joueurs et le statut de la partie pour
+  // que les autres appareils voient les arrivées et le lancement par l'hôte
+  // sans avoir à recharger la page manuellement.
+  useEffect(() => {
+    if (!code) return
+    const interval = setInterval(loadGame, 3000)
+    return () => clearInterval(interval)
   }, [code])
 
   const loadGame = async () => {
@@ -50,7 +58,6 @@ function Lobby() {
     if (!code) return
     try {
       await startGame(code)
-      setGameStarted(true)
       await loadGame()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Impossible de démarrer')
@@ -122,7 +129,7 @@ function Lobby() {
                       </p>
                     </div>
                   </div>
-                  {gameStarted ? (
+                  {game.started ? (
                     <button
                       onClick={() => navigate(`/team/${code}/${team.id}`)}
                       className="btn-primary text-sm px-3 py-1 min-h-[44px]"
@@ -177,7 +184,7 @@ function Lobby() {
         )}
 
         {/* Boutons d'action */}
-        {gameStarted ? (
+        {game.started ? (
           <div className="space-y-3">
             <div className="card text-center bg-success/10 border-success">
               <p className="text-success font-semibold text-lg mb-2">🎯 Jeu démarré !</p>

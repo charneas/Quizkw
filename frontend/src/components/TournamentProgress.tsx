@@ -26,13 +26,14 @@ function TournamentProgressComponent({ progress, currentPlayerId }: TournamentPr
   // '16_players' (bg-brand-600) et '8_qualified' (brand-600 aussi) restent en text-text (5.06:1, cf. tailwind.config.js) ; seule '4_finalists' (bg-success) bascule en text-bg pour le même motif de contraste.
 
   const getPhaseText = (phase: string) => {
+    const total = progress.players_total
     switch (phase) {
       case '16_players':
-        return '16 Players'
+        return `${total} Players`
       case '8_qualified':
-        return '8 Qualified'
+        return `${Math.ceil(total / 2)} Qualified`
       case '4_finalists':
-        return '4 Finalists'
+        return `${Math.ceil(total / 4)} Finalists`
       default:
         return phase
     }
@@ -70,9 +71,9 @@ function TournamentProgressComponent({ progress, currentPlayerId }: TournamentPr
       {/* Progress bar */}
       <div className="mb-6">
         <div className="flex justify-between text-sm text-text-muted mb-2">
-          <span>16 Players</span>
-          <span>8 Qualified</span>
-          <span>4 Finalists</span>
+          <span>{getPhaseText('16_players')}</span>
+          <span>{getPhaseText('8_qualified')}</span>
+          <span>{getPhaseText('4_finalists')}</span>
         </div>
         <div className="h-2 bg-border rounded-full overflow-hidden">
           <div

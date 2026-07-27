@@ -116,6 +116,7 @@ class GameSession(GameSessionBase):
     current_round: RoundTypeEnum
     current_question_id: Optional[int] = None
     is_active: bool
+    started: bool
     created_at: datetime
     teams: List[Team] = []
     

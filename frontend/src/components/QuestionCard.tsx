@@ -6,14 +6,12 @@ interface QuestionCardProps {
   question: QuestionResponse
   onAnswer: (answer: string) => void
   isBonusActive?: boolean
-  timePenalty?: number
 }
 
-function QuestionCard({ 
-  question, 
-  onAnswer, 
-  isBonusActive = false, 
-  timePenalty = 0 
+function QuestionCard({
+  question,
+  onAnswer,
+  isBonusActive = false,
 }: QuestionCardProps) {
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null)
   const [confirmed, setConfirmed] = useState(false)
@@ -53,13 +51,6 @@ function QuestionCard({
           <span className="text-xs text-text-muted">
             {question.question.category}
           </span>
-
-          {/* Badge Pénalité si -10s activé */}
-          {timePenalty > 0 && (
-            <span className="text-xs px-2 py-1 rounded bg-red-950/80 border border-red-700 text-red-400 font-bold animate-pulse">
-              ⚡ PÉNALITÉ (-10s)
-            </span>
-          )}
         </div>
 
         {/* Affichage des points (avec effet BONUS) */}

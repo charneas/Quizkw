@@ -21,7 +21,6 @@ function Game() {
   const [answerResult, setAnswerResult] = useState<AnswerResponse | null>(null)
   const [wheelResult, setWheelResult] = useState<WheelSpinResponse | null>(null)
   const [isBonusActive, setIsBonusActive] = useState(false)
-  const [timePenalty, setTimePenalty] = useState(0) // Nombre de secondes retirées au chrono
   const [currentTeamIndex, setCurrentTeamIndex] = useState(0)
   const [turnCount, setTurnCount] = useState(0)
   const [showWheel, setShowWheel] = useState(false)
@@ -46,6 +45,8 @@ function Game() {
   const [showPingPongResults, setShowPingPongResults] = useState(false)
   const [pingPongResults, setPingPongResults] = useState<any>(null)
   const [showTeamSelector, setShowTeamSelector] = useState(false)
+  const [confirmingAdvance, setConfirmingAdvance] = useState(false)
+  const [penaltyFeedback, setPenaltyFeedback] = useState('')
 
   useEffect(() => {
     if (code) loadGame()
@@ -88,9 +89,8 @@ function Game() {
   }
 
   const loadQuestion = async () => {
-    // 🔄 Réinitialise les bonus/pénalités pour la nouvelle question
+    // 🔄 Réinitialise les bonus pour la nouvelle question
     setIsBonusActive(false)
-    setTimePenalty(0)
 
     try {
       const status = await getAnswersStatus(code!)
@@ -347,14 +347,23 @@ function Game() {
       console.log(`🎮 Utilisation du jeton : ${normalizedType}`)
       
       // 1. Consomme le jeton en BDD
-      await useToken({ team_id: currentTeam.id, token_type: normalizedType })
+      const tokenResult = await useToken({ team_id: currentTeam.id, token_type: normalizedType })
 
       // 2. Déclenche l'effet du jeton
       if (normalizedType === 'SWAP') {
         await loadQuestion()
       } else if (normalizedType === 'PENALTY' || normalizedType === 'PÉNALITÉ') {
-        // ⚡ Enlève 10 secondes au chrono actuel
-        setTimePenalty(10)
+        // ⚡ Retire des points aux équipes adverses (appliqué côté backend)
+        await loadGame()
+
+        const penalizedTeams: { team_id: number; new_score: number }[] = tokenResult?.penalized_teams || []
+        if (penalizedTeams.length > 0) {
+          const names = penalizedTeams
+            .map((p) => game.teams.find((t) => t.id === p.team_id)?.name || `Équipe #${p.team_id}`)
+            .join(', ')
+          setPenaltyFeedback(`⚡ Pénalité appliquée : -2 points pour ${names}`)
+          setTimeout(() => setPenaltyFeedback(''), 4000)
+        }
       } else if (normalizedType === 'BONUS') {
         // ⭐ Active le multiplicateur x2
         setIsBonusActive(true)
@@ -370,6 +379,7 @@ function Game() {
   }
 
   const handleAdvanceToPhase2 = async () => {
+    setConfirmingAdvance(false)
     try {
       await advanceRound2Phase(code!)
       navigate(`/game/${code}/round2`)
@@ -412,12 +422,44 @@ function Game() {
             <p className="text-text-muted text-sm">Tour {turnCount + 1} • Code: {game.code}</p>
           </div>
           <button
-            onClick={handleAdvanceToPhase2}
-            className="btn-secondary text-sm"
+            onClick={() => setConfirmingAdvance(true)}
+            disabled={!answersStatus || !answersStatus.all_answered}
+            className="btn-secondary text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            title={
+              !answersStatus || !answersStatus.all_answered
+                ? 'Toutes les équipes doivent avoir répondu à la question en cours'
+                : undefined
+            }
           >
             Passer en Manche 2 →
           </button>
         </div>
+
+        {confirmingAdvance && (
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+            <div className="card max-w-sm w-full text-center">
+              <div className="text-4xl mb-3">➡️</div>
+              <h3 className="text-lg font-semibold text-text mb-2">Passer en Manche 2 ?</h3>
+              <p className="text-sm text-text-muted mb-6">
+                Cette action fait passer toutes les équipes à la Manche 2. Confirmez-vous ?
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setConfirmingAdvance(false)}
+                  className="btn-secondary flex-1 min-h-[44px]"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={handleAdvanceToPhase2}
+                  className="btn-primary flex-1 min-h-[44px]"
+                >
+                  Confirmer
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-1">
@@ -437,7 +479,6 @@ function Game() {
           question={currentQuestion}
           onAnswer={handleAnswer}
           isBonusActive={isBonusActive}
-          timePenalty={timePenalty}
         />
       )}
 
@@ -483,6 +524,13 @@ function Game() {
           <div className="fixed bottom-4 right-4 z-[60] bg-danger/90 text-text px-4 py-2 rounded-lg text-sm">
             {error}
             <button onClick={() => setError('')} className="ml-2 hover:opacity-70">✕</button>
+          </div>
+        )}
+
+        {penaltyFeedback && (
+          <div className="fixed bottom-4 left-4 z-[60] bg-red-700/90 text-text px-4 py-2 rounded-lg text-sm">
+            {penaltyFeedback}
+            <button onClick={() => setPenaltyFeedback('')} className="ml-2 hover:opacity-70">✕</button>
           </div>
         )}
 

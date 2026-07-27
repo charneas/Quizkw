@@ -29,6 +29,7 @@ export interface GameSession {
   current_round: RoundType
   current_question_id: number | null
   is_active: boolean
+  started: boolean
   created_at: string
   teams: Team[]
 }

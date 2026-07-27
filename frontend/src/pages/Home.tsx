@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { createGame } from '../services/api'
-import logo from '../assets/knights-of-wheels-logo.png'
 
 function Home() {
   const navigate = useNavigate()
@@ -40,11 +39,9 @@ function Home() {
         {/* Hero — seul endroit de l'app avec une texture/dégradé décoratif (DESIGN.md) */}
         <div className="text-center relative py-4">
           <div className="absolute inset-0 -z-10 bg-gradient-to-b from-brand-muted/50 via-brand-muted/10 to-transparent rounded-full blur-2xl" />
-          <img
-            src={logo}
-            alt="Knights of Wheels"
-            className="mx-auto h-28 w-auto drop-shadow-[0_0_24px_rgba(139,92,246,0.45)]"
-          />
+          <h1 className="mx-auto font-display font-extrabold text-5xl tracking-tight text-text drop-shadow-[0_0_24px_rgba(139,92,246,0.45)]">
+            Quiz<span className="text-brand">Climb</span>
+          </h1>
           <p className="mt-3 text-text-muted text-lg">
             Le jeu de quiz en équipe !
           </p>

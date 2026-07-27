@@ -10,6 +10,7 @@ interface TeamStateData {
   team_id: number
   team_name: string
   team_score: number
+  game_started: boolean
   game_phase: string
   is_my_turn: boolean
   has_answered: boolean
@@ -244,6 +245,21 @@ function TeamScreen() {
           <h2 className="text-2xl font-bold text-danger mb-4">❌ Équipe non trouvée</h2>
           <p className="text-text-muted">{error}</p>
           <button onClick={() => navigate('/')} className="btn-primary mt-4">Retour</button>
+        </div>
+      </div>
+    )
+  }
+
+  if (!state.game_started) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="card text-center max-w-md">
+          <div className="text-5xl mb-4 animate-pulse">⏳</div>
+          <h2 className="text-2xl font-bold text-text mb-2">Salle d'attente</h2>
+          <p className="text-text-muted">
+            Vous avez rejoint <span className="text-brand font-semibold">{state.team_name}</span>.
+            En attente que l'hôte lance la partie...
+          </p>
         </div>
       </div>
     )

@@ -26,6 +26,8 @@ from main_content_gen import router as content_gen_router, player_router as cont
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
+PENALTY_POINTS = 2
+
 # Create database tables
 Base.metadata.create_all(bind=engine)
 
@@ -84,7 +86,8 @@ def create_game(game_create: schemas.GameSessionCreate, db: Session = Depends(ge
         total_players=game_create.total_players,
         players_per_team=game_create.players_per_team,
         current_round=models.RoundType.MANCHE_1,
-        is_active=True
+        is_active=True,
+        started=False
     )
     
     db.add(game)
@@ -179,8 +182,9 @@ def start_game(code: str, db: Session = Depends(get_db)):
             )
     
     game.is_active = True
+    game.started = True
     db.commit()
-    
+
     return {"message": "Jeu démarré avec succès", "teams": len(teams)}
 
 @app.post("/games/{code}/players/", response_model=schemas.Player)
@@ -1540,6 +1544,7 @@ def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_d
         "team_id": team_id,
         "team_name": team.name,
         "team_score": team.score,
+        "game_started": game.started,
         "game_phase": game.current_round.value,
         "is_my_turn": is_my_turn,
         "has_answered": has_answered,
@@ -1609,11 +1614,28 @@ def use_token(data: dict, db: Session = Depends(get_db)):
     # Si le jeton de ce type existe et est disponible, on le consomme
     if chosen_token:
         chosen_token.is_used = True
+
+        penalized_teams = []
+        if token_type == "PENALTY":
+            # Retire 2 points aux équipes adverses (score plancher à 0).
+            # Pas de ciblage d'équipe pour l'instant (voir TokenPanel.tsx) :
+            # l'effet touche toutes les autres équipes de la partie.
+            team = db.query(models.Team).filter(models.Team.id == team_id).first()
+            if team:
+                other_teams = db.query(models.Team).filter(
+                    models.Team.game_session_id == team.game_session_id,
+                    models.Team.id != team_id,
+                ).all()
+                for other_team in other_teams:
+                    other_team.score = max(0, other_team.score - PENALTY_POINTS)
+                    penalized_teams.append({"team_id": other_team.id, "new_score": other_team.score})
+
         db.commit()
         return {
-            "status": "success", 
-            "message": f"Jeton {token_type} consommé avec succès.", 
-            "token_type": token_type
+            "status": "success",
+            "message": f"Jeton {token_type} consommé avec succès.",
+            "token_type": token_type,
+            "penalized_teams": penalized_teams,
         }
     
     # S'il n'existe pas ou a déjà été utilisé
