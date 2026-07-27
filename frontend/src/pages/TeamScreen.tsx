@@ -440,7 +440,7 @@ function TeamScreen() {
 
         {/* Jetons */}
         {state.tokens.length > 0 && (
-          <TokenPanel teamId={teamIdNum} onUseToken={handleUseToken} />
+          <TokenPanel tokens={state.tokens} onUseToken={handleUseToken} />
         )}
 
         {/* Erreur */}

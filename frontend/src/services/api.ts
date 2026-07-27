@@ -1,18 +1,9 @@
 import type {
-  GameSession,
-  QuestionResponse,
-  AnswerResponse,
-  WheelSpinResponse,
   MemoryGridState,
   MemoryGridCreateResponse,
-  CreateGameRequest,
-  CreateTeamRequest,
-  SubmitAnswerRequest,
-  UseTokenRequest,
   SelectCellRequest,
   AnswerCellRequest,
   AnswerCellResponse,
-  Team,
 } from '../types'
 
 const API_BASE = '/api'
@@ -49,6 +40,12 @@ export async function getGame(code: string) {
 
 export async function startGame(code: string) {
   return fetchApi<any>(`/games/${code}/start`, {
+    method: 'POST',
+  })
+}
+
+export async function advanceToPhase3(code: string) {
+  return fetchApi<any>(`/games/${code}/advance-to-phase3`, {
     method: 'POST',
   })
 }
@@ -224,14 +221,6 @@ export async function getCurrentPlayerTurn(memoryGridId: number) {
 
 import type {
   Theme,
-  ThemeSelectionRequest,
-  ThemeSelectionResponse,
-  Round2QuestionResponse,
-  Round2AnswerRequest,
-  Round2AnswerResponse,
-  TournamentProgress,
-  IntermediateLeaderboardResponse,
-  Round2AdvanceResponse,
 } from '../types'
 
 // CORRECTION DES EXPORTS POUR S'ALIGNER AVEC ROUND2.TSX
@@ -573,37 +562,5 @@ export async function flagQuestion(questionId: number, reason: string) {
   return fetchApi<FlagQuestionResponse>(`/questions/${questionId}/flag`, {
     method: 'POST',
     body: JSON.stringify({ reason }),
-  })
-}
-
-// === Manche 3 (Grille Mémoire) ===
-
-export async function createMemoryGrid(gameCode: string) {
-  return fetchApi<any>(`/games/${gameCode}/memory-grid/create`, {
-    method: 'POST',
-  })
-}
-
-export async function startMemoryGridRound(gameCode: string) {
-  return fetchApi<any>(`/games/${gameCode}/memory-grid/start`, {
-    method: 'POST',
-  })
-}
-
-export async function getMemoryGridState(gridId: number) {
-  return fetchApi<any>(`/memory-grid/${gridId}/state`)
-}
-
-export async function revealCell(data: any) {
-  return fetchApi<any>('/memory-grid/reveal-cell', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  })
-}
-
-export async function answerCell(data: any) {
-  return fetchApi<any>('/memory-grid/answer-cell', {
-    method: 'POST',
-    body: JSON.stringify(data),
   })
 }

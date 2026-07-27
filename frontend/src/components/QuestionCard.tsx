@@ -73,12 +73,6 @@ function QuestionCard({
             {displayPoints} pts
           </span>
         </div>
-<<<<<<< HEAD
-=======
-        <span className="text-brand font-bold">
-          {question.question.points} pts
-        </span>
->>>>>>> master
       </div>
 
       {/* Texte de la question */}

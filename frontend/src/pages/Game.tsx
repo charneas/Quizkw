@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getGame, getRandomQuestion, submitAnswer, useToken, spinWheel, advanceRound2Phase, getCurrentQuestion, setCurrentQuestion as setCurrentQuestionApi, getAnswersStatus, getRandomPingPongTheme, startPingPongDuel, submitPingPongDuelAnswer, getPingPongDuelState, getPingPongDuelResults } from '../services/api'
+import { getGame, getRandomQuestion, submitAnswer, useToken, spinWheel, advanceRound2Phase, getCurrentQuestion, setCurrentQuestion as setCurrentQuestionApi, getAnswersStatus, getRandomPingPongTheme, startPingPongDuel, submitPingPongDuelAnswer, getPingPongDuelState, getPingPongDuelResults, getTeamTokens } from '../services/api'
 import type { GameSession, QuestionResponse, AnswerResponse, WheelSpinResponse, TokenType, Team } from '../types'
 import Scoreboard from '../components/Scoreboard'
 import QuestionCard from '../components/QuestionCard'
@@ -207,65 +207,6 @@ function Game() {
     setCurrentTeamIndex((prev) => (prev + 1) % game.teams.length)
     await loadQuestion()
   }, [game, turnCount])
-
-  const startPingPong = async () => {
-    try {
-      const theme = await getRandomPingPongTheme()
-      setPingPongTheme(theme)
-      setShowPingPong(true)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erreur ping-pong')
-    }
-  }
-
-  const handlePingPongSubmit = async (answers: string[]) => {
-    if (!game || !pingPongTheme) return
-    const currentTeam = game.teams[currentTeamIndex]
-
-    try {
-      const result = await submitPingPongAnswer({
-        game_session_id: game.id,
-        theme_id: pingPongTheme.id,
-        team_id: currentTeam.id,
-        answers_given: answers
-      })
-
-      setPingPongResult(result)
-      
-      setGame(prev => {
-        if (!prev) return prev
-        const updatedTeams = [...prev.teams]
-        updatedTeams[currentTeamIndex] = {
-          ...updatedTeams[currentTeamIndex],
-          score: result.team_score,
-        }
-        return { ...prev, teams: updatedTeams }
-      })
-
-      const results = await getPingPongResults(code!, pingPongTheme.id)
-      if (results.all_teams_answered) {
-        setPingPongResults(results)
-        setShowPingPong(false)
-        setShowPingPongResults(true)
-      } else {
-        setCurrentTeamIndex((prev) => (prev + 1) % game.teams.length)
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erreur ping-pong')
-    }
-  }
-
-  const handlePingPongContinue = async () => {
-    setShowPingPongResults(false)
-    setPingPongTheme(null)
-    setPingPongResult(null)
-    setPingPongResults(null)
-    
-    if (game) {
-      setCurrentTeamIndex((prev) => (prev + 1) % game.teams.length)
-      await loadQuestion()
-    }
-  }
 
   const handleSpinWheel = async () => {
     if (!game) return
