@@ -148,9 +148,39 @@ Le build sera dans `frontend/dist/`. C'est ce dossier que Nginx servira. Préfé
 
 ```bash
 sudo tee /etc/nginx/sites-available/quizkw << EOF
+# Bloc HTTP (:80) — uniquement redirection vers HTTPS + validation ACME Certbot.
+# Ne PAS rediriger /.well-known/acme-challenge/ : c'est le chemin que Certbot
+# utilise pour valider le domaine (HTTP-01). Une redirection totale du port 80
+# casse cette validation en boucle.
 server {
     listen 80;
     server_name <SERVEUR>;  # IP ou domaine — match exact du Host demandé
+
+    location /.well-known/acme-challenge/ {
+        root <CHEMIN_APP>/frontend/dist;
+    }
+
+    location / {
+        return 301 https://\$host\$request_uri;
+    }
+}
+
+# Bloc HTTPS (:443) — contenu applicatif complet + certificats Let's Encrypt.
+# Les chemins ssl_certificate*/n'existent pas tant que la commande Certbot de
+# la section 7 n'a pas tourné une première fois : voir la note juste après ce
+# bloc avant d'activer le site sur un serveur neuf.
+server {
+    listen 443 ssl;
+    server_name <SERVEUR>;  # IP ou domaine — doit matcher le -d passé à certbot (section 7)
+
+    ssl_certificate     /etc/letsencrypt/live/<SERVEUR>/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/<SERVEUR>/privkey.pem;
+
+    # max-age volontairement court (1h) tant que le certificat n'a pas été
+    # vérifié en conditions réelles (cf. H-006) : un HSTS à 1 an poserait un
+    # verrou navigateur d'un an si le certificat échoue après mise en prod.
+    # Augmenter progressivement une fois le premier déploiement HTTPS validé.
+    add_header Strict-Transport-Security "max-age=3600" always;
 
     # Frontend - fichiers statiques
     root <CHEMIN_APP>/frontend/dist;
@@ -200,22 +230,37 @@ sudo nginx -t
 sudo systemctl restart nginx
 ```
 
+**Ordre important, serveur neuf** : `nginx -t` échouera tant que Certbot (section 7) n'a pas obtenu un premier certificat aux chemins `/etc/letsencrypt/live/<SERVEUR>/` — `listen 443 ssl;` sans `ssl_certificate`/`ssl_certificate_key` valides fait échouer le test même si seules ces deux lignes sont commentées. Sur un serveur neuf, commenter **tout le bloc `server { listen 443 ssl; ... }`** (pas seulement les deux lignes de certificat) le temps du premier `nginx -t` / `systemctl restart nginx` de cette section, puis le réactiver après avoir exécuté la commande Certbot de la section 7. Vérifier après coup (`sudo nginx -t` puis `cat /etc/nginx/sites-available/quizkw`) que Certbot a bien laissé les chemins de certificat intacts dans le bloc réactivé, avant de considérer cette étape terminée.
+
+**`<SERVEUR>` doit être un nom de domaine, pas une IP nue, avant cette étape** : Certbot ne délivre pas de certificat pour une IP (section 7). Si `<SERVEUR>` est encore une IP au moment d'activer le bloc 443, remplacer `<SERVEUR>` par le domaine réel dans les deux blocs (80 et 443) avant de continuer — sinon `server_name`/`ssl_certificate` pointent vers un domaine qui ne correspond à rien.
+
 **Note sur le site `default` de Nginx** : il n'est pas nécessaire de le supprimer (`rm /etc/nginx/sites-enabled/default`) si `server_name` du site `quizkw` matche exactement `<SERVEUR>` — Nginx route par `Host` header, donc une requête avec le bon `Host` atteint bien `quizkw`, et `default` sert simplement de filet pour tout autre nom (y compris `localhost` en test via SSH local, ce qui peut surprendre en diagnostic : tester depuis l'extérieur avec la vraie adresse plutôt que `curl localhost` sur le serveur pour éviter un faux négatif).
 
-## 7. HTTPS avec Let's Encrypt (recommandé — actuellement absent en prod, cf. H-006)
+## 7. HTTPS avec Let's Encrypt (obligatoire — actuellement absent en prod, cf. H-006)
+
+Le bloc Nginx de la section 6 (port 80 en redirection + port 443 avec chemins de certificats) doit déjà être actif (site activé, `nginx -t` passé) avant d'exécuter Certbot : le plugin `--nginx` a besoin d'un site déjà en place pour y injecter/rafraîchir le certificat.
 
 ```bash
 # Installer Certbot
 sudo apt install -y certbot python3-certbot-nginx
 
-# Obtenir un certificat SSL (nécessite un nom de domaine, pas une IP nue)
+# Ouvrir le firewall pour HTTPS avant d'aller plus loin (section 9) — sinon la
+# validation ACME et l'accès HTTPS final restent bloqués après cette étape
+sudo ufw allow 443/tcp
+
+# Obtenir un certificat SSL (nécessite un nom de domaine, pas une IP nue) et
+# l'injecter dans le bloc 443 de la section 6 (server_name doit correspondre à -d)
 sudo certbot --nginx -d votre-domaine.com
 
 # Le renouvellement automatique est configuré via un timer systemd
 sudo systemctl status certbot.timer
+
+# Vérifier que le certificat est bien servi (depuis une machine externe, pas
+# le serveur lui-même — voir la remarque sur curl localhost section 6)
+curl -I https://votre-domaine.com
 ```
 
-**Statut actuel** : la production sert en HTTP simple, sans certificat. Le code d'accès à 6 caractères est le seul jeton d'identité du jeu (aucune authentification) — il transite donc en clair tant que ce chapitre n'est pas appliqué. Non optionnel du point de vue sécurité ; voir la story `H-006` du backlog.
+**Statut actuel** : la procédure et la configuration Nginx ci-dessus sont corrigées pour servir en HTTPS, mais **aucun nom de domaine ni certificat n'est disponible aujourd'hui** — cette story (H-006) livre la procédure, pas une exécution vérifiée sur un serveur réel. L'obtention et le renouvellement effectifs du certificat restent à valider lors du prochain déploiement, une fois qu'un domaine sera pointé sur le serveur. Le code d'accès à 6 caractères est le seul jeton d'identité du jeu (aucune authentification) — il transitait en clair avant application de ce chapitre.
 
 ## 8. PostgreSQL (optionnel, pas encore utilisé en prod)
 
@@ -315,12 +360,13 @@ chmod +x <CHEMIN_APP>/deploy.sh
 Client (navigateur)
     │
     ▼
-┌──────────────────┐
-│   Nginx (:80)    │
-│                  │
-│  /       → dist/ │  ← Frontend React (fichiers statiques)
-│  /api/   → :8000 │  ← Proxy vers Gunicorn
-└──────────────────┘
+┌──────────────────────────┐
+│ Nginx (:80 → 301 → :443) │
+│ Nginx (:443, TLS)        │
+│                          │
+│  /       → dist/         │  ← Frontend React (fichiers statiques)
+│  /api/   → :8000         │  ← Proxy vers Gunicorn
+└──────────────────────────┘
          │
          ▼
 ┌──────────────────┐
