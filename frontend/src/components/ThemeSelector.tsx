@@ -10,13 +10,13 @@ function ThemeSelectorComponent({ themes, onSelectTheme, gameCode: _gameCode }: 
   const getCategoryColor = (category: string) => {
     switch (category) {
       case 'serious':
-        return 'bg-blue-600'
+        return 'bg-brand-600'
       case 'pop_culture':
-        return 'bg-purple-600'
+        return 'bg-brand-600'
       case 'whimsical':
-        return 'bg-pink-600'
+        return 'bg-brand-muted'
       default:
-        return 'bg-gray-600'
+        return 'bg-surface-raised'
     }
   }
 
@@ -38,41 +38,41 @@ function ThemeSelectorComponent({ themes, onSelectTheme, gameCode: _gameCode }: 
   }
 
   return (
-    <div className="bg-gray-800 rounded-lg p-6">
-      <h2 className="text-2xl font-bold text-white mb-2">Choose Your Theme</h2>
-      <p className="text-gray-300 mb-6">Select one of these 3 random themes for your Round 2 questions</p>
+    <div className="bg-surface rounded-lg p-6">
+      <h2 className="text-2xl font-display font-semibold text-text mb-2">Choose Your Theme</h2>
+      <p className="text-text-muted mb-6">Select one of these 3 random themes for your Round 2 questions</p>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {themes.map((theme) => (
           <div
             key={theme.id}
-            className="bg-gray-700 rounded-lg overflow-hidden hover:bg-gray-600 transition-colors cursor-pointer"
+            className="bg-surface-raised rounded-lg overflow-hidden hover:bg-border border border-border transition-colors cursor-pointer"
             onClick={() => onSelectTheme(theme)}
           >
             <div className={`h-2 ${getCategoryColor(theme.category)}`} />
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
-                <span className={`px-3 py-1 rounded-full text-white text-sm ${getCategoryColor(theme.category)}`}>
+                <span className={`px-3 py-1 rounded-full text-text text-sm ${getCategoryColor(theme.category)}`}>
                   {getCategoryText(theme.category)}
                 </span>
-                <span className="text-gray-300 text-sm">Difficulty: {theme.difficulty_level}/10</span>
+                <span className="text-text-muted text-sm">Difficulty: {theme.difficulty_level}/10</span>
               </div>
 
-              <h3 className="text-xl font-bold text-white mb-3">{theme.name}</h3>
-              
+              <h3 className="text-xl font-bold text-text mb-3">{theme.name}</h3>
+
               {theme.description && (
-                <p className="text-gray-300 mb-4">{theme.description}</p>
+                <p className="text-text-muted mb-4">{theme.description}</p>
               )}
 
               <div className="mb-4">
-                <p className="text-gray-400 text-sm mb-1">Difficulty Level:</p>
+                <p className="text-text-muted text-sm mb-1">Difficulty Level:</p>
                 <div className="text-yellow-400 text-lg">
                   {getDifficultyStars(theme.difficulty_level)}
                 </div>
               </div>
 
               <div className="text-center">
-                <button className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg">
+                <button className="btn-primary">
                   Select This Theme
                 </button>
               </div>
@@ -81,7 +81,7 @@ function ThemeSelectorComponent({ themes, onSelectTheme, gameCode: _gameCode }: 
         ))}
       </div>
 
-      <div className="mt-6 text-center text-gray-400">
+      <div className="mt-6 text-center text-text-muted">
         <p>Each theme has 10 questions with progressive difficulty (1-10)</p>
         <p>Points awarded: 1-10 points per question based on difficulty</p>
       </div>

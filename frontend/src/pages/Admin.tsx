@@ -268,17 +268,17 @@ export default function Admin() {
   }
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-8">
+    <div className="p-6 max-w-5xl mx-auto space-y-8 text-text">
       <h1 className="text-2xl font-bold">Administration du contenu</h1>
 
-      {message && <div className="bg-green-100 text-green-800 p-3 rounded">{message}</div>}
-      {error && <div className="bg-red-100 text-red-800 p-3 rounded">{error}</div>}
+      {message && <div className="bg-surface-raised text-success p-3 rounded-lg border border-success">{message}</div>}
+      {error && <div className="bg-surface-raised text-danger p-3 rounded-lg border border-danger">{error}</div>}
 
       <div className="flex gap-3">
-        <button className="px-4 py-2 bg-blue-600 text-white rounded" onClick={exportContent}>
+        <button className="btn-primary" onClick={exportContent}>
           Exporter le contenu (JSON)
         </button>
-        <label className="px-4 py-2 bg-gray-600 text-white rounded cursor-pointer">
+        <label className="btn-secondary cursor-pointer inline-flex items-center">
           Importer un fichier JSON
           <input type="file" accept="application/json" className="hidden" onChange={importContent} />
         </label>
@@ -288,13 +288,13 @@ export default function Admin() {
         <h2 className="text-xl font-semibold">Thèmes</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
           <input
-            className="border p-2 rounded"
+            className="input-field"
             placeholder="Nom"
             value={themeForm.name}
             onChange={(e) => setThemeForm({ ...themeForm, name: e.target.value })}
           />
           <select
-            className="border p-2 rounded"
+            className="input-field"
             value={themeForm.category}
             onChange={(e) => setThemeForm({ ...themeForm, category: e.target.value as ThemeCategory })}
           >
@@ -303,7 +303,7 @@ export default function Admin() {
             ))}
           </select>
           <input
-            className="border p-2 rounded"
+            className="input-field"
             type="number"
             min={1}
             max={10}
@@ -312,18 +312,18 @@ export default function Admin() {
             onChange={(e) => setThemeForm({ ...themeForm, difficulty_level: Number(e.target.value) })}
           />
           <input
-            className="border p-2 rounded"
+            className="input-field"
             placeholder="Description"
             value={themeForm.description}
             onChange={(e) => setThemeForm({ ...themeForm, description: e.target.value })}
           />
         </div>
-        <button className="px-4 py-2 bg-green-600 text-white rounded" onClick={submitTheme}>
+        <button className="btn-primary" onClick={submitTheme}>
           {editingThemeId ? 'Mettre à jour le thème' : 'Créer le thème'}
         </button>
         {editingThemeId && (
           <button
-            className="ml-2 px-4 py-2 bg-gray-300 rounded"
+            className="btn-secondary ml-2"
             onClick={() => { setEditingThemeId(null); setThemeForm(emptyThemeForm()) }}
           >
             Annuler
@@ -332,7 +332,7 @@ export default function Admin() {
 
         <table className="w-full mt-3 text-sm">
           <thead>
-            <tr className="text-left border-b">
+            <tr className="text-left border-b border-border">
               <th className="p-2">Nom</th>
               <th className="p-2">Catégorie</th>
               <th className="p-2">Difficulté</th>
@@ -342,7 +342,7 @@ export default function Admin() {
           </thead>
           <tbody>
             {themes.map((theme) => (
-              <tr key={theme.id} className="border-b">
+              <tr key={theme.id} className="border-b border-border">
                 <td className="p-2">{theme.name}</td>
                 <td className="p-2">{theme.category}</td>
                 <td className="p-2">{theme.difficulty_level}</td>
@@ -353,8 +353,8 @@ export default function Admin() {
                   )}
                 </td>
                 <td className="p-2 space-x-2">
-                  <button className="text-blue-600" onClick={() => editTheme(theme)}>Éditer</button>
-                  <button className="text-red-600" onClick={() => removeTheme(theme.id, theme.name)}>Supprimer</button>
+                  <button className="text-brand" onClick={() => editTheme(theme)}>Éditer</button>
+                  <button className="text-danger" onClick={() => removeTheme(theme.id, theme.name)}>Supprimer</button>
                 </td>
               </tr>
             ))}
@@ -368,7 +368,7 @@ export default function Admin() {
         <div>
           <label className="mr-2">Filtrer par thème :</label>
           <select
-            className="border p-2 rounded"
+            className="input-field inline-block w-auto"
             value={filterThemeId}
             onChange={(e) => setFilterThemeId(e.target.value === '' ? '' : Number(e.target.value))}
           >
@@ -381,19 +381,19 @@ export default function Admin() {
 
         <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
           <input
-            className="border p-2 rounded col-span-2"
+            className="input-field col-span-2"
             placeholder="Texte de la question"
             value={questionForm.text}
             onChange={(e) => setQuestionForm({ ...questionForm, text: e.target.value })}
           />
           <input
-            className="border p-2 rounded"
+            className="input-field"
             placeholder="Catégorie"
             value={questionForm.category}
             onChange={(e) => setQuestionForm({ ...questionForm, category: e.target.value })}
           />
           <select
-            className="border p-2 rounded"
+            className="input-field"
             value={questionForm.difficulty}
             onChange={(e) => setQuestionForm({ ...questionForm, difficulty: e.target.value as Difficulty })}
           >
@@ -402,19 +402,19 @@ export default function Admin() {
             ))}
           </select>
           <input
-            className="border p-2 rounded"
+            className="input-field"
             placeholder="Réponse correcte"
             value={questionForm.correct_answer}
             onChange={(e) => setQuestionForm({ ...questionForm, correct_answer: e.target.value })}
           />
           <input
-            className="border p-2 rounded col-span-2"
+            className="input-field col-span-2"
             placeholder="Mauvaises réponses (séparées par des virgules)"
             value={questionForm.wrong_answers}
             onChange={(e) => setQuestionForm({ ...questionForm, wrong_answers: e.target.value })}
           />
           <select
-            className="border p-2 rounded"
+            className="input-field"
             value={questionForm.theme_id}
             onChange={(e) => setQuestionForm({ ...questionForm, theme_id: e.target.value === '' ? '' : Number(e.target.value) })}
           >
@@ -424,7 +424,7 @@ export default function Admin() {
             ))}
           </select>
           <input
-            className="border p-2 rounded"
+            className="input-field"
             type="number"
             min={1}
             max={10}
@@ -433,12 +433,12 @@ export default function Admin() {
             onChange={(e) => setQuestionForm({ ...questionForm, question_number: e.target.value === '' ? '' : Number(e.target.value) })}
           />
         </div>
-        <button className="px-4 py-2 bg-green-600 text-white rounded" onClick={submitQuestion}>
+        <button className="btn-primary" onClick={submitQuestion}>
           {editingQuestionId ? 'Mettre à jour la question' : 'Créer la question'}
         </button>
         {editingQuestionId && (
           <button
-            className="ml-2 px-4 py-2 bg-gray-300 rounded"
+            className="btn-secondary ml-2"
             onClick={() => { setEditingQuestionId(null); setQuestionForm(emptyQuestionForm()) }}
           >
             Annuler
@@ -447,7 +447,7 @@ export default function Admin() {
 
         <table className="w-full mt-3 text-sm">
           <thead>
-            <tr className="text-left border-b">
+            <tr className="text-left border-b border-border">
               <th className="p-2">Texte</th>
               <th className="p-2">Difficulté</th>
               <th className="p-2">Réponse</th>
@@ -457,7 +457,7 @@ export default function Admin() {
           </thead>
           <tbody>
             {questions.map((question) => (
-              <tr key={question.id} className="border-b">
+              <tr key={question.id} className="border-b border-border">
                 <td className="p-2">{question.text}</td>
                 <td className="p-2">{question.difficulty} ({question.points} pts)</td>
                 <td className="p-2">{question.correct_answer}</td>
@@ -468,12 +468,12 @@ export default function Admin() {
                       {Math.round(statsByQuestion[question.id].success_rate * 100)}% réussite
                     </span>
                   ) : (
-                    <button className="text-blue-600" onClick={() => loadStats(question.id)}>Charger</button>
+                    <button className="text-brand" onClick={() => loadStats(question.id)}>Charger</button>
                   )}
                 </td>
                 <td className="p-2 space-x-2">
-                  <button className="text-blue-600" onClick={() => editQuestion(question)}>Éditer</button>
-                  <button className="text-red-600" onClick={() => removeQuestion(question.id)}>Supprimer</button>
+                  <button className="text-brand" onClick={() => editQuestion(question)}>Éditer</button>
+                  <button className="text-danger" onClick={() => removeQuestion(question.id)}>Supprimer</button>
                 </td>
               </tr>
             ))}
@@ -591,11 +591,11 @@ function ContentGenerationSection({ onContentApproved }: { onContentApproved: ()
     <section className="space-y-3">
       <h2 className="text-xl font-semibold">Génération de contenu</h2>
 
-      {message && <div className="bg-green-100 text-green-800 p-3 rounded">{message}</div>}
-      {error && <div className="bg-red-100 text-red-800 p-3 rounded">{error}</div>}
+      {message && <div className="bg-surface-raised text-success p-3 rounded-lg border border-success">{message}</div>}
+      {error && <div className="bg-surface-raised text-danger p-3 rounded-lg border border-danger">{error}</div>}
 
       {mix && (
-        <div className="text-sm text-slate-600">
+        <div className="text-sm text-text-muted">
           Mix actuel ({mix.total_themes} thème(s)) :{' '}
           {mix.mix.map((m) => `${m.category} ${Math.round(m.current_ratio * 100)}%/${Math.round(m.target_ratio * 100)}%`).join(' · ')}
           {' — '}recommandé : <strong>{mix.recommended_category}</strong>
@@ -604,13 +604,13 @@ function ContentGenerationSection({ onContentApproved }: { onContentApproved: ()
 
       <div className="flex gap-2">
         <input
-          className="border p-2 rounded flex-1"
+          className="input-field flex-1 min-w-0"
           placeholder="Sujet (ex: Napoléon)"
           value={topic}
           onChange={(e) => setTopic(e.target.value)}
         />
         <select
-          className="border p-2 rounded"
+          className="input-field"
           value={category}
           onChange={(e) => setCategory(e.target.value as ThemeCategory | '')}
         >
@@ -619,14 +619,14 @@ function ContentGenerationSection({ onContentApproved }: { onContentApproved: ()
             <option key={c} value={c}>{c}</option>
           ))}
         </select>
-        <button className="px-4 py-2 bg-green-600 text-white rounded disabled:opacity-50" onClick={generate} disabled={generating}>
+        <button className="btn-primary disabled:opacity-50" onClick={generate} disabled={generating}>
           {generating ? 'Génération...' : 'Générer'}
         </button>
       </div>
 
       <h3 className="font-semibold mt-4">Suggestions en attente ({suggestions.length})</h3>
       {suggestions.map((s) => (
-        <div key={s.id} className="border rounded p-3 space-y-2">
+        <div key={s.id} className="border border-border rounded-lg p-3 space-y-2">
           <div className="font-medium">{s.generated_theme_name} — {s.generated_category} (sujet : {s.topic})</div>
           <ul className="text-sm list-disc pl-5">
             {s.generated_questions.map((q, i) => (
@@ -634,8 +634,8 @@ function ContentGenerationSection({ onContentApproved }: { onContentApproved: ()
             ))}
           </ul>
           <div className="space-x-2">
-            <button className="text-green-600" onClick={() => approve(s.id)}>Approuver</button>
-            <button className="text-red-600" onClick={() => reject(s.id)}>Rejeter</button>
+            <button className="text-success" onClick={() => approve(s.id)}>Approuver</button>
+            <button className="text-danger" onClick={() => reject(s.id)}>Rejeter</button>
           </div>
         </div>
       ))}
@@ -644,10 +644,10 @@ function ContentGenerationSection({ onContentApproved }: { onContentApproved: ()
       <table className="w-full text-sm">
         <tbody>
           {flags.map((f) => (
-            <tr key={f.id} className="border-b">
+            <tr key={f.id} className="border-b border-border">
               <td className="p-2">Question #{f.question_id}</td>
               <td className="p-2">{f.reason}</td>
-              <td className="p-2"><button className="text-blue-600" onClick={() => resolve(f.id)}>Résoudre</button></td>
+              <td className="p-2"><button className="text-brand" onClick={() => resolve(f.id)}>Résoudre</button></td>
             </tr>
           ))}
         </tbody>
@@ -657,10 +657,10 @@ function ContentGenerationSection({ onContentApproved }: { onContentApproved: ()
       <table className="w-full text-sm">
         <tbody>
           {history.map((h) => (
-            <tr key={h.id} className="border-b">
+            <tr key={h.id} className="border-b border-border">
               <td className="p-2">{h.entity_type} #{h.entity_id}</td>
               <td className="p-2">{h.action}</td>
-              <td className="p-2 text-slate-500">{h.detail}</td>
+              <td className="p-2 text-text-muted">{h.detail}</td>
             </tr>
           ))}
         </tbody>

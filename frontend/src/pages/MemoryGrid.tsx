@@ -153,6 +153,10 @@ function MemoryGrid() {
   const nameFor = (playerId: number | null) =>
     standings.find((s) => s.player_id === playerId)?.player_name ?? `Joueur ${playerId}`
 
+  // Repère daltonisme (deutéranopie) : initiale du finaliste, en plus de la couleur.
+  // [...name] (pas charAt) pour ne pas découper un caractère hors du plan de base (emoji).
+  const initialFor = (name: string) => ([...name.trim()][0] ?? '?').toUpperCase()
+
   const initGrid = async () => {
     try {
       setInitStep('Chargement du jeu...')
@@ -295,8 +299,8 @@ function MemoryGrid() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <div className="text-2xl text-slate-400 animate-pulse mb-2">🧠 Manche 3</div>
-          <p className="text-slate-500">{initStep}</p>
+          <div className="text-2xl text-text animate-pulse mb-2">🧠 Manche 3</div>
+          <p className="text-text-muted">{initStep}</p>
         </div>
       </div>
     )
@@ -306,8 +310,8 @@ function MemoryGrid() {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="card text-center">
-          <h2 className="text-2xl text-game-danger mb-4">Erreur</h2>
-          <p className="text-slate-400 mb-4">{error}</p>
+          <h2 className="text-2xl text-danger mb-4">Erreur</h2>
+          <p className="text-text-muted mb-4">{error}</p>
           <button onClick={() => navigate(`/game/${code}/host`)} className="btn-primary">
             Retour au jeu
           </button>
@@ -332,22 +336,23 @@ function MemoryGrid() {
       return `${captureEffect} ${
         color
           ? `${color.bg} ${color.border} border-2 cursor-not-allowed`
-          : 'bg-game-success/30 border-2 border-game-success cursor-not-allowed'
+          : 'bg-success/30 border-2 border-success cursor-not-allowed'
       }`
     }
     if (cell.status === 'revealed') {
-      return 'bg-game-accent/30 border-2 border-game-accent animate-pulse cursor-not-allowed'
+      return 'bg-accent/30 border-2 border-accent animate-pulse cursor-not-allowed'
     }
     const owner = colorFor(cell.assigned_player_id)
     if (owner) {
-      return `bg-primary-700/80 hover:bg-primary-600 cursor-pointer hover:scale-105 border-2 ${owner.border} border-opacity-40`
+      return `bg-surface-raised hover:bg-brand-muted cursor-pointer hover:scale-105 border-2 ${owner.border} border-opacity-40`
     }
-    return 'bg-primary-700 hover:bg-primary-600 cursor-pointer hover:scale-105 border-2 border-primary-500'
+    return 'bg-surface-raised hover:bg-brand-muted cursor-pointer hover:scale-105 border-2 border-border'
   }
 
   const getCellContent = (cell: GridCell) => {
     if (cell.status === 'matched') {
-      return nameFor(cell.matched_by_player_id).charAt(0) || '✓'
+      const name = nameFor(cell.matched_by_player_id)
+      return name ? initialFor(name) : '✓'
     }
     if (cell.status === 'revealed') return '❓'
     return '?'
@@ -358,9 +363,9 @@ function MemoryGrid() {
       <div className="max-w-6xl mx-auto">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h1 className="text-2xl font-bold">🧠 Manche 3 — Grille Mémoire</h1>
-            <p className="text-slate-400 text-sm">
-              Code: <span className="font-mono font-bold text-game-accent">{game.code}</span>
+            <h1 className="text-2xl font-bold font-display">🧠 Manche 3 — Grille Mémoire</h1>
+            <p className="text-text-muted text-sm">
+              Code: <span className="font-mono font-bold text-accent">{game.code}</span>
               {' • '}Progression: {matchedCells}/{totalCells} ({progress}%)
               {' • '}4 finalistes
             </p>
@@ -370,9 +375,9 @@ function MemoryGrid() {
           </button>
         </div>
 
-        <div className="w-full bg-primary-800 rounded-full h-2 mb-6">
+        <div className="w-full bg-border rounded-full h-2 mb-6">
           <div
-            className="bg-game-accent h-2 rounded-full transition-all duration-500"
+            className="bg-accent h-2 rounded-full transition-all duration-500"
             style={{ width: `${progress}%` }}
           />
         </div>
@@ -380,8 +385,8 @@ function MemoryGrid() {
         {isCompleted ? (
           <div className="card text-center py-12">
             <div className="text-6xl mb-2 animate-bounce-once">🏆</div>
-            <h2 className="text-4xl font-bold text-game-accent mb-4 animate-fade-in">Partie terminée !</h2>
-            <p className="text-slate-400 mb-6">Toutes les cellules ont été découvertes.</p>
+            <h2 className="text-4xl font-bold font-display text-accent mb-4 animate-fade-in">Partie terminée !</h2>
+            <p className="text-text-muted mb-6">Toutes les cellules ont été découvertes.</p>
             <div className="max-w-lg mx-auto space-y-2">
               {standings.map((s, idx) => {
                 const cellsControlled = (s.stolen_cells ?? 0) + (s.own_theme_cells ?? 0) + (s.unassigned_cells ?? 0)
@@ -395,7 +400,7 @@ function MemoryGrid() {
                       </span>
                       <span className="font-bold">{s.total_score} pts</span>
                     </div>
-                    <p className="text-xs text-slate-500 mt-1">
+                    <p className="text-xs text-text-muted mt-1">
                       {cellsControlled}/{TOTAL_GRID_CELLS} cellules contrôlées ({controlPercent}%)
                       {' — '}
                       {s.own_theme_cells ?? 0} propres, {s.stolen_cells ?? 0} volées, {s.unassigned_cells ?? 0} neutres
@@ -413,7 +418,7 @@ function MemoryGrid() {
             <div className="lg:col-span-1 space-y-4">
               {/* Classement des finalistes — AD-1 : score de Manche 3 seul */}
               <div className="card">
-                <h3 className="text-sm font-semibold text-slate-400 mb-2">Finalistes</h3>
+                <h3 className="text-sm font-semibold text-text-muted mb-2">Finalistes</h3>
                 {standings.map((s, idx) => {
                   const color = FINALIST_COLORS[idx % FINALIST_COLORS.length]
                   const isTurn = s.player_id === currentPlayerId
@@ -421,11 +426,17 @@ function MemoryGrid() {
                     <div
                       key={s.player_id}
                       className={`flex items-center justify-between gap-2 text-sm mb-1 px-2 py-1 rounded ${
-                        isTurn ? 'bg-game-accent/20 ring-1 ring-game-accent' : ''
+                        isTurn ? 'bg-accent/20 ring-1 ring-accent' : ''
                       }`}
                     >
                       <span className="flex items-center gap-2">
-                        <div className={`w-4 h-4 rounded ${color.bg} border ${color.border}`} />
+                        {/* Repère daltonisme (deutéranopie) : initiale en plus de la couleur, cf. EXPERIENCE.md Accessibility Floor */}
+                        <div
+                          aria-hidden="true"
+                          className={`w-6 h-6 rounded flex items-center justify-center text-xs font-bold ${color.bg} border ${color.border} ${color.text}`}
+                        >
+                          {initialFor(s.player_name)}
+                        </div>
                         <span className={color.text}>{s.player_name}</span>
                       </span>
                       <span className="font-bold">{s.total_score}</span>
@@ -437,22 +448,22 @@ function MemoryGrid() {
 
             <div className="lg:col-span-3 space-y-4">
               <div className="card text-center">
-                <p className="text-sm text-slate-400">C'est au tour de</p>
-                <p className="text-2xl font-bold text-game-accent">
+                <p className="text-sm text-text-muted">C'est au tour de</p>
+                <p className="text-2xl font-bold text-accent">
                   {nameFor(currentPlayerId)}
                 </p>
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-xs text-text-muted mt-1">
                   Cliquez sur une cellule cachée pour la révéler
                 </p>
                 {timeRemaining !== null && (
                   <div className="mt-3">
-                    <p className={`text-sm font-bold ${timeRemaining <= 5 ? 'text-game-danger animate-timer-pulse' : 'text-slate-300'}`}>
+                    <p className={`text-sm font-bold ${timeRemaining <= 5 ? 'text-danger animate-timer-pulse' : 'text-text'}`}>
                       ⏱ {timeRemaining}s
                     </p>
-                    <div className="h-2 bg-primary-800 rounded-full overflow-hidden mt-1">
+                    <div className="h-2 bg-border rounded-full overflow-hidden mt-1">
                       <div
                         className={`h-full transition-all duration-1000 ease-linear ${
-                          timeRemaining <= 5 ? 'bg-game-danger' : timeRemaining <= 10 ? 'bg-yellow-500' : 'bg-game-success'
+                          timeRemaining <= 5 ? 'bg-danger' : timeRemaining <= 10 ? 'bg-brand-600' : 'bg-success'
                         }`}
                         style={{ width: `${(timeRemaining / TURN_DURATION_SECONDS) * 100}%` }}
                       />
@@ -464,16 +475,16 @@ function MemoryGrid() {
               {answerFeedback && (
                 <div
                   className={`card text-center ${
-                    answerFeedback.isCorrect ? 'border-game-success' : 'border-game-danger'
+                    answerFeedback.isCorrect ? 'border-success' : 'border-danger'
                   }`}
                 >
                   {answerFeedback.isCorrect ? (
                     <>
                       <span className="text-3xl">✅</span>
-                      <p className="text-xl font-bold text-game-success">
+                      <p className="text-xl font-bold text-success">
                         +{answerFeedback.points} points !
                       </p>
-                      <p className="text-sm text-slate-400">
+                      <p className="text-sm text-text-muted">
                         {answerFeedback.cellType === 'own' && '(Cellule propre — bonus +1)'}
                         {answerFeedback.cellType === 'stolen' && '(Cellule volée — bonus +1)'}
                       </p>
@@ -481,8 +492,8 @@ function MemoryGrid() {
                   ) : (
                     <>
                       <span className="text-3xl">❌</span>
-                      <p className="text-xl font-bold text-game-danger">Mauvaise réponse</p>
-                      <p className="text-sm text-slate-400">
+                      <p className="text-xl font-bold text-danger">Mauvaise réponse</p>
+                      <p className="text-sm text-text-muted">
                         Réponse attendue : {answerFeedback.correctAnswer}
                       </p>
                     </>
@@ -531,26 +542,26 @@ function MemoryGrid() {
 
               {selectedCell.question ? (
                 <div className="mb-4">
-                  <p className="text-lg text-white mb-2">{selectedCell.question.text}</p>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-lg text-text mb-2">{selectedCell.question.text}</p>
+                  <p className="text-xs text-text-muted">
                     {selectedCell.question.category} • {selectedCell.question.points} pts
                   </p>
                 </div>
               ) : (
-                <p className="text-slate-400 mb-4">Question chargée...</p>
+                <p className="text-text-muted mb-4">Question chargée...</p>
               )}
 
               {selectedCell.assigned_player_id && (
-                <p className="text-sm text-slate-400 mb-4">
+                <p className="text-sm text-text-muted mb-4">
                   {selectedCell.assigned_player_id === currentPlayerId
                     ? '🏠 Votre cellule ! (+1 bonus si bonne réponse)'
                     : `⚔️ Cellule de ${nameFor(selectedCell.assigned_player_id)} (+1 bonus si volée)`}
                 </p>
               )}
 
-              <p className="text-slate-400 mb-2">
+              <p className="text-text-muted mb-2">
                 Réponse de{' '}
-                <span className="text-game-accent font-bold">{nameFor(currentPlayerId)}</span>
+                <span className="text-accent font-bold">{nameFor(currentPlayerId)}</span>
               </p>
               <input
                 type="text"
@@ -568,7 +579,7 @@ function MemoryGrid() {
               >
                 {submitting ? 'Validation...' : 'Valider la réponse'}
               </button>
-              <p className="text-xs text-slate-500 mt-2">
+              <p className="text-xs text-text-muted mt-2">
                 La correction est vérifiée par le serveur.
               </p>
             </div>
@@ -576,9 +587,9 @@ function MemoryGrid() {
         )}
 
         {error && (
-          <div className="fixed bottom-4 right-4 bg-red-900/90 text-white px-4 py-2 rounded-lg text-sm max-w-md">
+          <div className="fixed bottom-4 right-4 bg-danger/90 text-bg px-4 py-2 rounded-lg text-sm max-w-md">
             {error}
-            <button onClick={() => setError('')} className="ml-2 text-red-300 hover:text-white">
+            <button onClick={() => setError('')} className="ml-2 text-bg/70 hover:text-bg">
               ✕
             </button>
           </div>

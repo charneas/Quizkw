@@ -236,21 +236,21 @@ function Round2() {
   }, [code])
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-900 to-purple-900 p-4 md:p-8">
+    <div className="min-h-screen bg-bg p-4 md:p-8">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <header className="mb-8">
-          <h1 className="text-4xl font-bold text-white mb-2">Round 2: 16→8→4 Tournament</h1>
+          <h1 className="text-4xl font-display font-semibold text-text mb-2">Round 2: 16→8→4 Tournament</h1>
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-gray-300">Game Code: {code}</p>
-              <p className="text-gray-300">{getCurrentPhaseText()}</p>
+              <p className="text-text-muted">Game Code: {code}</p>
+              <p className="text-text-muted">{getCurrentPhaseText()}</p>
               {currentPlayer && (
-                <p className="text-gray-300">Player: <span className="text-white">{currentPlayer.name}</span></p>
+                <p className="text-text-muted">Player: <span className="text-text">{currentPlayer.name}</span></p>
               )}
             </div>
             <button
-              className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg"
+              className="btn-danger"
               onClick={() => navigate(`/game/${code}`)}
             >
               Back to Game
@@ -268,20 +268,20 @@ function Round2() {
 
         {/* Loading */}
         {loading && (
-          <div className="bg-gray-800 rounded-lg p-8 text-center">
-            <div className="animate-spin h-8 w-8 border-4 border-white border-t-transparent rounded-full mx-auto mb-4"></div>
-            <p className="text-white">Loading Round 2...</p>
+          <div className="bg-surface rounded-lg p-8 text-center">
+            <div className="animate-spin h-8 w-8 border-4 border-text border-t-transparent rounded-full mx-auto mb-4"></div>
+            <p className="text-text">Loading Round 2...</p>
           </div>
         )}
 
         {/* Error */}
         {error && (
-          <div className="bg-red-900 border-2 border-red-600 rounded-lg p-4 mb-4 animate-fade-in">
+          <div className="bg-danger/90 border border-danger rounded-lg p-4 mb-4 animate-fade-in">
             <div className="flex items-center">
               <span className="text-2xl mr-3">⚠️</span>
               <div>
-                <p className="text-white font-semibold mb-1">Error</p>
-                <p className="text-red-100">{error}</p>
+                <p className="text-text font-semibold mb-1">Error</p>
+                <p className="text-text">{error}</p>
               </div>
             </div>
           </div>
@@ -307,14 +307,14 @@ function Round2() {
 
         {/* Question Flow */}
         {selectedTheme && currentQuestion && !answerResult && (
-          <div className="bg-gray-800 rounded-lg p-6 mb-6">
+          <div className="bg-surface rounded-lg p-6 mb-6">
             <div className="mb-4">
-              <h2 className="text-2xl font-bold text-white mb-2">
+              <h2 className="text-2xl font-display font-semibold text-text mb-2">
                 Question {currentQuestion.question_number} (Difficulty: {currentQuestion.difficulty}/10)
               </h2>
-              <p className="text-gray-400 mb-2">Theme: {selectedTheme.name}</p>
-              <div className="bg-gray-700 rounded p-4 mb-4">
-                <p className="text-white text-lg">{currentQuestion.question.text}</p>
+              <p className="text-text-muted mb-2">Theme: {selectedTheme.name}</p>
+              <div className="bg-surface-raised rounded p-4 mb-4">
+                <p className="text-text text-lg">{currentQuestion.question.text}</p>
               </div>
             </div>
 
@@ -322,17 +322,17 @@ function Round2() {
             {timeRemaining !== null && (
               <div className="mb-4">
                 <div className="flex justify-between items-center mb-2">
-                  <span className={`text-sm font-bold ${timeRemaining <= 5 ? 'text-red-400 animate-timer-pulse' : 'text-gray-300'}`}>
+                  <span className={`text-sm font-bold ${timeRemaining <= 5 ? 'text-danger animate-timer-pulse' : 'text-text-muted'}`}>
                     ⏱ {timeRemaining}s remaining
                   </span>
-                  <span className="text-sm text-gray-400">
+                  <span className="text-sm text-text-muted">
                     {currentQuestion.difficulty}/10 difficulty
                   </span>
                 </div>
-                <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+                <div className="h-2 bg-border rounded-full overflow-hidden">
                   <div
                     className={`h-full transition-all duration-1000 ease-linear ${
-                      timeRemaining <= 5 ? 'bg-red-500' : timeRemaining <= 10 ? 'bg-yellow-500' : 'bg-green-500'
+                      timeRemaining <= 5 ? 'bg-danger' : timeRemaining <= 10 ? 'bg-brand-600' : 'bg-brand'
                     }`}
                     style={{ width: `${(timeRemaining / currentQuestion.time_limit) * 100}%` }}
                   />
@@ -344,7 +344,7 @@ function Round2() {
               {currentQuestion.options.map((option, index) => (
                 <button
                   key={index}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white p-4 rounded-lg text-center transition-transform hover:scale-105"
+                  className="bg-brand-600 hover:bg-brand-hover text-text p-4 rounded-lg text-center transition-transform hover:scale-105"
                   onClick={() => handleAnswerSubmit(option)}
                 >
                   {option}
@@ -352,7 +352,7 @@ function Round2() {
               ))}
             </div>
 
-            <div className="mt-4 text-gray-300">
+            <div className="mt-4 text-text-muted">
               <p>Current score: {playerStats?.score}</p>
               <p>Questions answered: {playerStats?.questions_answered}/10</p>
             </div>
@@ -361,29 +361,29 @@ function Round2() {
 
         {/* Answer Result */}
         {answerResult && (
-          <div className="bg-gray-800 rounded-lg p-6 mb-6 animate-fade-in">
+          <div className="bg-surface rounded-lg p-6 mb-6 animate-fade-in">
             <div className={`p-4 rounded-lg mb-4 transition-all duration-300 ${
-              answerResult.is_correct 
-                ? 'bg-green-900 animate-success-pulse' 
-                : 'bg-red-900 animate-error-shake'
+              answerResult.is_correct
+                ? 'bg-success/20 animate-success-pulse'
+                : 'bg-danger/20 animate-error-shake'
             }`}>
-              <h3 className="text-xl font-bold text-white">
+              <h3 className="text-xl font-bold text-text">
                 {answerResult.is_correct ? '✅ Correct!' : '❌ Incorrect'}
               </h3>
-              <p className="text-white">Points awarded: {answerResult.points_awarded}</p>
-              <p className="text-white mt-2">Correct answer: {answerResult.correct_answer}</p>
+              <p className="text-text">Points awarded: {answerResult.points_awarded}</p>
+              <p className="text-text mt-2">Correct answer: {answerResult.correct_answer}</p>
             </div>
 
-            <div className="bg-gray-700 rounded p-4 mb-4">
-              <p className="text-white">Your new score: {answerResult.player_score}</p>
-              <p className="text-gray-300">
+            <div className="bg-surface-raised rounded p-4 mb-4">
+              <p className="text-text">Your new score: {answerResult.player_score}</p>
+              <p className="text-text-muted">
                 Questions answered: {playerStats?.questions_answered}/10
               </p>
             </div>
 
             <div className="flex justify-center">
               <button
-                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg"
+                className={answerResult.next_question_available ? 'btn-primary' : 'btn-success'}
                 onClick={handleNextQuestion}
               >
                 {answerResult.next_question_available ? 'Next Question' : 'Finish'}
@@ -394,10 +394,10 @@ function Round2() {
 
         {/* Waiting for Leaderboard */}
         {isWaitingForLeaderboard && (
-          <div className="bg-gray-800 rounded-lg p-8 text-center">
-            <div className="animate-spin h-8 w-8 border-4 border-white border-t-transparent rounded-full mx-auto mb-4"></div>
-            <p className="text-white mb-2">Waiting for all players to finish...</p>
-            <p className="text-gray-300">
+          <div className="bg-surface rounded-lg p-8 text-center">
+            <div className="animate-spin h-8 w-8 border-4 border-text border-t-transparent rounded-full mx-auto mb-4"></div>
+            <p className="text-text mb-2">Waiting for all players to finish...</p>
+            <p className="text-text-muted">
               {tournamentProgress?.players_remaining}/{tournamentProgress?.players_total} players remaining
             </p>
           </div>
@@ -425,13 +425,13 @@ function Round2() {
 
           if (isFinalist) {
             return (
-              <div className="bg-gray-800 rounded-lg p-8 text-center">
-                <h2 className="text-3xl font-bold text-white mb-4">🎉 You are a Finalist!</h2>
-                <p className="text-gray-300 mb-6">
+              <div className="bg-surface rounded-lg p-8 text-center">
+                <h2 className="text-3xl font-display font-semibold text-text mb-4">🎉 You are a Finalist!</h2>
+                <p className="text-text-muted mb-6">
                   Congratulations! You have qualified for Round 3 (Memory Grid).
                 </p>
                 <button
-                  className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg"
+                  className="btn-success"
                   onClick={() => navigate(`/game/${code}/memory-grid`)}
                 >
                   Continue to Round 3 (Memory Grid)
@@ -441,9 +441,9 @@ function Round2() {
           }
 
           return (
-            <div className="bg-gray-800 rounded-lg p-8 text-center">
-              <h2 className="text-3xl font-bold text-white mb-4">Round 2 terminé</h2>
-              <p className="text-gray-300">
+            <div className="bg-surface rounded-lg p-8 text-center">
+              <h2 className="text-3xl font-display font-semibold text-text mb-4">Round 2 terminé</h2>
+              <p className="text-text-muted">
                 Les 4 finalistes ont été désignés pour la Manche 3. Votre parcours dans ce
                 tournoi s'arrête ici — merci d'avoir joué !
               </p>

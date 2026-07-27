@@ -63,9 +63,10 @@ export default {
           muted: '#B9AEDD',
         },
         // Couleurs fixes des 4 finalistes Manche 3 : identifiants fonctionnels, PAS des
-        // tokens de marque. Ne pas renommer/retoucher. Non migrées ici : MemoryGrid.tsx
-        // utilise encore la palette Tailwind standard (bg-blue-600/40 etc.) — migration
-        // vers ce token prévue en story I-005 qui touche directement ce fichier.
+        // tokens de marque. Ne pas renommer/retoucher. Restent en classes Tailwind
+        // standard (bg-blue-600/40 etc., cf. MemoryGrid.tsx FINALIST_COLORS) de façon
+        // PERMANENTE — story I-005 (2026-07-27) a migré le reste du fichier vers les
+        // tokens brand.* mais a confirmé que ces 4 couleurs ne doivent jamais le devenir.
       },
       fontFamily: {
         // Oswald, poids 600 uniquement (pas 700 — bold plein en majuscules jugé peu
