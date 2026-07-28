@@ -9,29 +9,36 @@ interface Token {
   is_used: boolean
 }
 
-interface TokenPanelProps {
-  tokens: Token[]
-  onUseToken: (type: TokenType) => void
+interface OtherTeam {
+  team_id: number
+  team_name: string
 }
 
-function TokenPanel({ tokens = [], onUseToken }: TokenPanelProps) {
+interface TokenPanelProps {
+  tokens: Token[]
+  otherTeams?: OtherTeam[]
+  onUseToken: (type: TokenType, targetTeamId?: number) => void
+}
+
+function TokenPanel({ tokens = [], otherTeams = [], onUseToken }: TokenPanelProps) {
   const safeTokens = Array.isArray(tokens) ? tokens : [];
   const [confirmingPenalty, setConfirmingPenalty] = useState<TokenType | null>(null)
+  const [selectedTargetId, setSelectedTargetId] = useState<number | null>(null)
   const penaltyConfirmedRef = useRef(false)
 
   const tokenLabels: Record<string, { label: string; desc: string; icon: string; apiType: TokenType }> = {
     swap: { label: 'SWAP', desc: 'Change de question', icon: '🔄', apiType: 'swap' },
-    penalty: { label: 'PÉNALITÉ', desc: `Retire ${PENALTY_POINTS} points aux adversaires`, icon: '⚡', apiType: 'penalty' },
+    penalty: { label: 'PÉNALITÉ', desc: `Retire ${PENALTY_POINTS} points à l'équipe ciblée`, icon: '⚡', apiType: 'penalty' },
     bonus: { label: 'BONUS', desc: 'Double les points de la question', icon: '⭐', apiType: 'bonus' },
   }
 
-  // PENALTY requiert une confirmation avant application (clic accidentel à fort
-  // impact identifié en session UX) — SWAP/BONUS restent sans confirmation.
-  // Portée confirmée avec l'utilisateur (story I-003, 2026-07-27) : le backend
-  // ne supporte pas de ciblage d'équipe pour PENALTY, la confirmation est générique.
+  // PENALTY requiert de choisir une équipe cible puis de confirmer (clic
+  // accidentel à fort impact identifié en session UX) — SWAP/BONUS restent
+  // sans confirmation.
   const handleTokenClick = (apiType: TokenType) => {
     if (apiType === 'penalty') {
       penaltyConfirmedRef.current = false
+      setSelectedTargetId(otherTeams.length === 1 ? otherTeams[0].team_id : null)
       setConfirmingPenalty(apiType)
     } else {
       onUseToken(apiType)
@@ -39,11 +46,13 @@ function TokenPanel({ tokens = [], onUseToken }: TokenPanelProps) {
   }
 
   const handleConfirmPenalty = () => {
-    if (penaltyConfirmedRef.current || !confirmingPenalty) return
+    if (penaltyConfirmedRef.current || !confirmingPenalty || !selectedTargetId) return
     penaltyConfirmedRef.current = true
     const apiType = confirmingPenalty
+    const targetId = selectedTargetId
     setConfirmingPenalty(null)
-    onUseToken(apiType)
+    setSelectedTargetId(null)
+    onUseToken(apiType, targetId)
   }
 
   return (
@@ -92,20 +101,40 @@ function TokenPanel({ tokens = [], onUseToken }: TokenPanelProps) {
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
           <div className="card max-w-sm w-full text-center">
             <div className="text-4xl mb-3">⚡</div>
-            <h3 className="text-lg font-semibold text-text mb-2">Appliquer PENALTY ?</h3>
-            <p className="text-sm text-text-muted mb-6">
-              Cette action est irréversible. Confirmez-vous l'utilisation de ce jeton ?
+            <h3 className="text-lg font-semibold text-text mb-2">Choisir l'équipe à pénaliser</h3>
+            <p className="text-sm text-text-muted mb-4">
+              Cette action est irréversible.
             </p>
+            {otherTeams.length === 0 ? (
+              <p className="text-sm text-danger mb-4">Aucune autre équipe à cibler.</p>
+            ) : (
+              <div className="flex flex-col gap-2 mb-6">
+                {otherTeams.map((t) => (
+                  <button
+                    key={t.team_id}
+                    onClick={() => setSelectedTargetId(t.team_id)}
+                    className={`min-h-[44px] rounded-lg border px-3 text-sm font-medium transition-all ${
+                      selectedTargetId === t.team_id
+                        ? 'border-game-accent bg-game-accent/20 text-white'
+                        : 'border-slate-700 bg-slate-800/50 text-slate-300 hover:border-game-accent'
+                    }`}
+                  >
+                    {t.team_name}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="flex gap-3">
               <button
-                onClick={() => setConfirmingPenalty(null)}
+                onClick={() => { setConfirmingPenalty(null); setSelectedTargetId(null) }}
                 className="btn-secondary flex-1 min-h-[44px]"
               >
                 Annuler
               </button>
               <button
                 onClick={handleConfirmPenalty}
-                className="btn-danger flex-1 min-h-[44px]"
+                disabled={!selectedTargetId}
+                className="btn-danger flex-1 min-h-[44px] disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Confirmer
               </button>

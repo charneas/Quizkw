@@ -76,7 +76,7 @@ export async function getTeamTokens(teamId: number) {
   return data
 }
 
-export async function useToken(data: { team_id: number; token_type: string }) {
+export async function useToken(data: { team_id: number; token_type: string; target_team_id?: number }) {
   return fetchApi<any>('/tokens/use', {
     method: 'POST',
     body: JSON.stringify(data),

@@ -199,9 +199,9 @@ function TeamScreen() {
     }
   }
 
-  const handleUseToken = async (tokenType: TokenType) => {
+  const handleUseToken = async (tokenType: TokenType, targetTeamId?: number) => {
     try {
-      await useToken({ team_id: teamIdNum, token_type: tokenType })
+      await useToken({ team_id: teamIdNum, token_type: tokenType, target_team_id: targetTeamId })
       await loadState()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur jeton')
@@ -456,7 +456,11 @@ function TeamScreen() {
 
         {/* Jetons */}
         {state.tokens.length > 0 && (
-          <TokenPanel tokens={state.tokens} onUseToken={handleUseToken} />
+          <TokenPanel
+            tokens={state.tokens}
+            otherTeams={state.other_teams.map((t) => ({ team_id: t.team_id, team_name: t.team_name }))}
+            onUseToken={handleUseToken}
+          />
         )}
 
         {/* Erreur */}

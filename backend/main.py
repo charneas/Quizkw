@@ -124,7 +124,11 @@ def create_team(code: str, team_create: schemas.TeamCreate, db: Session = Depend
     
     if current_teams >= max_teams:
         raise HTTPException(status_code=400, detail="Nombre maximum d'équipes atteint")
-    
+
+    existing_names = db.query(models.Team.name).filter(models.Team.game_session_id == game.id).all()
+    if team_create.name.strip().lower() in {n.lower() for (n,) in existing_names}:
+        raise HTTPException(status_code=400, detail="Ce nom d'équipe est déjà pris dans cette partie")
+
     team = models.Team(
         name=team_create.name,
         game_session_id=game.id,
@@ -1602,8 +1606,27 @@ def next_question(code: str, db: Session = Depends(get_db)):
 @app.post("/tokens/use")
 def use_token(data: dict, db: Session = Depends(get_db)):
     team_id = data.get("team_id")
+    target_team_id = data.get("target_team_id")
     token_type = data.get("token_type", "").upper()  # Ex: "SWAP", "PENALTY", "BONUS"
-    
+
+    # Le jeton PENALTY cible une équipe adverse précise : on valide la cible
+    # avant de consommer le jeton, pour ne pas le perdre sur une requête invalide.
+    target_team = None
+    if token_type == "PENALTY":
+        if not target_team_id:
+            raise HTTPException(status_code=400, detail="Une équipe cible est requise pour utiliser un jeton PENALTY")
+        team = db.query(models.Team).filter(models.Team.id == team_id).first()
+        if not team:
+            raise HTTPException(status_code=404, detail="Équipe non trouvée")
+        if target_team_id == team_id:
+            raise HTTPException(status_code=400, detail="Impossible de cibler sa propre équipe")
+        target_team = db.query(models.Team).filter(
+            models.Team.id == target_team_id,
+            models.Team.game_session_id == team.game_session_id,
+        ).first()
+        if not target_team:
+            raise HTTPException(status_code=404, detail="Équipe cible non trouvée dans cette partie")
+
     # Recherche du jeton SPÉCIFIQUE demandé qui n'a pas encore été utilisé
     chosen_token = db.query(models.Token).filter(
         models.Token.team_id == team_id,
@@ -1616,19 +1639,10 @@ def use_token(data: dict, db: Session = Depends(get_db)):
         chosen_token.is_used = True
 
         penalized_teams = []
-        if token_type == "PENALTY":
-            # Retire 2 points aux équipes adverses (score plancher à 0).
-            # Pas de ciblage d'équipe pour l'instant (voir TokenPanel.tsx) :
-            # l'effet touche toutes les autres équipes de la partie.
-            team = db.query(models.Team).filter(models.Team.id == team_id).first()
-            if team:
-                other_teams = db.query(models.Team).filter(
-                    models.Team.game_session_id == team.game_session_id,
-                    models.Team.id != team_id,
-                ).all()
-                for other_team in other_teams:
-                    other_team.score = max(0, other_team.score - PENALTY_POINTS)
-                    penalized_teams.append({"team_id": other_team.id, "new_score": other_team.score})
+        if token_type == "PENALTY" and target_team:
+            # Retire des points à l'équipe ciblée uniquement (score plancher à 0).
+            target_team.score = max(0, target_team.score - PENALTY_POINTS)
+            penalized_teams.append({"team_id": target_team.id, "new_score": target_team.score})
 
         db.commit()
         return {
@@ -1637,10 +1651,10 @@ def use_token(data: dict, db: Session = Depends(get_db)):
             "token_type": token_type,
             "penalized_teams": penalized_teams,
         }
-    
+
     # S'il n'existe pas ou a déjà été utilisé
     raise HTTPException(
-        status_code=400, 
+        status_code=400,
         detail=f"Jeton {token_type} non disponible ou déjà utilisé !"
     )
 

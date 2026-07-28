@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Enum as SQLEnum, JSON
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Enum as SQLEnum, JSON, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import enum
@@ -58,14 +58,17 @@ class GameSession(Base):
 
 class Team(Base):
     __tablename__ = "teams"
-    
+    __table_args__ = (
+        UniqueConstraint("game_session_id", "name", name="uq_team_session_name"),
+    )
+
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
     game_session_id = Column(Integer, ForeignKey("game_sessions.id"))
     score = Column(Integer, default=0)
     color = Column(String, nullable=True)  # Round 3 color selection
     selected_theme_ids = Column(JSON, nullable=True)  # Round 3 selected theme IDs [1,2,3]
-    
+
     # Relations
     game_session = relationship("GameSession", back_populates="teams")
     players = relationship("Player", back_populates="team")

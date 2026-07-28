@@ -41,10 +41,16 @@ function Lobby() {
   }
 
   const handleCreateTeam = async () => {
-    if (!teamName.trim() || !code) return
+    const trimmedName = teamName.trim()
+    if (!trimmedName || !code) return
+    const nameTaken = game?.teams.some((t) => t.name.toLowerCase() === trimmedName.toLowerCase())
+    if (nameTaken) {
+      setError("Ce nom d'équipe est déjà pris dans cette partie")
+      return
+    }
     setCreating(true)
     try {
-      await createTeam(code, { name: teamName.trim() })
+      await createTeam(code, { name: trimmedName })
       setTeamName('')
       await loadGame()
     } catch (err) {

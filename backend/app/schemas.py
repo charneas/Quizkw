@@ -64,6 +64,14 @@ class Question(QuestionBase):
 class PlayerBase(BaseModel):
     name: str
 
+    @field_validator('name')
+    @classmethod
+    def name_not_blank(cls, v: str) -> str:
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("Le pseudo ne peut pas être vide")
+        return stripped
+
 class PlayerCreate(PlayerBase):
     pass
 
@@ -76,6 +84,14 @@ class Player(PlayerBase):
 
 class TeamBase(BaseModel):
     name: str
+
+    @field_validator('name')
+    @classmethod
+    def name_not_blank(cls, v: str) -> str:
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("Le nom d'équipe ne peut pas être vide")
+        return stripped
 
 class TeamCreate(TeamBase):
     pass
@@ -159,6 +175,7 @@ class AnswerResponse(BaseModel):
 class TokenUseRequest(BaseModel):
     token_type: TokenTypeEnum
     team_id: int
+    target_team_id: Optional[int] = None
 
 class SetCurrentQuestionRequest(BaseModel):
     question_id: int

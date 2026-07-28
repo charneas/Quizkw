@@ -338,16 +338,16 @@ function Game() {
 
   // === Jetons ===
 
-  const handleUseToken = async (tokenType: TokenType) => {
+  const handleUseToken = async (tokenType: TokenType, targetTeamId?: number) => {
     if (!game) return
     const currentTeam = game.teams[currentTeamIndex]
     const normalizedType = tokenType.toUpperCase()
 
     try {
       console.log(`🎮 Utilisation du jeton : ${normalizedType}`)
-      
+
       // 1. Consomme le jeton en BDD
-      const tokenResult = await useToken({ team_id: currentTeam.id, token_type: normalizedType })
+      const tokenResult = await useToken({ team_id: currentTeam.id, token_type: normalizedType, target_team_id: targetTeamId })
 
       // 2. Déclenche l'effet du jeton
       if (normalizedType === 'SWAP') {
@@ -515,6 +515,9 @@ function Game() {
 
             <TokenPanel
               tokens={activeTeamTokens}
+              otherTeams={game.teams
+                .filter((t) => t.id !== game.teams[currentTeamIndex]?.id)
+                .map((t) => ({ team_id: t.id, team_name: t.name }))}
               onUseToken={handleUseToken}
             />
           </div>
