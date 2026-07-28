@@ -167,9 +167,20 @@ def approve_suggestion(suggestion_id: int, db: Session = Depends(get_db)):
         db.add(theme)
         _flush_or_400(db)
 
+    # Trié par difficulté croissante puis numéroté 1..N : la Manche 2 attend
+    # une progression easy -> medium -> hard via question_number (comme
+    # seed.py le fait à la main) — jusqu'ici jamais renseigné ici, ce qui
+    # rendait les questions générées inutilisables pour cette progression
+    # (bug trouvé en revue).
+    DIFFICULTY_ORDER = {"easy": 0, "medium": 1, "hard": 2}
+    sorted_raw = sorted(
+        suggestion.generated_questions,
+        key=lambda raw: DIFFICULTY_ORDER.get(raw.get("difficulty"), 1),
+    )
+
     created_count = 0
     created_questions = []
-    for raw in suggestion.generated_questions:
+    for i, raw in enumerate(sorted_raw, start=1):
         # Revalidé au lieu d'un accès dict en confiance : la suggestion peut avoir
         # été écrite par une version antérieure du contrat GeneratedQuestion
         # (trouvé en revue de code — le JSON n'est validé qu'à la génération,
@@ -183,6 +194,7 @@ def approve_suggestion(suggestion_id: int, db: Session = Depends(get_db)):
             correct_answer=q.correct_answer,
             wrong_answers=json.dumps(q.wrong_answers),
             theme_id=theme.id,
+            question_number=i,
         )
         db.add(question)
         created_questions.append(question)

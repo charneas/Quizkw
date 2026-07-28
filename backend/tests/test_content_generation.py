@@ -139,6 +139,31 @@ def test_approve_suggestion_creates_theme_and_questions(test_client, mock_wikipe
     assert len(questions) == 2
 
 
+def test_approve_assigns_progressive_question_number_by_difficulty(test_client, mock_wikipedia, monkeypatch):
+    """La Manche 2 attend question_number 1..N croissant en difficulté
+    (comme seed.py le fait à la main) : le pipeline de génération ne le
+    renseignait jamais, rendant les questions générées inutilisables pour
+    cette progression (bug trouvé en revue)."""
+    unordered = GeneratedContent(
+        theme_name="Sciences",
+        category=ThemeCategoryEnum.serious,
+        questions=[
+            GeneratedQuestion(text="Q hard", correct_answer="A", wrong_answers=["b"], difficulty=DifficultyEnum.hard),
+            GeneratedQuestion(text="Q easy", correct_answer="A", wrong_answers=["b"], difficulty=DifficultyEnum.easy),
+            GeneratedQuestion(text="Q medium", correct_answer="A", wrong_answers=["b"], difficulty=DifficultyEnum.medium),
+        ],
+    )
+    monkeypatch.setattr(main_content_gen, "generate_content", lambda topic, extract, category: unordered)
+
+    suggestion = test_client.post("/admin/content/generate", json={"topic": "Napoléon"}).json()
+    test_client.post(f"/admin/content/suggestions/{suggestion['id']}/approve")
+
+    theme_id = test_client.get("/admin/themes").json()[0]["id"]
+    questions = test_client.get(f"/admin/questions?theme_id={theme_id}").json()
+    by_number = {q["question_number"]: q["difficulty"] for q in questions}
+    assert by_number == {1: "easy", 2: "medium", 3: "hard"}
+
+
 def test_approve_already_reviewed_suggestion_400s(test_client, mock_wikipedia, mock_generate_content):
     suggestion = test_client.post("/admin/content/generate", json={"topic": "Napoléon"}).json()
     test_client.post(f"/admin/content/suggestions/{suggestion['id']}/approve")
