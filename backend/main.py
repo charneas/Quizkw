@@ -163,8 +163,48 @@ def create_team(code: str, team_create: schemas.TeamCreate, db: Session = Depend
         db.add(token)
     
     db.commit()
-    
+
     return team
+
+@app.post("/games/{code}/teams/{team_id}/players/", response_model=schemas.Player)
+def join_team(code: str, team_id: int, player_create: schemas.PlayerCreate, db: Session = Depends(get_db)):
+    """
+    Rejoindre une équipe existante en tant que joueur, avec son pseudo.
+
+    C'est le vrai point d'entrée du pseudo en Manche 1 (auparavant, les
+    joueurs n'étaient jamais nommés réellement : `start_game` les générait
+    automatiquement en "Player <équipe> <n>" — bug utilisateur). Les joueurs
+    ainsi créés sont ensuite ceux qualifiés pour la Manche 2 par
+    qualify_players_from_round1, qui lit team.players.
+    """
+    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
+
+    if game.started:
+        raise HTTPException(status_code=400, detail="La partie a déjà démarré")
+
+    team = db.query(models.Team).filter(
+        models.Team.id == team_id,
+        models.Team.game_session_id == game.id,
+    ).first()
+    if not team:
+        raise HTTPException(status_code=404, detail="Équipe non trouvée dans cette partie")
+
+    current_count = db.query(models.Player).filter(models.Player.team_id == team.id).count()
+    if current_count >= game.players_per_team:
+        raise HTTPException(status_code=400, detail="Cette équipe est déjà complète")
+
+    existing_names = db.query(models.Player.name).filter(models.Player.team_id == team.id).all()
+    if player_create.name.strip().lower() in {n.lower() for (n,) in existing_names}:
+        raise HTTPException(status_code=400, detail="Ce pseudo est déjà pris dans cette équipe")
+
+    player = models.Player(name=player_create.name, team_id=team.id)
+    db.add(player)
+    db.commit()
+    db.refresh(player)
+
+    return player
 
 @app.post("/games/{code}/start")
 def start_game(code: str, db: Session = Depends(get_db)):
@@ -919,6 +959,37 @@ def select_player_color(request: schemas.ColorSelectionRequest, db: Session = De
         raise HTTPException(status_code=400, detail=str(e))
 
 # Round 2 Endpoints (16→8→4 Tournament)
+@app.get("/round2/{game_code}/players")
+def get_round2_qualified_players(game_code: str, db: Session = Depends(get_db)):
+    """
+    Liste des joueurs qualifiés pour la Manche 2 (ceux ayant une ligne
+    PlayerRound2Stats pour cette partie), pour permettre à un appareil de se
+    reconnecter sous SA véritable identité au lieu de créer un joueur libre
+    non lié à la qualification de la Manche 1 (bug utilisateur).
+    """
+    game = db.query(models.GameSession).filter(models.GameSession.code == game_code).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Game session not found")
+
+    stats = db.query(models.PlayerRound2Stats).filter(
+        models.PlayerRound2Stats.game_session_id == game.id
+    ).all()
+    player_ids = [s.player_id for s in stats]
+    players = db.query(models.Player).filter(models.Player.id.in_(player_ids)).all()
+    teams_by_id = {t.id: t for t in db.query(models.Team).filter(
+        models.Team.id.in_([p.team_id for p in players if p.team_id])
+    ).all()}
+
+    return [
+        {
+            "id": p.id,
+            "name": p.name,
+            "team_id": p.team_id,
+            "team_name": teams_by_id[p.team_id].name if p.team_id in teams_by_id else None,
+        }
+        for p in players
+    ]
+
 @app.get("/round2/{game_code}/themes")
 def get_round2_themes(game_code: str, db: Session = Depends(get_db)):
     """

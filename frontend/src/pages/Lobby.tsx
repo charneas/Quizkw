@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getGame, createTeam, startGame } from '../services/api'
+import { getGame, createTeam, startGame, joinTeam } from '../services/api'
 import type { GameSession } from '../types'
 import DevHelper from '../components/DevHelper'
 
@@ -12,6 +12,11 @@ function Lobby() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [creating, setCreating] = useState(false)
+  // Pseudo en cours de saisie par équipe (le vrai point d'entrée du pseudo,
+  // au moment où on rejoint une équipe — auparavant les joueurs n'étaient
+  // jamais nommés réellement avant la Manche 2).
+  const [pseudoDrafts, setPseudoDrafts] = useState<Record<number, string>>({})
+  const [joiningTeamId, setJoiningTeamId] = useState<number | null>(null)
 
   useEffect(() => {
     if (code) {
@@ -57,6 +62,21 @@ function Lobby() {
       setError(err instanceof Error ? err.message : 'Erreur lors de la création')
     } finally {
       setCreating(false)
+    }
+  }
+
+  const handleJoinTeam = async (teamId: number) => {
+    const pseudo = (pseudoDrafts[teamId] || '').trim()
+    if (!pseudo || !code) return
+    setJoiningTeamId(teamId)
+    try {
+      await joinTeam(code, teamId, { name: pseudo })
+      setPseudoDrafts((prev) => ({ ...prev, [teamId]: '' }))
+      await loadGame()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur lors de la connexion')
+    } finally {
+      setJoiningTeamId(null)
     }
   }
 
@@ -119,36 +139,62 @@ function Lobby() {
             <p className="text-text-muted text-center py-4">Aucune équipe pour le moment...</p>
           ) : (
             <div className="space-y-3">
-              {game.teams.map((team, index) => (
-                <div
-                  key={team.id}
-                  className="flex items-center justify-between bg-surface-raised rounded-lg p-3 border border-border"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl">
-                      {['🔴', '🔵', '🟢', '🟡', '🟣', '🟠'][index % 6]}
-                    </span>
-                    <div>
-                      <p className="font-semibold text-text">{team.name}</p>
-                      <p className="text-sm text-text-muted">
-                        {team.players.length}/{game.players_per_team} joueurs
-                      </p>
+              {game.teams.map((team, index) => {
+                const isFull = team.players.length >= game.players_per_team
+                return (
+                  <div
+                    key={team.id}
+                    className="bg-surface-raised rounded-lg p-3 border border-border"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="text-2xl">
+                          {['🔴', '🔵', '🟢', '🟡', '🟣', '🟠'][index % 6]}
+                        </span>
+                        <div>
+                          <p className="font-semibold text-text">{team.name}</p>
+                          <p className="text-sm text-text-muted">
+                            {team.players.length}/{game.players_per_team} joueurs
+                            {team.players.length > 0 && ` — ${team.players.map((p) => p.name).join(', ')}`}
+                          </p>
+                        </div>
+                      </div>
+                      {game.started ? (
+                        <button
+                          onClick={() => navigate(`/team/${code}/${team.id}`)}
+                          className="btn-primary text-sm px-3 py-1 min-h-[44px]"
+                        >
+                          Rejoindre →
+                        </button>
+                      ) : (
+                        <span className="text-sm text-text-muted">
+                          Score : {team.score}
+                        </span>
+                      )}
                     </div>
+
+                    {!game.started && !isFull && (
+                      <div className="flex gap-2 mt-3">
+                        <input
+                          type="text"
+                          placeholder="Votre pseudo"
+                          value={pseudoDrafts[team.id] || ''}
+                          onChange={(e) => setPseudoDrafts((prev) => ({ ...prev, [team.id]: e.target.value }))}
+                          onKeyDown={(e) => e.key === 'Enter' && handleJoinTeam(team.id)}
+                          className="input-field text-sm"
+                        />
+                        <button
+                          onClick={() => handleJoinTeam(team.id)}
+                          disabled={!(pseudoDrafts[team.id] || '').trim() || joiningTeamId === team.id}
+                          className="btn-secondary text-sm px-3 whitespace-nowrap disabled:opacity-50 min-h-[44px]"
+                        >
+                          {joiningTeamId === team.id ? '...' : 'Rejoindre cette équipe'}
+                        </button>
+                      </div>
+                    )}
                   </div>
-                  {game.started ? (
-                    <button
-                      onClick={() => navigate(`/team/${code}/${team.id}`)}
-                      className="btn-primary text-sm px-3 py-1 min-h-[44px]"
-                    >
-                      Rejoindre →
-                    </button>
-                  ) : (
-                    <span className="text-sm text-text-muted">
-                      Score : {team.score}
-                    </span>
-                  )}
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>

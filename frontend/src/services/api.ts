@@ -66,6 +66,17 @@ export async function createPlayer(gameCode: string, data: { name: string }) {
   })
 }
 
+export async function joinTeam(gameCode: string, teamId: number, data: { name: string }) {
+  return fetchApi<{ id: number; name: string; team_id: number }>(`/games/${gameCode}/teams/${teamId}/players/`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+export async function getRound2QualifiedPlayers(gameCode: string) {
+  return fetchApi<{ id: number; name: string; team_id: number | null; team_name: string | null }[]>(`/round2/${gameCode}/players`)
+}
+
 // === Jetons (Tokens) ===
 
 export async function getTeamTokens(teamId: number) {

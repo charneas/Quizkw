@@ -8,7 +8,8 @@ import {
   getRound2Leaderboard,
   advanceRound2Phase,
   getRound2Progress,
-  getGame
+  getGame,
+  getRound2QualifiedPlayers
 } from '../services/api'
 import type {
   Theme,
@@ -42,6 +43,12 @@ function Round2() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null)
+  // Joueurs réellement qualifiés depuis la Manche 1 — permet de se
+  // reconnecter sous sa vraie identité plutôt que de créer un joueur libre
+  // jamais relié à la qualification (bug utilisateur).
+  const [qualifiedPlayers, setQualifiedPlayers] = useState<
+    { id: number; name: string; team_id: number | null; team_name: string | null }[]
+  >([])
 
   useEffect(() => {
     if (code) initializeRound2()
@@ -61,6 +68,9 @@ function Round2() {
       // Get available themes
       const themesData = await getRound2Themes(code!)
       setThemes(themesData.themes)
+
+      const qualified = await getRound2QualifiedPlayers(code!)
+      setQualifiedPlayers(qualified)
 
       setLoading(false)
     } catch (err) {
@@ -292,7 +302,7 @@ function Round2() {
           <PlayerSelection
             gameCode={code!}
             onSelectPlayer={handlePlayerSelection}
-            existingPlayers={[]} // Could be populated from API in future
+            existingPlayers={qualifiedPlayers}
           />
         )}
 
