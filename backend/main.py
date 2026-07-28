@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import random
@@ -1562,6 +1563,32 @@ def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_d
                     "teams": teams_results,
                 }
 
+    # --- Dernier effet de roue (pour afficher un modal sur tous les écrans,
+    # y compris ceux qui n'ont pas cliqué sur "Tour suivant") ---
+    last_wheel_event = None
+    latest_effect = db.query(models.WheelEffect).filter(
+        models.WheelEffect.game_session_id == game.id
+    ).order_by(models.WheelEffect.id.desc()).first()
+    if latest_effect:
+        target = db.query(models.Team).filter(models.Team.id == latest_effect.target_team_id).first()
+        target_name = target.name if target else "?"
+        if latest_effect.effect_type == "malus":
+            message = f"💀 Malus : {target_name} perd {abs(latest_effect.value or 0)} points"
+        elif latest_effect.effect_type == "bonus":
+            message = f"🎉 Bonus : {target_name} gagne {latest_effect.value or 0} points"
+        elif latest_effect.effect_type == "ping_pong":
+            message = f"🏓 Duel Ping-Pong déclenché pour {target_name} !"
+        else:
+            message = "Effet de roue appliqué"
+        last_wheel_event = {
+            "id": latest_effect.id,
+            "effect_type": latest_effect.effect_type,
+            "value": latest_effect.value,
+            "target_team_id": latest_effect.target_team_id,
+            "target_team_name": target_name,
+            "message": message,
+        }
+
     return {
         "team_id": team_id,
         "team_name": team.name,
@@ -1576,6 +1603,7 @@ def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_d
         "other_teams": other_teams_status,
         "all_answered": all_teams_answered,
         "validation_result": validation_result_data,
+        "last_wheel_event": last_wheel_event,
     }
 
 @app.post("/games/{code}/register-host")
@@ -1595,15 +1623,117 @@ def register_host(code: str, db: Session = Depends(get_db)):
     return {"message": "Hôte enregistré", "has_host": True}
 
 
+def trigger_wheel_effect(db: Session, game: models.GameSession) -> Optional[dict]:
+    """Fait tourner la roue automatiquement pour l'équipe dont c'est le tour
+    (rotation déterministe sur `questions_played // 5`), applique l'effet en
+    base et le journalise dans WheelEffect. Reprend les probabilités du jeu
+    de plateau (1-5 malus, 6-10 +1, 11-18 ping-pong, 19-20 +3).
+    """
+    teams = db.query(models.Team).filter(models.Team.game_session_id == game.id).order_by(models.Team.id).all()
+    if not teams:
+        return None
+
+    wheel_round = game.questions_played // 5
+    spinning_team = teams[(wheel_round - 1) % len(teams)]
+
+    spin_result = random.randint(1, 20)
+    if spin_result <= 5:
+        effect_type, value = "malus", -3
+        spinning_team.score = max(0, spinning_team.score + value)
+        message = f"💀 Malus : {spinning_team.name} perd 3 points"
+    elif spin_result <= 10:
+        # Mode sans hôte : le choix +1 point / récupération de jeton est
+        # auto-résolu en +1 point (pas d'interface pour arbitrer ce choix).
+        effect_type, value = "bonus", 1
+        spinning_team.score += value
+        message = f"🎉 {spinning_team.name} gagne 1 point"
+    elif spin_result <= 18:
+        effect_type, value = "ping_pong", None
+        message = f"🏓 Duel Ping-Pong pour {spinning_team.name} !"
+    else:
+        effect_type, value = "bonus", 3
+        spinning_team.score += value
+        message = f"🎉 Bonus : {spinning_team.name} gagne 3 points !"
+
+    opponent = None
+    if effect_type == "ping_pong":
+        opponents = [t for t in teams if t.id != spinning_team.id]
+        if opponents:
+            opponent = random.choice(opponents)
+        else:
+            # Une seule équipe en jeu : pas d'adversaire possible pour le duel.
+            effect_type, value = "bonus", 2
+            spinning_team.score += value
+            message = f"Pas d'adversaire disponible pour le ping-pong : {spinning_team.name} reçoit +2 points à la place."
+
+    wheel_effect = models.WheelEffect(
+        game_session_id=game.id,
+        effect_type=effect_type,
+        value=value,
+        target_team_id=spinning_team.id,
+        is_applied=True,
+    )
+    db.add(wheel_effect)
+    db.flush()
+
+    duel_id = None
+    if effect_type == "ping_pong" and opponent:
+        from app.ping_pong_manager import PingPongManager
+        manager = PingPongManager(db)
+        theme = manager.get_random_theme()
+        if theme:
+            duel = manager.start_duel(
+                game_session_id=game.id,
+                theme_id=theme.id,
+                team1_id=spinning_team.id,
+                team2_id=opponent.id,
+            )
+            duel_id = duel.id
+            message = f"🏓 Duel Ping-Pong : {spinning_team.name} contre {opponent.name} !"
+        else:
+            # Pas de thème ping-pong disponible : retomber sur un bonus.
+            wheel_effect.effect_type = "bonus"
+            wheel_effect.value = 2
+            spinning_team.score += 2
+            message = f"Aucun thème ping-pong disponible : {spinning_team.name} reçoit +2 points à la place."
+
+    db.commit()
+    db.refresh(wheel_effect)
+
+    return {
+        "id": wheel_effect.id,
+        "effect_type": wheel_effect.effect_type,
+        "value": wheel_effect.value,
+        "target_team_id": spinning_team.id,
+        "target_team_name": spinning_team.name,
+        "duel_id": duel_id,
+        "message": message,
+    }
+
+
 @app.post("/games/{code}/next-question")
 def next_question(code: str, db: Session = Depends(get_db)):
     """
     Passer à la question suivante (utilisable sans hôte).
-    Choisit une question aléatoire et la définit comme question courante.
+    Choisit une question aléatoire et la définit comme question courante —
+    sauf tous les 5 tours, où la roue de fortune se déclenche à la place.
     """
     game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
     if not game:
         raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
+
+    game.questions_played = (game.questions_played or 0) + 1
+    db.commit()
+
+    if game.questions_played % 5 == 0:
+        wheel_event = trigger_wheel_effect(db, game)
+        game.current_question_id = None
+        db.commit()
+        return {
+            "message": "C'est l'heure de la roue de fortune !",
+            "question_id": None,
+            "wheel_event": wheel_event,
+        }
 
     # Choisir une question aléatoire
     question = db.query(models.Question).order_by(func.random()).first()

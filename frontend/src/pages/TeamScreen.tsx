@@ -43,6 +43,14 @@ interface TeamStateData {
     correct_answer: string
     teams: { team_name: string; is_correct: boolean; points_earned: number }[]
   } | null
+  last_wheel_event: {
+    id: number
+    effect_type: string
+    value: number | null
+    target_team_id: number
+    target_team_name: string
+    message: string
+  } | null
 }
 
 function TeamScreen() {
@@ -103,6 +111,29 @@ function TeamScreen() {
   useEffect(() => {
     duelResultRef.current = duelResult
   }, [duelResult])
+
+  // La roue de fortune (tous les 5 tours) est déclenchée côté serveur et
+  // diffusée à tous les écrans via last_wheel_event — on affiche un modal la
+  // première fois qu'un nouvel id apparaît, sur CHAQUE appareil (pas
+  // seulement celui qui a cliqué sur "Tour suivant").
+  const [wheelEventToShow, setWheelEventToShow] = useState<TeamStateData['last_wheel_event']>(null)
+  const seenWheelEventIdRef = useRef<number | null>(null)
+  const wheelEventBaselineSetRef = useRef(false)
+
+  useEffect(() => {
+    const event = state?.last_wheel_event
+    if (!wheelEventBaselineSetRef.current) {
+      // Au premier chargement, on ne montre pas un événement déjà passé
+      // (ex. reconnexion en cours de partie) — seuls les nouveaux comptent.
+      wheelEventBaselineSetRef.current = true
+      seenWheelEventIdRef.current = event ? event.id : null
+      return
+    }
+    if (event && event.id !== seenWheelEventIdRef.current) {
+      seenWheelEventIdRef.current = event.id
+      setWheelEventToShow(event)
+    }
+  }, [state?.last_wheel_event])
 
   // Quand la question change (ou disparaît), effacer le résultat local de la question précédente
   // Mais ne PAS effacer duelResult (le duel est indépendant de la question courante)
@@ -468,6 +499,23 @@ function TeamScreen() {
           <div className="fixed bottom-4 right-4 z-[60] bg-danger/90 text-text px-4 py-2 rounded-lg text-sm">
             {error}
             <button onClick={() => setError('')} className="ml-2 hover:opacity-70">✕</button>
+          </div>
+        )}
+
+        {/* Roue de fortune (tous les 5 tours) */}
+        {wheelEventToShow && (
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+            <div className="card max-w-sm w-full text-center">
+              <div className="text-4xl mb-3">🎡</div>
+              <h3 className="text-lg font-semibold text-text mb-2">Roue de fortune !</h3>
+              <p className="text-sm text-text-muted mb-6">{wheelEventToShow.message}</p>
+              <button
+                onClick={() => setWheelEventToShow(null)}
+                className="btn-primary w-full min-h-[44px]"
+              >
+                Continuer →
+              </button>
+            </div>
           </div>
         )}
       </div>

@@ -326,6 +326,14 @@ export async function getTeamState(gameCode: string, teamId: number) {
       correct_answer: string
       teams: { team_name: string; is_correct: boolean; points_earned: number }[]
     } | null
+    last_wheel_event: {
+      id: number
+      effect_type: string
+      value: number | null
+      target_team_id: number
+      target_team_name: string
+      message: string
+    } | null
   }>(`/game/${gameCode}/team/${teamId}/state`)
 }
 
