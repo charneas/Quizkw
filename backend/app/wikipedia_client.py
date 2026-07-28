@@ -23,7 +23,15 @@ def get_wikipedia_extract(topic: str, timeout: float = 10.0) -> str:
     url = WIKIPEDIA_SUMMARY_URL.format(topic=quote(topic, safe=""))
 
     try:
-        response = httpx.get(url, timeout=timeout, headers={"User-Agent": "Quizkw-content-generator/1.0"})
+        # Wikimedia bloque en 403 les User-Agent génériques sans contact
+        # (leur robot policy l'exige explicitement) — trouvé en prod, curl
+        # passait avec le même endpoint mais httpx avec un UA non conforme
+        # se faisait rejeter.
+        response = httpx.get(
+            url,
+            timeout=timeout,
+            headers={"User-Agent": "Quizkw-content-generator/1.0 (https://quizclimb.duckdns.org; contact: charneas@gmail.com)"},
+        )
         if response.status_code == 404:
             raise LookupError(f"Sujet Wikipedia introuvable : '{topic}'")
         response.raise_for_status()
