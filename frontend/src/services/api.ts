@@ -287,6 +287,7 @@ export async function getTeamState(gameCode: string, teamId: number) {
     team_id: number
     team_name: string
     team_score: number
+    game_session_id: number
     game_started: boolean
     game_phase: string
     is_my_turn: boolean
@@ -320,7 +321,7 @@ export async function getTeamState(gameCode: string, teamId: number) {
       is_my_turn_in_duel: boolean
     } | null
     tokens: { id: number; token_type: string; is_used: boolean }[]
-    other_teams: { team_id: number; team_name: string; has_answered: boolean }[]
+    other_teams: { team_id: number; team_name: string; team_score: number; has_answered: boolean }[]
     all_answered: boolean
     validation_result: {
       correct_answer: string

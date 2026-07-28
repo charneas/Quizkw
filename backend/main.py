@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import random
 import string
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 
 from app.database import get_db, engine
@@ -1481,21 +1481,21 @@ def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_d
     ]
 
     # --- Statut des autres équipes ---
-    if game.current_question_id:
-        teams_in_game = db.query(models.Team).filter(
-            models.Team.game_session_id == game.id
-        ).all()
-        other_teams_status = []
-        for t in teams_in_game:
-            if t.id == team_id:
-                continue
-            other_teams_status.append({
-                "team_id": t.id,
-                "team_name": t.name,
-                "has_answered": t.id in answered_ids if game.current_question_id else False,
-            })
-    else:
-        other_teams_status = []
+    # Calculé indépendamment de la question courante : nécessaire pour cibler
+    # une PENALTY ou choisir un adversaire de ping-pong même entre deux questions.
+    teams_in_game = db.query(models.Team).filter(
+        models.Team.game_session_id == game.id
+    ).all()
+    other_teams_status = []
+    for t in teams_in_game:
+        if t.id == team_id:
+            continue
+        other_teams_status.append({
+            "team_id": t.id,
+            "team_name": t.name,
+            "team_score": t.score,
+            "has_answered": t.id in answered_ids if game.current_question_id else False,
+        })
 
     # --- Auto-validation (no-host mode) ---
     # When all teams have answered AND no host is present, auto-validate and return results.
@@ -1593,6 +1593,7 @@ def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_d
         "team_id": team_id,
         "team_name": team.name,
         "team_score": team.score,
+        "game_session_id": game.id,
         "game_started": game.started,
         "game_phase": game.current_round.value,
         "is_my_turn": is_my_turn,
@@ -1655,16 +1656,15 @@ def trigger_wheel_effect(db: Session, game: models.GameSession) -> Optional[dict
         spinning_team.score += value
         message = f"🎉 Bonus : {spinning_team.name} gagne 3 points !"
 
-    opponent = None
-    if effect_type == "ping_pong":
-        opponents = [t for t in teams if t.id != spinning_team.id]
-        if opponents:
-            opponent = random.choice(opponents)
-        else:
-            # Une seule équipe en jeu : pas d'adversaire possible pour le duel.
-            effect_type, value = "bonus", 2
-            spinning_team.score += value
-            message = f"Pas d'adversaire disponible pour le ping-pong : {spinning_team.name} reçoit +2 points à la place."
+    if effect_type == "ping_pong" and not any(t.id != spinning_team.id for t in teams):
+        # Une seule équipe en jeu : pas d'adversaire possible pour le duel.
+        effect_type, value = "bonus", 2
+        spinning_team.score += value
+        message = f"Pas d'adversaire disponible pour le ping-pong : {spinning_team.name} reçoit +2 points à la place."
+    elif effect_type == "ping_pong":
+        # L'équipe qui tombe sur le ping-pong choisit elle-même son adversaire
+        # (voir TeamScreen.tsx) — pas de duel démarré ici, juste l'annonce.
+        message = f"🏓 {spinning_team.name}, choisissez votre adversaire !"
 
     wheel_effect = models.WheelEffect(
         game_session_id=game.id,
@@ -1674,29 +1674,6 @@ def trigger_wheel_effect(db: Session, game: models.GameSession) -> Optional[dict
         is_applied=True,
     )
     db.add(wheel_effect)
-    db.flush()
-
-    duel_id = None
-    if effect_type == "ping_pong" and opponent:
-        from app.ping_pong_manager import PingPongManager
-        manager = PingPongManager(db)
-        theme = manager.get_random_theme()
-        if theme:
-            duel = manager.start_duel(
-                game_session_id=game.id,
-                theme_id=theme.id,
-                team1_id=spinning_team.id,
-                team2_id=opponent.id,
-            )
-            duel_id = duel.id
-            message = f"🏓 Duel Ping-Pong : {spinning_team.name} contre {opponent.name} !"
-        else:
-            # Pas de thème ping-pong disponible : retomber sur un bonus.
-            wheel_effect.effect_type = "bonus"
-            wheel_effect.value = 2
-            spinning_team.score += 2
-            message = f"Aucun thème ping-pong disponible : {spinning_team.name} reçoit +2 points à la place."
-
     db.commit()
     db.refresh(wheel_effect)
 
@@ -1706,7 +1683,7 @@ def trigger_wheel_effect(db: Session, game: models.GameSession) -> Optional[dict
         "value": wheel_effect.value,
         "target_team_id": spinning_team.id,
         "target_team_name": spinning_team.name,
-        "duel_id": duel_id,
+        "duel_id": None,
         "message": message,
     }
 
@@ -1796,6 +1773,36 @@ def use_token(data: dict, db: Session = Depends(get_db)):
             team = db.query(models.Team).filter(models.Team.id == team_id).first()
             if team:
                 team.bonus_active = True
+        elif token_type == "SWAP":
+            # En duel ping-pong : change le thème du duel (le jeton ne
+            # touchait jusqu'ici que la question de Manche 1, jamais le
+            # thème d'un duel en cours — bug utilisateur). Sinon : change la
+            # question courante de la partie.
+            active_duel = db.query(models.PingPongDuel).filter(
+                models.PingPongDuel.is_completed == False,
+                or_(
+                    models.PingPongDuel.team1_id == team_id,
+                    models.PingPongDuel.team2_id == team_id,
+                ),
+            ).first()
+            if active_duel:
+                new_theme = db.query(models.PingPongTheme).filter(
+                    models.PingPongTheme.id != active_duel.theme_id
+                ).order_by(func.random()).first()
+                if new_theme:
+                    active_duel.theme_id = new_theme.id
+                    active_duel.answers_used = []
+            else:
+                team = db.query(models.Team).filter(models.Team.id == team_id).first()
+                game = db.query(models.GameSession).filter(
+                    models.GameSession.id == team.game_session_id
+                ).first() if team else None
+                if game and game.current_question_id:
+                    new_question = db.query(models.Question).filter(
+                        models.Question.id != game.current_question_id
+                    ).order_by(func.random()).first()
+                    if new_question:
+                        game.current_question_id = new_question.id
 
         db.commit()
         return {

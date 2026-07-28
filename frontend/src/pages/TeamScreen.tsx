@@ -1,15 +1,17 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getTeamState, submitAnswer, useToken, getPingPongDuelState, getPingPongDuelResults, submitPingPongDuelAnswer, nextQuestion } from '../services/api'
-import type { TokenType } from '../types'
+import { getTeamState, submitAnswer, useToken, getPingPongDuelState, getPingPongDuelResults, submitPingPongDuelAnswer, nextQuestion, getRandomPingPongTheme, startPingPongDuel } from '../services/api'
+import type { TokenType, Team } from '../types'
 import PingPongQuestion from '../components/PingPongQuestion'
 import PingPongResults from '../components/PingPongResults'
+import PingPongTeamSelector from '../components/PingPongTeamSelector'
 import TokenPanel from '../components/TokenPanel'
 
 interface TeamStateData {
   team_id: number
   team_name: string
   team_score: number
+  game_session_id: number
   game_started: boolean
   game_phase: string
   is_my_turn: boolean
@@ -37,7 +39,7 @@ interface TeamStateData {
     is_my_turn_in_duel: boolean
   } | null
   tokens: { id: number; token_type: string; is_used: boolean }[]
-  other_teams: { team_id: number; team_name: string; has_answered: boolean }[]
+  other_teams: { team_id: number; team_name: string; team_score: number; has_answered: boolean }[]
   all_answered: boolean
   validation_result: {
     correct_answer: string
@@ -117,6 +119,10 @@ function TeamScreen() {
   // première fois qu'un nouvel id apparaît, sur CHAQUE appareil (pas
   // seulement celui qui a cliqué sur "Tour suivant").
   const [wheelEventToShow, setWheelEventToShow] = useState<TeamStateData['last_wheel_event']>(null)
+  // Quand l'effet de roue est "ping_pong" et que c'est NOTRE équipe qui est
+  // tombée dessus, on doit choisir l'adversaire nous-même (au lieu d'un
+  // tirage au sort côté serveur) — voir PingPongTeamSelector plus bas.
+  const [choosingPingPongOpponent, setChoosingPingPongOpponent] = useState(false)
   const seenWheelEventIdRef = useRef<number | null>(null)
   const wheelEventBaselineSetRef = useRef(false)
 
@@ -131,9 +137,30 @@ function TeamScreen() {
     }
     if (event && event.id !== seenWheelEventIdRef.current) {
       seenWheelEventIdRef.current = event.id
-      setWheelEventToShow(event)
+      if (event.effect_type === 'ping_pong' && event.target_team_id === teamIdNum) {
+        setChoosingPingPongOpponent(true)
+      } else {
+        setWheelEventToShow(event)
+      }
     }
-  }, [state?.last_wheel_event])
+  }, [state?.last_wheel_event, teamIdNum])
+
+  const handleChooseWheelPingPongOpponent = async (opponent: Team) => {
+    if (!state) return
+    try {
+      const theme = await getRandomPingPongTheme()
+      await startPingPongDuel({
+        game_session_id: state.game_session_id,
+        theme_id: theme.id,
+        team1_id: teamIdNum,
+        team2_id: opponent.id,
+      })
+      setChoosingPingPongOpponent(false)
+      await loadState()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur lors du démarrage du duel')
+    }
+  }
 
   // Quand la question change (ou disparaît), effacer le résultat local de la question précédente
   // Mais ne PAS effacer duelResult (le duel est indépendant de la question courante)
@@ -308,6 +335,28 @@ function TeamScreen() {
             Manche : <span className="text-text font-semibold">{state.game_phase}</span>
           </p>
         </div>
+
+        {/* Roue : choix de l'adversaire du duel ping-pong */}
+        {choosingPingPongOpponent && !state.active_duel && (
+          <PingPongTeamSelector
+            currentTeam={{
+              id: state.team_id,
+              name: state.team_name,
+              game_session_id: state.game_session_id,
+              score: state.team_score,
+              players: [],
+            }}
+            availableTeams={state.other_teams.map((t) => ({
+              id: t.team_id,
+              name: t.team_name,
+              game_session_id: state.game_session_id,
+              score: t.team_score,
+              players: [],
+            }))}
+            onSelect={handleChooseWheelPingPongOpponent}
+            onCancel={() => setChoosingPingPongOpponent(false)}
+          />
+        )}
 
         {/* Statut des autres équipes */}
         {state.other_teams.length > 0 && (

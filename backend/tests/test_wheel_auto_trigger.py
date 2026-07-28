@@ -54,14 +54,16 @@ def test_wheel_triggers_malus_on_fifth_question(test_client, db_session, sample_
     assert effect.is_applied is True
 
 
-def test_wheel_triggers_ping_pong_duel_on_fifth_question(test_client, db_session, sample_game_session, sample_question, monkeypatch):
+def test_wheel_ping_pong_lets_target_team_choose_opponent(test_client, db_session, sample_game_session, sample_question, monkeypatch):
+    """L'équipe qui tombe sur le ping-pong choisit elle-même son adversaire
+    (via /ping-pong/duel/start, comme sur l'écran mono-appareil) — la roue ne
+    doit plus tirer l'adversaire au sort ni démarrer le duel elle-même."""
     team1, team2 = _make_two_teams(db_session, sample_game_session)
     theme = models.PingPongTheme(title="Capitales", correct_answers=["Paris", "Berlin"])
     db_session.add(theme)
     db_session.commit()
 
     monkeypatch.setattr(main.random, "randint", lambda a, b: 12)  # 11-18 => ping_pong
-    monkeypatch.setattr(main.random, "choice", lambda seq: team2)
 
     for _ in range(4):
         test_client.post(f"/games/{sample_game_session.code}/next-question")
@@ -69,14 +71,21 @@ def test_wheel_triggers_ping_pong_duel_on_fifth_question(test_client, db_session
     resp = test_client.post(f"/games/{sample_game_session.code}/next-question")
     body = resp.json()
     assert body["wheel_event"]["effect_type"] == "ping_pong"
-    assert body["wheel_event"]["duel_id"] is not None
+    assert body["wheel_event"]["target_team_id"] == team1.id
+    assert body["wheel_event"]["duel_id"] is None
 
-    duel = db_session.query(models.PingPongDuel).filter(
-        models.PingPongDuel.id == body["wheel_event"]["duel_id"]
-    ).first()
-    assert duel is not None
-    assert duel.team1_id == team1.id
-    assert duel.team2_id == team2.id
+    # Aucun duel n'a été créé automatiquement.
+    assert db_session.query(models.PingPongDuel).count() == 0
+
+    # L'équipe ciblée choisit elle-même son adversaire, via l'endpoint existant.
+    start_resp = test_client.post("/ping-pong/duel/start", json={
+        "game_session_id": sample_game_session.id,
+        "theme_id": theme.id,
+        "team1_id": team1.id,
+        "team2_id": team2.id,
+    })
+    assert start_resp.status_code == 200
+    assert db_session.query(models.PingPongDuel).count() == 1
 
 
 def test_state_exposes_last_wheel_event_to_all_teams(test_client, db_session, sample_game_session, sample_question, monkeypatch):
