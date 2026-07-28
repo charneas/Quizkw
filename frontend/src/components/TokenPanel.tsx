@@ -38,7 +38,7 @@ function TokenPanel({ tokens = [], otherTeams = [], onUseToken }: TokenPanelProp
   const handleTokenClick = (apiType: TokenType) => {
     if (apiType === 'penalty') {
       penaltyConfirmedRef.current = false
-      setSelectedTargetId(otherTeams.length === 1 ? otherTeams[0].team_id : null)
+      setSelectedTargetId(null)
       setConfirmingPenalty(apiType)
     } else {
       onUseToken(apiType)
