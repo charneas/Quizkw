@@ -20,6 +20,11 @@ class RoundType(enum.Enum):
     MANCHE_2 = "manche_2"
     MANCHE_3 = "manche_3"
 
+class PropositionStatus(enum.Enum):
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+
 class Question(Base):
     __tablename__ = "questions"
     
@@ -152,6 +157,26 @@ class Theme(Base):
     # Relations
     questions = relationship("Question", back_populates="theme")
     player_stats = relationship("PlayerRound2Stats", back_populates="theme")
+    propositions = relationship("Proposition", back_populates="theme")
+
+class Proposition(Base):
+    """Proposition de question soumise publiquement (AD-18) : entité distincte
+    de Question, jamais interrogée par le pool de jeu. Seule l'acceptation
+    (Story F-ext-2.4, hors périmètre ici) crée la Question correspondante."""
+    __tablename__ = "propositions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    text = Column(String, nullable=False)
+    correct_answer = Column(String, nullable=False)
+    wrong_answers = Column(String)  # Stocker les mauvaises réponses en JSON, comme Question
+    theme_id = Column(Integer, ForeignKey("themes.id"), nullable=True)  # NULL = "à déterminer"
+    difficulty = Column(SQLEnum(Difficulty), nullable=False)
+    status = Column(SQLEnum(PropositionStatus), nullable=False, default=PropositionStatus.PENDING, server_default="PENDING")
+    rejection_reason = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relations
+    theme = relationship("Theme", back_populates="propositions")
 
 class PlayerRound2Stats(Base):
     __tablename__ = "player_round2_stats"

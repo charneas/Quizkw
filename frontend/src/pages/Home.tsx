@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { createGame } from '../services/api'
 
 function Home() {
@@ -144,6 +144,12 @@ function Home() {
               </button>
             </div>
           )}
+        </div>
+
+        <div className="text-center">
+          <Link to="/proposer" className="text-text-muted text-sm hover:text-text underline">
+            Proposer une question
+          </Link>
         </div>
       </div>
     </div>

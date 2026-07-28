@@ -283,6 +283,27 @@ export interface ThemeImportEntry extends ThemeCreateRequest {
   source_id?: number | null
 }
 
+// Propositions (Epic F-ext, AD-13/AD-18) — reflète schemas.PropositionCreate/Proposition
+export interface PropositionCreateRequest {
+  text: string
+  correct_answer: string
+  wrong_answers: string[]
+  theme_id?: number | null
+  difficulty: Difficulty
+}
+
+export interface Proposition {
+  id: number
+  text: string
+  correct_answer: string
+  wrong_answers: string[]
+  theme_id?: number | null
+  difficulty: Difficulty
+  status: 'pending' | 'accepted' | 'rejected'
+  rejection_reason?: string | null
+  created_at: string
+}
+
 export interface QuestionCreateRequest {
   text: string
   category: string

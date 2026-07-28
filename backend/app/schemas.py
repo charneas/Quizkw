@@ -20,6 +20,11 @@ class RoundTypeEnum(str, Enum):
     manche_2 = "manche_2"
     manche_3 = "manche_3"
 
+class PropositionStatusEnum(str, Enum):
+    pending = "pending"
+    accepted = "accepted"
+    rejected = "rejected"
+
 # Schémas de base
 class QuestionBase(BaseModel):
     text: str
@@ -302,7 +307,53 @@ class ThemeCreate(ThemeBase):
 class Theme(ThemeBase):
     id: int
     created_at: datetime
-    
+
+    class Config:
+        from_attributes = True
+
+# Propositions (Epic F-ext, AD-18 : entité distincte de Question)
+class PropositionBase(BaseModel):
+    text: str = Field(..., min_length=1, max_length=500)
+    correct_answer: str = Field(..., min_length=1, max_length=200)
+    wrong_answers: List[str] = Field(default_factory=list, max_length=3)
+    theme_id: Optional[int] = None
+    difficulty: DifficultyEnum
+
+    @field_validator('text', 'correct_answer')
+    @classmethod
+    def not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Ce champ ne peut pas être vide ou composé uniquement d'espaces")
+        return v
+
+    @field_validator('wrong_answers')
+    @classmethod
+    def wrong_answers_max_length(cls, v: List[str]) -> List[str]:
+        for item in v:
+            if len(item) > 200:
+                raise ValueError("Une mauvaise réponse ne peut pas dépasser 200 caractères")
+        return v
+
+class PropositionCreate(PropositionBase):
+    pass
+
+class Proposition(PropositionBase):
+    id: int
+    status: PropositionStatusEnum
+    rejection_reason: Optional[str] = None
+    created_at: datetime
+
+    @field_validator('wrong_answers', mode='before')
+    @classmethod
+    def parse_wrong_answers(cls, v):
+        """Parse wrong_answers from JSON string if needed (même pattern que Question)."""
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except json.JSONDecodeError:
+                return []
+        return v
+
     class Config:
         from_attributes = True
 

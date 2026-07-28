@@ -9,6 +9,7 @@ import MemoryGrid from './pages/MemoryGrid'
 import Results from './pages/Results'
 import Round2 from './pages/Round2'
 import Admin from './pages/Admin'
+import Propositions from './pages/Propositions'
 
 function App() {
   return (
@@ -24,6 +25,7 @@ function App() {
         <Route path="/results/:code" element={<Results />} />
         <Route path="/game/:code/round2" element={<Round2 />} />
         <Route path="/admin" element={<Admin />} />
+        <Route path="/proposer" element={<Propositions />} />
       </Routes>
     </div>
   )

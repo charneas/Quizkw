@@ -16,6 +16,7 @@ from app.round2_manager import Round2Manager
 from main_extended import router
 from main_admin import router as admin_router
 from main_content_gen import router as content_gen_router, player_router as content_flag_router
+from main_propositions import router as propositions_router
 
 # E-002 : journalisation minimale au niveau module (voir la spine § Deferred —
 # pas d'infrastructure d'observabilité, seulement logging.getLogger standard
@@ -70,6 +71,8 @@ app.include_router(admin_router)
 # Include content generation (F.2) and player flagging endpoints (Epic F)
 app.include_router(content_gen_router)
 app.include_router(content_flag_router)
+# Include public proposition submission endpoint (Epic F-ext, story F-ext-1.1)
+app.include_router(propositions_router)
 
 # Generate a random session code
 def generate_session_code(length=6):

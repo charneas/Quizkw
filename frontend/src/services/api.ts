@@ -585,3 +585,14 @@ export async function flagQuestion(questionId: number, reason: string) {
     body: JSON.stringify({ reason }),
   })
 }
+
+// === Propositions publiques (Epic F-ext, story F-ext-1.2) ===
+
+import type { PropositionCreateRequest, Proposition } from '../types'
+
+export async function submitProposition(data: PropositionCreateRequest) {
+  return fetchApi<Proposition>('/propositions', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}

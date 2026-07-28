@@ -1,0 +1,18 @@
+# Team / enterprise overrides for _bmad/config.toml.
+# Committed to the repo — applies to every developer on the project.
+# Tables deep-merge over base config; keyed entries merge by key.
+# Example: override an agent descriptor, or add a new agent.
+#
+# [agents.bmad-agent-pm]
+# description = "Prefers short, bulleted PRDs over narrative drafts."
+
+# Reinstall du 2026-07-24 : les artefacts historiques du projet (prd.md,
+# epics-and-stories.md, stories a-00x, sprint-status.yaml) vivent a la RACINE
+# de _bmad-output, pas dans les sous-dossiers planning-artifacts/ et
+# implementation-artifacts/ que l'installeur configure par defaut.
+[modules.bmm]
+project_name = "Quizkw"
+planning_artifacts = "{project-root}/_bmad-output"
+implementation_artifacts = "{project-root}/_bmad-output"
+sprint_status = "{implementation_artifacts}/sprint-status.yaml"
+project_context = "{project-root}/_bmad-output/project-context.md"
