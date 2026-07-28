@@ -28,6 +28,17 @@ logger = logging.getLogger(__name__)
 
 PENALTY_POINTS = 2
 
+
+def award_points_with_bonus(team: models.Team, base_points: int) -> int:
+    """Double les points si l'équipe a un jeton BONUS actif, puis le consomme.
+
+    Le bonus s'applique à la question en cours d'être validée, correcte ou
+    non — il est consommé dans les deux cas car il visait "cette question".
+    """
+    points = base_points * 2 if team.bonus_active else base_points
+    team.bonus_active = False
+    return points
+
 # Create database tables
 Base.metadata.create_all(bind=engine)
 
@@ -423,7 +434,7 @@ def validate_answers(code: str, db: Session = Depends(get_db)):
         teams_processed.add(answer.team_id)
         team = db.query(models.Team).filter(models.Team.id == answer.team_id).first()
         if team and answer.is_correct and answer.points_earned == 0:
-            points = question.points
+            points = award_points_with_bonus(team, question.points)
             team.score += points
             answer.points_earned = points
             teams_updated.append({
@@ -443,6 +454,9 @@ def validate_answers(code: str, db: Session = Depends(get_db)):
                 "new_score": team.score,
             })
         elif team:
+            # Réponse fausse : pas de points, mais le bonus visait cette
+            # question — il est tout de même consommé.
+            team.bonus_active = False
             teams_updated.append({
                 "team_id": team.id,
                 "team_name": team.name,
@@ -1518,8 +1532,12 @@ def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_d
                         processed.add(a.team_id)
                         t = db.query(models.Team).filter(models.Team.id == a.team_id).first()
                         if t and a.is_correct and a.points_earned == 0:
-                            a.points_earned = question.points
-                            t.score += question.points
+                            points = award_points_with_bonus(t, question.points)
+                            a.points_earned = points
+                            t.score += points
+                        elif t:
+                            # Réponse fausse : le bonus visait cette question, consommé quand même.
+                            t.bonus_active = False
                     db.commit()
                     # Refresh this team's score after auto-validation
                     db.refresh(team)
@@ -1643,6 +1661,11 @@ def use_token(data: dict, db: Session = Depends(get_db)):
             # Retire des points à l'équipe ciblée uniquement (score plancher à 0).
             target_team.score = max(0, target_team.score - PENALTY_POINTS)
             penalized_teams.append({"team_id": target_team.id, "new_score": target_team.score})
+        elif token_type == "BONUS":
+            # Consommé à la prochaine validation de réponse de cette équipe (voir validate_answers).
+            team = db.query(models.Team).filter(models.Team.id == team_id).first()
+            if team:
+                team.bonus_active = True
 
         db.commit()
         return {

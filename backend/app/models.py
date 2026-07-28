@@ -68,6 +68,7 @@ class Team(Base):
     score = Column(Integer, default=0)
     color = Column(String, nullable=True)  # Round 3 color selection
     selected_theme_ids = Column(JSON, nullable=True)  # Round 3 selected theme IDs [1,2,3]
+    bonus_active = Column(Boolean, default=False, nullable=False)  # Jeton BONUS consommé sur la prochaine validation
 
     # Relations
     game_session = relationship("GameSession", back_populates="teams")
