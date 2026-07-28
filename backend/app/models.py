@@ -219,8 +219,9 @@ class PingPongDuel(Base):
     winner_team_id = Column(Integer, ForeignKey("teams.id"), nullable=True)
     is_completed = Column(Boolean, default=False)
     answers_used = Column(JSON, default=list)  # Liste des réponses déjà données (pour éviter les doublons)
+    is_tiebreak = Column(Boolean, default=False, nullable=False)  # départage de qualification fin de Manche 1
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
+
     # Relations
     game_session = relationship("GameSession", foreign_keys=[game_session_id])
     theme = relationship("PingPongTheme")

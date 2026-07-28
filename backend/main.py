@@ -28,6 +28,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 logger = logging.getLogger(__name__)
 
 PENALTY_POINTS = 2
+MANCHE_1_MAX_QUESTIONS = 20
 
 
 def award_points_with_bonus(team: models.Team, base_points: int) -> int:
@@ -1303,7 +1304,20 @@ def submit_ping_pong_duel_answer(request: schemas.SubmitPingPongAnswerRequest, d
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    
+
+    if not result["duel_continues"]:
+        duel = db.query(models.PingPongDuel).filter(models.PingPongDuel.id == request.duel_id).first()
+        if duel and duel.is_tiebreak:
+            # +1 suffit à lever l'ambiguïté de tri sans fausser le classement
+            # général (les points de partie s'accordent par 2, 4 ou 6).
+            winner = db.query(models.Team).filter(models.Team.id == duel.winner_team_id).first()
+            if winner:
+                winner.score += 1
+                db.commit()
+            game = db.query(models.GameSession).filter(models.GameSession.id == duel.game_session_id).first()
+            if game:
+                resolve_manche1_end(db, game)
+
     return schemas.SubmitPingPongAnswerResponse(
         is_correct=result["is_correct"],
         answer=result["answer"],
@@ -1578,6 +1592,8 @@ def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_d
             message = f"🎉 Bonus : {target_name} gagne {latest_effect.value or 0} points"
         elif latest_effect.effect_type == "ping_pong":
             message = f"🏓 Duel Ping-Pong déclenché pour {target_name} !"
+        elif latest_effect.effect_type == "tiebreak":
+            message = f"⚖️ Égalité en fin de Manche 1 : duel de départage pour {target_name} !"
         else:
             message = "Effet de roue appliqué"
         last_wheel_event = {
@@ -1688,19 +1704,119 @@ def trigger_wheel_effect(db: Session, game: models.GameSession) -> Optional[dict
     }
 
 
+def _pending_tiebreak_duel(db: Session, game: models.GameSession) -> Optional[models.PingPongDuel]:
+    return db.query(models.PingPongDuel).filter(
+        models.PingPongDuel.game_session_id == game.id,
+        models.PingPongDuel.is_tiebreak == True,
+        models.PingPongDuel.is_completed == False,
+    ).first()
+
+
+def resolve_manche1_end(db: Session, game: models.GameSession) -> dict:
+    """Manche 1 vient d'atteindre son maximum de questions (ou un duel de
+    départage vient de se terminer). Si le classement laisse une égalité
+    gênante sur la dernière place qualificative pour la Manche 2, déclenche
+    un duel ping-pong de départage entre les deux équipes concernées avant
+    de qualifier. Sinon, qualifie directement pour la Manche 2.
+    """
+    from app.round2_manager import Round2Manager
+    from app.ping_pong_manager import PingPongManager
+
+    pending = _pending_tiebreak_duel(db, game)
+    if pending:
+        return {"status": "tiebreak_pending", "duel_id": pending.id}
+
+    manager = Round2Manager(db)
+    slots = manager.ROUND2_SLOTS
+
+    teams = db.query(models.Team).filter(models.Team.game_session_id == game.id).all()
+    teams_sorted = sorted(teams, key=lambda t: -t.score)
+
+    remaining = slots
+    boundary_team = None
+    for t in teams_sorted:
+        if remaining <= 0:
+            break
+        remaining -= len(t.players)
+        boundary_team = t
+
+    if boundary_team is not None:
+        boundary_score = boundary_team.score
+        tied_teams = [t for t in teams_sorted if t.score == boundary_score]
+        higher_players = sum(len(t.players) for t in teams_sorted if t.score > boundary_score)
+        tied_players_all = sum(len(t.players) for t in tied_teams)
+
+        # Ambiguë seulement si ni "toutes les équipes à égalité qualifient"
+        # ni "aucune ne qualifie" n'est possible sans dépasser la tolérance —
+        # sinon le tri normal par score suffit déjà à trancher.
+        if len(tied_teams) > 1 and higher_players < slots and higher_players + tied_players_all > slots + 1:
+            team_a, team_b = tied_teams[0], tied_teams[1]
+            pp_manager = PingPongManager(db)
+            theme = pp_manager.get_random_theme()
+            if theme:
+                duel = pp_manager.start_duel(
+                    game_session_id=game.id,
+                    theme_id=theme.id,
+                    team1_id=team_a.id,
+                    team2_id=team_b.id,
+                )
+                duel.is_tiebreak = True
+                db.add(models.WheelEffect(
+                    game_session_id=game.id,
+                    effect_type="tiebreak",
+                    value=None,
+                    target_team_id=team_a.id,
+                    is_applied=True,
+                ))
+                db.commit()
+                return {
+                    "status": "tiebreak_started",
+                    "duel_id": duel.id,
+                    "team1_id": team_a.id,
+                    "team2_id": team_b.id,
+                }
+
+    try:
+        result = manager.qualify_players_from_round1(game.id)
+        db.commit()
+    except (LookupError, ValueError) as e:
+        db.rollback()
+        logger.warning("Fin de Manche 1 : qualification impossible pour %s : %s", game.code, e)
+        return {"status": "qualification_failed", "detail": str(e)}
+
+    return {"status": "qualified", **result}
+
+
 @app.post("/games/{code}/next-question")
 def next_question(code: str, db: Session = Depends(get_db)):
     """
     Passer à la question suivante (utilisable sans hôte).
     Choisit une question aléatoire et la définit comme question courante —
-    sauf tous les 5 tours, où la roue de fortune se déclenche à la place.
+    sauf tous les 5 tours (roue de fortune), ou au-delà de
+    MANCHE_1_MAX_QUESTIONS où la Manche 1 se termine à la place.
     """
     game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
     if not game:
         raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
 
+    if game.current_round == models.RoundType.MANCHE_1 and _pending_tiebreak_duel(db, game):
+        # Un duel de départage de fin de Manche 1 est en cours : on ne
+        # touche à rien tant qu'il n'est pas résolu (voir submit_ping_pong_duel_answer).
+        return {
+            "message": "Un duel de départage est en cours, patientez.",
+            "question_id": None,
+        }
+
     game.questions_played = (game.questions_played or 0) + 1
     db.commit()
+
+    if game.current_round == models.RoundType.MANCHE_1 and game.questions_played >= MANCHE_1_MAX_QUESTIONS:
+        outcome = resolve_manche1_end(db, game)
+        return {
+            "message": "Manche 1 terminée !",
+            "question_id": None,
+            "manche1_end": outcome,
+        }
 
     if game.questions_played % 5 == 0:
         wheel_event = trigger_wheel_effect(db, game)
