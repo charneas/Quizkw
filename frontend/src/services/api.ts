@@ -19,6 +19,16 @@ async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> 
   })
 
   if (!response.ok) {
+    // Session admin absente/expirée sur un écran protégé : rediriger vers le
+    // login plutôt que laisser chaque page admin afficher un message d'erreur
+    // générique sans indiquer qu'il faut se reconnecter.
+    if (
+      response.status === 401 &&
+      window.location.pathname.startsWith('/admin') &&
+      window.location.pathname !== '/admin/login'
+    ) {
+      window.location.href = '/admin/login'
+    }
     const error = await response.json().catch(() => ({ detail: 'Erreur réseau' }))
     throw new Error(error.detail || `Erreur ${response.status}`)
   }
@@ -637,4 +647,8 @@ export async function submitProposition(data: PropositionCreateRequest) {
     method: 'POST',
     body: JSON.stringify(data),
   })
+}
+
+export async function listThemesForProposition() {
+  return fetchApi<Theme[]>('/propositions/themes')
 }

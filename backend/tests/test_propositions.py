@@ -40,6 +40,19 @@ def test_create_proposition_missing_question(test_client):
     assert "detail" in resp.json()
 
 
+def test_list_themes_for_proposition_no_auth_required(test_client, sample_theme):
+    resp = test_client.get("/propositions/themes")
+    assert resp.status_code == 200
+    names = {t["name"] for t in resp.json()}
+    assert sample_theme.name in names
+
+
+def test_list_themes_for_proposition_empty(test_client):
+    resp = test_client.get("/propositions/themes")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
 def test_create_proposition_missing_correct_answer(test_client):
     payload = _proposition_payload()
     del payload["correct_answer"]

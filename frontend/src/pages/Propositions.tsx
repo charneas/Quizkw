@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { adminListThemes, submitProposition } from '../services/api'
+import { listThemesForProposition, submitProposition } from '../services/api'
 import type { Difficulty, Theme } from '../types'
 
 const DIFFICULTIES: { value: Difficulty; label: string }[] = [
@@ -24,7 +24,7 @@ function Propositions() {
   const [confirmation, setConfirmation] = useState('')
 
   useEffect(() => {
-    adminListThemes()
+    listThemesForProposition()
       .then(setThemes)
       .catch(() => setThemes([]))
   }, [])

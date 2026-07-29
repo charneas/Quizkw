@@ -15,6 +15,14 @@ from app import models, schemas
 router = APIRouter(prefix="/propositions", tags=["Propositions"])
 
 
+@router.get("/themes", response_model=list[schemas.Theme])
+def list_themes_for_proposition(db: Session = Depends(get_db)):
+    """Lecture seule, non authentifiée : permet au formulaire public de
+    proposition de proposer un thème existant plutôt que de forcer
+    systématiquement "À déterminer" (`/admin/themes` exige une session admin)."""
+    return db.query(models.Theme).order_by(models.Theme.name).all()
+
+
 def _commit_or_400(db: Session) -> None:
     """AD-5 : l'endpoint possède la transaction et roule en arrière sur le chemin d'exception
     (même pattern que `main_admin.py::_commit_or_400`, ex. thème supprimé entre la
