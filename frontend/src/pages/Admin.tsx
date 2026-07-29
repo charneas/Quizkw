@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import type { Theme, Question, ThemeCategory, Difficulty, QuestionStatsResponse, ContentSuggestion, ContentFlag, ContentHistoryEntry, CategoryMixResponse } from '../types'
 import {
   adminListThemes,
@@ -270,6 +271,10 @@ export default function Admin() {
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-8 text-text">
       <h1 className="text-2xl font-bold">Administration du contenu</h1>
+
+      <Link to="/admin/propositions" className="text-brand hover:underline text-sm">
+        Propositions en attente →
+      </Link>
 
       {message && <div className="bg-surface-raised text-success p-3 rounded-lg border border-success">{message}</div>}
       {error && <div className="bg-surface-raised text-danger p-3 rounded-lg border border-danger">{error}</div>}

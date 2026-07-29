@@ -14,7 +14,7 @@ from app.models import Base
 from app.memory_grid import MemoryGridManager, MemoryGrid, GridCell, MemoryGridRound, GridCellStatus
 from app.round2_manager import Round2Manager
 from main_extended import router
-from main_admin import router as admin_router
+from main_admin import router as admin_router, auth_router as admin_auth_router
 from main_content_gen import router as content_gen_router, player_router as content_flag_router
 from main_propositions import router as propositions_router
 
@@ -66,7 +66,10 @@ from fastapi import Request
 
 # Include extended endpoints for Memory Grid Round 3
 app.include_router(router)
-# Include admin endpoints for content management (Epic F)
+# Include admin login/logout (Epic F-ext-2, story F-ext-2.1) — mounted before
+# the guarded admin router, unauthenticated by design (obtaining the cookie)
+app.include_router(admin_auth_router)
+# Include admin endpoints for content management (Epic F) — guarded since F-ext-2.1 (AD-17)
 app.include_router(admin_router)
 # Include content generation (F.2) and player flagging endpoints (Epic F)
 app.include_router(content_gen_router)

@@ -311,6 +311,11 @@ class Theme(ThemeBase):
     class Config:
         from_attributes = True
 
+# Authentification admin (Epic F-ext-2, AD-17)
+class AdminLoginRequest(BaseModel):
+    email: str
+    password: str
+
 # Propositions (Epic F-ext, AD-18 : entité distincte de Question)
 class PropositionBase(BaseModel):
     text: str = Field(..., min_length=1, max_length=500)
@@ -356,6 +361,55 @@ class Proposition(PropositionBase):
 
     class Config:
         from_attributes = True
+
+class PropositionUpdate(BaseModel):
+    """Champs modifiables d'une proposition existante (tous optionnels, Story F-ext-2.3).
+    `theme_id`/`new_theme` sont mutuellement exclusifs (validé dans le endpoint,
+    pas ici, car le 400 doit porter un message dédié distinct d'une 422)."""
+    text: Optional[str] = Field(None, min_length=1, max_length=500)
+    correct_answer: Optional[str] = Field(None, min_length=1, max_length=200)
+    wrong_answers: Optional[List[str]] = Field(None, max_length=3)
+    theme_id: Optional[int] = None
+    new_theme: Optional[ThemeCreate] = None
+    difficulty: Optional[DifficultyEnum] = None
+
+    @field_validator('text', 'correct_answer')
+    @classmethod
+    def not_blank_if_set(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and not v.strip():
+            raise ValueError("Ce champ ne peut pas être vide ou composé uniquement d'espaces")
+        return v
+
+    @field_validator('wrong_answers')
+    @classmethod
+    def wrong_answers_max_length_if_set(cls, v: Optional[List[str]]) -> Optional[List[str]]:
+        if v is not None:
+            for item in v:
+                if len(item) > 200:
+                    raise ValueError("Une mauvaise réponse ne peut pas dépasser 200 caractères")
+        return v
+
+class RejectPropositionRequest(BaseModel):
+    """Corps de POST /admin/propositions/{id}/reject (Story F-ext-2.5, AD-12).
+    `reason` obligatoire et non-vide : une raison de refus absente ou composée
+    uniquement d'espaces est une erreur de validation de forme (422), distincte
+    de la 400 métier levée si la proposition est déjà tranchée (AD-6)."""
+    reason: str = Field(..., min_length=1, max_length=500)
+
+    @field_validator('reason')
+    @classmethod
+    def reason_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("La raison de refus ne peut pas être vide ou composée uniquement d'espaces")
+        return v
+
+class AcceptPropositionResponse(BaseModel):
+    """Réponse de POST /admin/propositions/{id}/accept (Story F-ext-2.4, AD-13).
+    Même forme que ApproveSuggestionResponse (schemas_content_gen.py) — pattern
+    de promotion déjà établi, pas dupliqué sous une forme différente."""
+    proposition_id: int
+    question_id: int
+    message: str
 
 class PlayerRound2StatsBase(BaseModel):
     player_id: int

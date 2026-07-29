@@ -1,6 +1,14 @@
 """
 Configuration de pytest pour les tests unitaires du backend Quizkw.
 """
+import os
+
+# Doit être positionné avant l'import de `main` (donc de `app.auth`, qui lit
+# SESSION_SECRET_KEY à l'import et échoue si absente — AD-17, pas de défaut
+# inséré en clair dans le code).
+os.environ.setdefault("SESSION_SECRET_KEY", "test-secret-key-not-for-production")
+os.environ.setdefault("SESSION_COOKIE_SECURE", "false")  # TestClient n'est pas en HTTPS
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
@@ -77,6 +85,27 @@ def test_client(db_session):
     
     yield client
     main_app.dependency_overrides.clear()
+
+@pytest.fixture
+def sample_admin(db_session):
+    """Créer un compte admin de test (Epic F-ext-2, story F-ext-2.1)."""
+    from app.auth import hash_password
+
+    admin = models.Admin(
+        email="admin@test.local",
+        hashed_password=hash_password("correct-password"),
+    )
+    db_session.add(admin)
+    db_session.commit()
+    db_session.refresh(admin)
+    return admin
+
+@pytest.fixture
+def authenticated_client(test_client, sample_admin):
+    """Client de test déjà authentifié en tant qu'admin (cookie de session posé)."""
+    resp = test_client.post("/admin/login", json={"email": sample_admin.email, "password": "correct-password"})
+    assert resp.status_code == 200
+    return test_client
 
 @pytest.fixture
 def round2_manager(db_session):

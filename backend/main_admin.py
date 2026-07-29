@@ -2,16 +2,19 @@
 Router d'administration de contenu (Epic F, story F.1) : CRUD thèmes/questions,
 validation de cohérence, export/import, statistiques d'utilisation.
 
-Pas d'authentification (délibéré, voir Dev Notes de la story F.1 et la spine
-d'architecture § Deferred : l'identité/auth est différée jusqu'à l'epic F et
-reste hors scope de cette story — cohérent avec le reste de l'API aujourd'hui).
+Authentifié depuis la Story F-ext-2.1 (AD-17) : toutes les routes de ce
+routeur, y compris celles créées avant cette story, exigent un cookie de
+session admin valide via le guard partagé `require_admin_session`. Seules
+`POST /admin/login` et `POST /admin/logout` restent accessibles sans session
+(il faut pouvoir se connecter avant d'avoir un cookie).
 """
 import json
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.auth import hash_password, require_admin_session, sign_session, verify_password, COOKIE_NAME, SESSION_COOKIE_SECURE
 from app.database import get_db
 from app import models, schemas
 from app.schemas_admin import (
@@ -21,7 +24,38 @@ from app.schemas_admin import (
     QuestionStatsResponse, MIN_QUESTIONS_PER_THEME, DIFFICULTY_POINTS,
 )
 
-router = APIRouter(prefix="/admin", tags=["Admin"])
+router = APIRouter(prefix="/admin", tags=["Admin"], dependencies=[Depends(require_admin_session)])
+
+# Routeur séparé pour login/logout : ces deux routes ne doivent PAS passer par
+# le guard `require_admin_session` (on ne peut pas exiger une session pour
+# l'obtenir). Même préfixe `/admin`, monté séparément dans main.py.
+auth_router = APIRouter(prefix="/admin", tags=["Admin"])
+
+
+@auth_router.post("/login")
+def login(payload: schemas.AdminLoginRequest, response: Response, db: Session = Depends(get_db)):
+    admin = db.query(models.Admin).filter(models.Admin.email == payload.email).first()
+    # AC #4 : message générique identique, que l'email soit inconnu ou le mot
+    # de passe incorrect — ne jamais révéler si le compte existe (AD-6/NFR1).
+    if not admin or not verify_password(payload.password, admin.hashed_password):
+        raise HTTPException(status_code=400, detail="Email ou mot de passe incorrect.")
+    token = sign_session(admin.id)
+    response.set_cookie(
+        key=COOKIE_NAME,
+        value=token,
+        httponly=True,
+        samesite="strict",
+        secure=SESSION_COOKIE_SECURE,
+    )
+    return {"message": "Connexion réussie."}
+
+
+@auth_router.post("/logout")
+def logout(response: Response):
+    # Mêmes attributs qu'au set_cookie : certains navigateurs n'effacent pas
+    # un cookie si samesite/secure ne correspondent pas à ceux posés à l'origine.
+    response.delete_cookie(key=COOKIE_NAME, httponly=True, samesite="strict", secure=SESSION_COOKIE_SECURE)
+    return {"message": "Déconnexion réussie."}
 
 
 def _theme_or_404(db: Session, theme_id: int) -> models.Theme:
@@ -76,6 +110,37 @@ def _log_history(db: Session, entity_type: str, entity_id: int, action: str, det
     """AC #5 (story F.2) : journaliser aussi les écritures F.1, pas seulement les
     nouvelles routes — sinon l'historique serait incomplet dès le premier jour."""
     db.add(models.ContentHistory(entity_type=entity_type, entity_id=entity_id, action=action, detail=detail))
+
+
+def _proposition_or_404(db: Session, proposition_id: int, for_update: bool = False) -> models.Proposition:
+    query = db.query(models.Proposition).filter(models.Proposition.id == proposition_id)
+    if for_update:
+        # Ferme la fenêtre check-then-act entre la lecture du statut et l'écriture
+        # (deux accept concurrents ne doivent pas créer deux Question) — même
+        # pattern que _suggestion_or_404(for_update=True) dans main_content_gen.py.
+        query = query.with_for_update()
+    proposition = query.first()
+    if not proposition:
+        raise HTTPException(status_code=404, detail="Proposition non trouvée")
+    return proposition
+
+
+def _resolve_or_create_theme(db: Session, new_theme: schemas.ThemeCreate) -> models.Theme:
+    """Story F-ext-2.3 (AC #4) : normalise casse/espaces avant comparaison pour
+    réutiliser un thème quasi-identique existant plutôt que d'en créer un doublon.
+    Spécifique à ce flux d'édition — ne modifie pas POST /admin/themes."""
+    normalized = new_theme.name.strip().lower()
+    for theme in db.query(models.Theme).all():
+        if theme.name.strip().lower() == normalized:
+            return theme
+
+    data = new_theme.model_dump()
+    data["category"] = models.ThemeCategory(data["category"])
+    theme = models.Theme(**data)
+    db.add(theme)
+    _flush_or_400(db)
+    _log_history(db, "theme", theme.id, "created", theme.name)
+    return theme
 
 
 def _below_threshold_warning(db: Session, theme: models.Theme) -> ThemeDeleteWarning | None:
@@ -254,6 +319,139 @@ def get_question_stats(question_id: int, db: Session = Depends(get_db)):
         times_answered=times_answered,
         correct_answers=correct_answers,
         success_rate=success_rate,
+    )
+
+
+# --- Propositions (Epic F-ext-2, modération) ---
+
+@router.get("/propositions/pending", response_model=list[schemas.Proposition])
+def list_pending_propositions(db: Session = Depends(get_db)):
+    return (
+        db.query(models.Proposition)
+        .filter(models.Proposition.status == models.PropositionStatus.PENDING)
+        .order_by(models.Proposition.id)
+        .all()
+    )
+
+
+@router.put("/propositions/{proposition_id}", response_model=schemas.Proposition)
+def update_proposition(proposition_id: int, payload: schemas.PropositionUpdate, db: Session = Depends(get_db)):
+    proposition = _proposition_or_404(db, proposition_id)
+
+    # AC #8 : éditer une proposition déjà tranchée réécrirait silencieusement
+    # l'historique de décision (risque nommé par AD-18) — refusé explicitement.
+    if proposition.status != models.PropositionStatus.PENDING:
+        raise HTTPException(
+            status_code=400,
+            detail="Seule une proposition en attente peut être éditée.",
+        )
+
+    updates = payload.model_dump(exclude_unset=True, exclude={"new_theme"})
+
+    # Basé sur la présence de la clé dans la requête (exclude_unset), pas sur
+    # payload.theme_id is not None : un theme_id explicitement null envoyé avec
+    # new_theme contournerait sinon cette vérification (theme_id=None ne
+    # déclenche pas "is not None" mais reste une valeur explicitement fournie).
+    if "theme_id" in updates and payload.new_theme is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="Fournir soit theme_id, soit new_theme, pas les deux.",
+        )
+
+    if "theme_id" in updates and updates["theme_id"] is not None:
+        _theme_exists_or_404(db, updates["theme_id"])
+
+    if payload.new_theme is not None:
+        theme = _resolve_or_create_theme(db, payload.new_theme)
+        updates["theme_id"] = theme.id
+
+    if "wrong_answers" in updates and updates["wrong_answers"] is not None:
+        updates["wrong_answers"] = json.dumps(updates["wrong_answers"])
+
+    if "difficulty" in updates and updates["difficulty"] is not None:
+        updates["difficulty"] = models.Difficulty(updates["difficulty"])
+
+    for field, value in updates.items():
+        setattr(proposition, field, value)
+
+    _log_history(db, "proposition", proposition.id, "updated", ", ".join(updates.keys()) or "aucun champ")
+    _commit_or_400(db)
+    db.refresh(proposition)
+    return proposition
+
+
+@router.post("/propositions/{proposition_id}/accept", response_model=schemas.AcceptPropositionResponse)
+def accept_proposition(proposition_id: int, db: Session = Depends(get_db)):
+    proposition = _proposition_or_404(db, proposition_id, for_update=True)
+
+    if proposition.status != models.PropositionStatus.PENDING:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Proposition déjà traitée (statut : {proposition.status.value}).",
+        )
+
+    if proposition.theme_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Le thème doit être résolu avant acceptation (proposition encore « À déterminer »).",
+        )
+
+    theme = _theme_or_404(db, proposition.theme_id)
+
+    question = models.Question(
+        text=proposition.text,
+        category=theme.name,
+        difficulty=proposition.difficulty,
+        points=DIFFICULTY_POINTS[proposition.difficulty.value],
+        correct_answer=proposition.correct_answer,
+        wrong_answers=proposition.wrong_answers,
+        theme_id=proposition.theme_id,
+        question_number=None,
+    )
+    db.add(question)
+    _flush_or_400(db)
+
+    proposition.status = models.PropositionStatus.ACCEPTED
+
+    _log_history(db, "proposition", proposition.id, "accepted", f"question_id={question.id}")
+    _log_history(db, "question", question.id, "created", f"{question.text[:100]} (via proposition {proposition.id})")
+
+    _commit_or_400(db)
+
+    return schemas.AcceptPropositionResponse(
+        proposition_id=proposition.id,
+        question_id=question.id,
+        message=f"Proposition acceptée : question créée sous le thème '{theme.name}'.",
+    )
+
+
+@router.post("/propositions/{proposition_id}/reject", response_model=schemas.Proposition)
+def reject_proposition(proposition_id: int, payload: schemas.RejectPropositionRequest, db: Session = Depends(get_db)):
+    proposition = _proposition_or_404(db, proposition_id, for_update=True)
+
+    if proposition.status != models.PropositionStatus.PENDING:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Proposition déjà traitée (statut : {proposition.status.value}).",
+        )
+
+    proposition.status = models.PropositionStatus.REJECTED
+    proposition.rejection_reason = payload.reason
+
+    _log_history(db, "proposition", proposition.id, "rejected", payload.reason[:100])
+
+    _commit_or_400(db)
+    db.refresh(proposition)
+    return proposition
+
+
+@router.get("/propositions/rejected", response_model=list[schemas.Proposition])
+def list_rejected_propositions(db: Session = Depends(get_db)):
+    return (
+        db.query(models.Proposition)
+        .filter(models.Proposition.status == models.PropositionStatus.REJECTED)
+        .order_by(models.Proposition.id)
+        .all()
     )
 
 

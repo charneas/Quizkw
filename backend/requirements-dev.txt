@@ -7,6 +7,8 @@ pydantic==2.13.4
 python-multipart==0.0.32
 python-dotenv==1.0.0
 psycopg2-binary==2.9.9
+bcrypt==5.0.0
+itsdangerous==2.2.0
 
 # Outils de test
 pytest==7.4.4

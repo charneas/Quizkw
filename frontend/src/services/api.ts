@@ -10,6 +10,7 @@ const API_BASE = '/api'
 
 async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${endpoint}`, {
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...options?.headers,
@@ -445,7 +446,48 @@ import type {
   ContentImportRequest,
   ContentImportResponse,
   QuestionStatsResponse,
+  PropositionUpdateRequest,
 } from '../types'
+
+export async function adminLogin(email: string, password: string) {
+  return fetchApi<{ message: string }>('/admin/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  })
+}
+
+export async function adminLogout() {
+  return fetchApi<{ message: string }>('/admin/logout', { method: 'POST' })
+}
+
+export async function adminListPendingPropositions() {
+  return fetchApi<Proposition[]>('/admin/propositions/pending')
+}
+
+export async function adminUpdateProposition(propositionId: number, data: PropositionUpdateRequest) {
+  return fetchApi<Proposition>(`/admin/propositions/${propositionId}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  })
+}
+
+export async function adminAcceptProposition(propositionId: number) {
+  return fetchApi<{ proposition_id: number; question_id: number; message: string }>(
+    `/admin/propositions/${propositionId}/accept`,
+    { method: 'POST' }
+  )
+}
+
+export async function adminRejectProposition(propositionId: number, reason: string) {
+  return fetchApi<Proposition>(`/admin/propositions/${propositionId}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  })
+}
+
+export async function adminListRejectedPropositions() {
+  return fetchApi<Proposition[]>('/admin/propositions/rejected')
+}
 
 export async function adminListThemes() {
   return fetchApi<Theme[]>('/admin/themes')

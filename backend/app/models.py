@@ -178,6 +178,17 @@ class Proposition(Base):
     # Relations
     theme = relationship("Theme", back_populates="propositions")
 
+class Admin(Base):
+    """Compte administrateur (AD-17) : identité minimale pour protéger `/admin/*`.
+    Le cookie de session est stateless (signé, pas persisté) — cette table ne
+    porte donc que l'identifiant et le mot de passe hashé, aucune session."""
+    __tablename__ = "admins"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, nullable=False, unique=True, index=True)
+    hashed_password = Column(String, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
 class PlayerRound2Stats(Base):
     __tablename__ = "player_round2_stats"
     

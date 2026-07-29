@@ -178,6 +178,7 @@ export interface Theme {
   created_at: string
 }
 
+
 export interface PlayerRound2Stats {
   id: number
   player_id: number
@@ -302,6 +303,15 @@ export interface Proposition {
   status: 'pending' | 'accepted' | 'rejected'
   rejection_reason?: string | null
   created_at: string
+}
+
+export interface PropositionUpdateRequest {
+  text?: string
+  correct_answer?: string
+  wrong_answers?: string[]
+  theme_id?: number | null
+  new_theme?: ThemeCreateRequest
+  difficulty?: Difficulty
 }
 
 export interface QuestionCreateRequest {

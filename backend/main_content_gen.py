@@ -3,7 +3,10 @@ Router de génération semi-automatique de contenu (Epic F, story F.2) :
 pipeline Wikipedia -> Claude -> suggestion en attente -> validation humaine,
 mix de catégories, signalement joueur (résolution admin), historique.
 
-Pas d'authentification (inchangé depuis F.1, différé par la spine).
+Authentifié depuis la Story F-ext-2.1 (AD-17) : ce routeur est monté sous
+`/admin/content`, donc couvert par le guard partagé `require_admin_session`
+comme toute route `/admin/*` (AD-17 : "every route under /admin"). Seul
+`player_router` (signalement joueur, hors préfixe /admin) reste public.
 """
 import json
 
@@ -11,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.auth import require_admin_session
 from app.database import get_db
 from app import models
 from app.wikipedia_client import get_wikipedia_extract
@@ -25,7 +29,7 @@ from app.schemas_content_gen import (
     ContentHistoryEntry,
 )
 
-router = APIRouter(prefix="/admin/content", tags=["Content Generation"])
+router = APIRouter(prefix="/admin/content", tags=["Content Generation"], dependencies=[Depends(require_admin_session)])
 # Route joueur (signalement), volontairement HORS préfixe /admin (AD-12 : route
 # joueur ordinaire, publique comme le reste de l'API — pas une capacité admin).
 player_router = APIRouter(tags=["Content Flagging"])

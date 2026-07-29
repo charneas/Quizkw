@@ -62,8 +62,8 @@ def mock_wikipedia_network_error(monkeypatch):
 
 # --- Pipeline de génération (AC #1, #2) ---
 
-def test_generate_creates_pending_suggestion(test_client, mock_wikipedia, mock_generate_content):
-    resp = test_client.post("/admin/content/generate", json={"topic": "Napoléon"})
+def test_generate_creates_pending_suggestion(authenticated_client, mock_wikipedia, mock_generate_content):
+    resp = authenticated_client.post("/admin/content/generate", json={"topic": "Napoléon"})
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "pending"
@@ -72,49 +72,49 @@ def test_generate_creates_pending_suggestion(test_client, mock_wikipedia, mock_g
     assert body["created_theme_id"] is None
 
     # Rien n'a été écrit dans Theme/Question avant approve (AC #2).
-    assert test_client.get("/admin/themes").json() == []
-    assert test_client.get("/admin/questions").json() == []
+    assert authenticated_client.get("/admin/themes").json() == []
+    assert authenticated_client.get("/admin/questions").json() == []
 
 
-def test_generate_wikipedia_not_found_404(test_client, mock_wikipedia_not_found, mock_generate_content):
-    resp = test_client.post("/admin/content/generate", json={"topic": "Sujetquinexistepas"})
+def test_generate_wikipedia_not_found_404(authenticated_client, mock_wikipedia_not_found, mock_generate_content):
+    resp = authenticated_client.post("/admin/content/generate", json={"topic": "Sujetquinexistepas"})
     assert resp.status_code == 404
 
 
-def test_generate_invalid_llm_response_502(test_client, mock_wikipedia, mock_generate_content_invalid):
-    resp = test_client.post("/admin/content/generate", json={"topic": "Napoléon"})
+def test_generate_invalid_llm_response_502(authenticated_client, mock_wikipedia, mock_generate_content_invalid):
+    resp = authenticated_client.post("/admin/content/generate", json={"topic": "Napoléon"})
     assert resp.status_code == 502
     # Aucune suggestion partiellement remplie n'est créée.
-    assert test_client.get("/admin/content/suggestions").json() == []
+    assert authenticated_client.get("/admin/content/suggestions").json() == []
 
 
-def test_generate_uses_explicit_category(test_client, mock_wikipedia, mock_generate_content):
-    resp = test_client.post("/admin/content/generate", json={"topic": "Astérix", "category": "whimsical"})
+def test_generate_uses_explicit_category(authenticated_client, mock_wikipedia, mock_generate_content):
+    resp = authenticated_client.post("/admin/content/generate", json={"topic": "Astérix", "category": "whimsical"})
     assert resp.status_code == 200
     assert resp.json()["generated_category"] == "whimsical"
 
 
-def test_generate_wikipedia_network_error_502(test_client, mock_wikipedia_network_error, mock_generate_content):
+def test_generate_wikipedia_network_error_502(authenticated_client, mock_wikipedia_network_error, mock_generate_content):
     # Régression : une erreur réseau/HTTP Wikipedia (pas "sujet introuvable")
     # doit être un 502 (fournisseur externe en échec), pas fuiter en 500.
-    resp = test_client.post("/admin/content/generate", json={"topic": "Napoléon"})
+    resp = authenticated_client.post("/admin/content/generate", json={"topic": "Napoléon"})
     assert resp.status_code == 502
 
 
 # --- Mix de catégories (AC #3) ---
 
-def test_category_mix_empty(test_client):
-    resp = test_client.get("/admin/content/category-mix")
+def test_category_mix_empty(authenticated_client):
+    resp = authenticated_client.get("/admin/content/category-mix")
     assert resp.status_code == 200
     body = resp.json()
     assert body["total_themes"] == 0
     assert body["recommended_category"] == "serious"  # cible la plus haute (50%), en tête à égalité de vide
 
 
-def test_category_mix_recommends_underrepresented_category(test_client):
-    test_client.post("/admin/themes", json={"name": "T1", "category": "serious", "difficulty_level": 5})
-    test_client.post("/admin/themes", json={"name": "T2", "category": "serious", "difficulty_level": 5})
-    resp = test_client.get("/admin/content/category-mix")
+def test_category_mix_recommends_underrepresented_category(authenticated_client):
+    authenticated_client.post("/admin/themes", json={"name": "T1", "category": "serious", "difficulty_level": 5})
+    authenticated_client.post("/admin/themes", json={"name": "T2", "category": "serious", "difficulty_level": 5})
+    resp = authenticated_client.get("/admin/content/category-mix")
     body = resp.json()
     assert body["total_themes"] == 2
     # 100% serious -> pop_culture et whimsical sont sous leur cible, recommandation != serious
@@ -123,23 +123,23 @@ def test_category_mix_recommends_underrepresented_category(test_client):
 
 # --- Validation humaine (AC #2) ---
 
-def test_approve_suggestion_creates_theme_and_questions(test_client, mock_wikipedia, mock_generate_content):
-    suggestion = test_client.post("/admin/content/generate", json={"topic": "Napoléon"}).json()
+def test_approve_suggestion_creates_theme_and_questions(authenticated_client, mock_wikipedia, mock_generate_content):
+    suggestion = authenticated_client.post("/admin/content/generate", json={"topic": "Napoléon"}).json()
 
-    resp = test_client.post(f"/admin/content/suggestions/{suggestion['id']}/approve")
+    resp = authenticated_client.post(f"/admin/content/suggestions/{suggestion['id']}/approve")
     assert resp.status_code == 200
     body = resp.json()
     assert body["questions_created"] == 2
 
-    themes = test_client.get("/admin/themes").json()
+    themes = authenticated_client.get("/admin/themes").json()
     assert len(themes) == 1
     assert themes[0]["name"] == "Histoire de France"
 
-    questions = test_client.get(f"/admin/questions?theme_id={themes[0]['id']}").json()
+    questions = authenticated_client.get(f"/admin/questions?theme_id={themes[0]['id']}").json()
     assert len(questions) == 2
 
 
-def test_approve_assigns_progressive_question_number_by_difficulty(test_client, mock_wikipedia, monkeypatch):
+def test_approve_assigns_progressive_question_number_by_difficulty(authenticated_client, mock_wikipedia, monkeypatch):
     """La Manche 2 attend question_number 1..N croissant en difficulté
     (comme seed.py le fait à la main) : le pipeline de génération ne le
     renseignait jamais, rendant les questions générées inutilisables pour
@@ -155,150 +155,150 @@ def test_approve_assigns_progressive_question_number_by_difficulty(test_client, 
     )
     monkeypatch.setattr(main_content_gen, "generate_content", lambda topic, extract, category: unordered)
 
-    suggestion = test_client.post("/admin/content/generate", json={"topic": "Napoléon"}).json()
-    test_client.post(f"/admin/content/suggestions/{suggestion['id']}/approve")
+    suggestion = authenticated_client.post("/admin/content/generate", json={"topic": "Napoléon"}).json()
+    authenticated_client.post(f"/admin/content/suggestions/{suggestion['id']}/approve")
 
-    theme_id = test_client.get("/admin/themes").json()[0]["id"]
-    questions = test_client.get(f"/admin/questions?theme_id={theme_id}").json()
+    theme_id = authenticated_client.get("/admin/themes").json()[0]["id"]
+    questions = authenticated_client.get(f"/admin/questions?theme_id={theme_id}").json()
     by_number = {q["question_number"]: q["difficulty"] for q in questions}
     assert by_number == {1: "easy", 2: "medium", 3: "hard"}
 
 
-def test_approve_already_reviewed_suggestion_400s(test_client, mock_wikipedia, mock_generate_content):
-    suggestion = test_client.post("/admin/content/generate", json={"topic": "Napoléon"}).json()
-    test_client.post(f"/admin/content/suggestions/{suggestion['id']}/approve")
+def test_approve_already_reviewed_suggestion_400s(authenticated_client, mock_wikipedia, mock_generate_content):
+    suggestion = authenticated_client.post("/admin/content/generate", json={"topic": "Napoléon"}).json()
+    authenticated_client.post(f"/admin/content/suggestions/{suggestion['id']}/approve")
 
-    resp = test_client.post(f"/admin/content/suggestions/{suggestion['id']}/approve")
+    resp = authenticated_client.post(f"/admin/content/suggestions/{suggestion['id']}/approve")
     assert resp.status_code == 400
 
 
-def test_approve_logs_question_creations_not_false_theme_creation_on_reuse(test_client, mock_wikipedia, mock_generate_content):
+def test_approve_logs_question_creations_not_false_theme_creation_on_reuse(authenticated_client, mock_wikipedia, mock_generate_content):
     # Régression : réutiliser un thème existant ne doit PAS logger un faux
     # "theme created" ; les questions créées DOIVENT être loggées (AC #5).
-    test_client.post("/admin/themes", json={"name": "Histoire de France", "category": "serious", "difficulty_level": 5})
-    suggestion = test_client.post("/admin/content/generate", json={"topic": "Napoléon"}).json()
-    test_client.post(f"/admin/content/suggestions/{suggestion['id']}/approve")
+    authenticated_client.post("/admin/themes", json={"name": "Histoire de France", "category": "serious", "difficulty_level": 5})
+    suggestion = authenticated_client.post("/admin/content/generate", json={"topic": "Napoléon"}).json()
+    authenticated_client.post(f"/admin/content/suggestions/{suggestion['id']}/approve")
 
-    theme = next(t for t in test_client.get("/admin/themes").json() if t["name"] == "Histoire de France")
-    theme_history = test_client.get(f"/admin/content/history?entity_type=theme&entity_id={theme['id']}").json()
+    theme = next(t for t in authenticated_client.get("/admin/themes").json() if t["name"] == "Histoire de France")
+    theme_history = authenticated_client.get(f"/admin/content/history?entity_type=theme&entity_id={theme['id']}").json()
     # Un seul "created" (F.1, avant la génération) — pas un second via l'approve.
     assert len([h for h in theme_history if h["action"] == "created"]) == 1
 
-    question_history = test_client.get("/admin/content/history?entity_type=question").json()
+    question_history = authenticated_client.get("/admin/content/history?entity_type=question").json()
     assert len(question_history) == 2  # les 2 questions générées, chacune loggée
 
 
-def test_reject_suggestion_does_not_create_content(test_client, mock_wikipedia, mock_generate_content):
-    suggestion = test_client.post("/admin/content/generate", json={"topic": "Napoléon"}).json()
+def test_reject_suggestion_does_not_create_content(authenticated_client, mock_wikipedia, mock_generate_content):
+    suggestion = authenticated_client.post("/admin/content/generate", json={"topic": "Napoléon"}).json()
 
-    resp = test_client.post(f"/admin/content/suggestions/{suggestion['id']}/reject", json={"reason": "Erreurs factuelles"})
+    resp = authenticated_client.post(f"/admin/content/suggestions/{suggestion['id']}/reject", json={"reason": "Erreurs factuelles"})
     assert resp.status_code == 200
 
-    assert test_client.get("/admin/themes").json() == []
-    updated = test_client.get("/admin/content/suggestions?status=rejected").json()
+    assert authenticated_client.get("/admin/themes").json() == []
+    updated = authenticated_client.get("/admin/content/suggestions?status=rejected").json()
     assert len(updated) == 1
     assert updated[0]["rejection_reason"] == "Erreurs factuelles"
 
 
-def test_approve_reuses_existing_theme_by_name(test_client, mock_wikipedia, mock_generate_content):
-    test_client.post("/admin/themes", json={"name": "Histoire de France", "category": "serious", "difficulty_level": 5})
-    suggestion = test_client.post("/admin/content/generate", json={"topic": "Napoléon"}).json()
-    test_client.post(f"/admin/content/suggestions/{suggestion['id']}/approve")
+def test_approve_reuses_existing_theme_by_name(authenticated_client, mock_wikipedia, mock_generate_content):
+    authenticated_client.post("/admin/themes", json={"name": "Histoire de France", "category": "serious", "difficulty_level": 5})
+    suggestion = authenticated_client.post("/admin/content/generate", json={"topic": "Napoléon"}).json()
+    authenticated_client.post(f"/admin/content/suggestions/{suggestion['id']}/approve")
 
-    themes = test_client.get("/admin/themes").json()
+    themes = authenticated_client.get("/admin/themes").json()
     assert len(themes) == 1  # pas de doublon de thème
 
 
-def test_list_suggestions_filtered_by_status(test_client, mock_wikipedia, mock_generate_content):
-    s1 = test_client.post("/admin/content/generate", json={"topic": "A"}).json()
-    test_client.post("/admin/content/generate", json={"topic": "B"})
-    test_client.post(f"/admin/content/suggestions/{s1['id']}/approve")
+def test_list_suggestions_filtered_by_status(authenticated_client, mock_wikipedia, mock_generate_content):
+    s1 = authenticated_client.post("/admin/content/generate", json={"topic": "A"}).json()
+    authenticated_client.post("/admin/content/generate", json={"topic": "B"})
+    authenticated_client.post(f"/admin/content/suggestions/{s1['id']}/approve")
 
-    pending = test_client.get("/admin/content/suggestions?status=pending").json()
-    approved = test_client.get("/admin/content/suggestions?status=approved").json()
+    pending = authenticated_client.get("/admin/content/suggestions?status=pending").json()
+    approved = authenticated_client.get("/admin/content/suggestions?status=approved").json()
     assert len(pending) == 1
     assert len(approved) == 1
 
 
 # --- Signalement joueur (AC #4) ---
 
-def test_flag_question(test_client):
-    question = test_client.post("/admin/questions", json={
+def test_flag_question(authenticated_client):
+    question = authenticated_client.post("/admin/questions", json={
         "text": "Q", "category": "cat", "difficulty": "easy", "points": 2,
         "correct_answer": "A", "wrong_answers": ["B", "C", "D"],
     }).json()
 
-    resp = test_client.post(f"/questions/{question['id']}/flag", json={"reason": "Réponse incorrecte"})
+    resp = authenticated_client.post(f"/questions/{question['id']}/flag", json={"reason": "Réponse incorrecte"})
     assert resp.status_code == 200
 
-    flags = test_client.get("/admin/content/flags?resolved=false").json()
+    flags = authenticated_client.get("/admin/content/flags?resolved=false").json()
     assert len(flags) == 1
     assert flags[0]["reason"] == "Réponse incorrecte"
 
 
-def test_flag_unknown_question_404s(test_client):
-    resp = test_client.post("/questions/999999/flag", json={"reason": "x"})
+def test_flag_unknown_question_404s(authenticated_client):
+    resp = authenticated_client.post("/questions/999999/flag", json={"reason": "x"})
     assert resp.status_code == 404
 
 
-def test_resolve_flag(test_client):
-    question = test_client.post("/admin/questions", json={
+def test_resolve_flag(authenticated_client):
+    question = authenticated_client.post("/admin/questions", json={
         "text": "Q", "category": "cat", "difficulty": "easy", "points": 2,
         "correct_answer": "A", "wrong_answers": ["B", "C", "D"],
     }).json()
-    flag = test_client.post(f"/questions/{question['id']}/flag", json={"reason": "x"}).json()
+    flag = authenticated_client.post(f"/questions/{question['id']}/flag", json={"reason": "x"}).json()
 
-    resp = test_client.post(f"/admin/content/flags/{flag['flag_id']}/resolve", json={"note": "Corrigé"})
+    resp = authenticated_client.post(f"/admin/content/flags/{flag['flag_id']}/resolve", json={"note": "Corrigé"})
     assert resp.status_code == 200
     assert resp.json()["resolved"] is True
 
-    unresolved = test_client.get("/admin/content/flags?resolved=false").json()
+    unresolved = authenticated_client.get("/admin/content/flags?resolved=false").json()
     assert unresolved == []
 
 
 # --- Historique (AC #5) ---
 
-def test_history_logs_f1_theme_create(test_client):
-    test_client.post("/admin/themes", json={"name": "T", "category": "serious", "difficulty_level": 5})
-    history = test_client.get("/admin/content/history?entity_type=theme").json()
+def test_history_logs_f1_theme_create(authenticated_client):
+    authenticated_client.post("/admin/themes", json={"name": "T", "category": "serious", "difficulty_level": 5})
+    history = authenticated_client.get("/admin/content/history?entity_type=theme").json()
     assert any(h["action"] == "created" for h in history)
 
 
-def test_history_logs_f1_theme_delete(test_client):
-    theme = test_client.post("/admin/themes", json={"name": "T", "category": "serious", "difficulty_level": 5}).json()
-    test_client.delete(f"/admin/themes/{theme['id']}")
-    history = test_client.get(f"/admin/content/history?entity_type=theme&entity_id={theme['id']}").json()
+def test_history_logs_f1_theme_delete(authenticated_client):
+    theme = authenticated_client.post("/admin/themes", json={"name": "T", "category": "serious", "difficulty_level": 5}).json()
+    authenticated_client.delete(f"/admin/themes/{theme['id']}")
+    history = authenticated_client.get(f"/admin/content/history?entity_type=theme&entity_id={theme['id']}").json()
     actions = [h["action"] for h in history]
     assert "created" in actions and "deleted" in actions
 
 
-def test_history_logs_generation_and_approval(test_client, mock_wikipedia, mock_generate_content):
-    suggestion = test_client.post("/admin/content/generate", json={"topic": "Napoléon"}).json()
-    test_client.post(f"/admin/content/suggestions/{suggestion['id']}/approve")
+def test_history_logs_generation_and_approval(authenticated_client, mock_wikipedia, mock_generate_content):
+    suggestion = authenticated_client.post("/admin/content/generate", json={"topic": "Napoléon"}).json()
+    authenticated_client.post(f"/admin/content/suggestions/{suggestion['id']}/approve")
 
-    history = test_client.get(f"/admin/content/history?entity_type=suggestion&entity_id={suggestion['id']}").json()
+    history = authenticated_client.get(f"/admin/content/history?entity_type=suggestion&entity_id={suggestion['id']}").json()
     actions = [h["action"] for h in history]
     assert "generated" in actions
     assert "approved" in actions
 
 
-def test_history_logs_flag_and_resolve(test_client):
-    question = test_client.post("/admin/questions", json={
+def test_history_logs_flag_and_resolve(authenticated_client):
+    question = authenticated_client.post("/admin/questions", json={
         "text": "Q", "category": "cat", "difficulty": "easy", "points": 2,
         "correct_answer": "A", "wrong_answers": ["B", "C", "D"],
     }).json()
-    flag = test_client.post(f"/questions/{question['id']}/flag", json={"reason": "x"}).json()
-    test_client.post(f"/admin/content/flags/{flag['flag_id']}/resolve", json={"note": "ok"})
+    flag = authenticated_client.post(f"/questions/{question['id']}/flag", json={"reason": "x"}).json()
+    authenticated_client.post(f"/admin/content/flags/{flag['flag_id']}/resolve", json={"note": "ok"})
 
-    history = test_client.get(f"/admin/content/history?entity_type=flag&entity_id={flag['flag_id']}").json()
+    history = authenticated_client.get(f"/admin/content/history?entity_type=flag&entity_id={flag['flag_id']}").json()
     actions = [h["action"] for h in history]
     assert "flagged" in actions and "resolved" in actions
 
 
-def test_history_respects_limit(test_client):
+def test_history_respects_limit(authenticated_client):
     for i in range(5):
-        test_client.post("/admin/themes", json={"name": f"T{i}", "category": "serious", "difficulty_level": 5})
-    history = test_client.get("/admin/content/history?limit=2").json()
+        authenticated_client.post("/admin/themes", json={"name": f"T{i}", "category": "serious", "difficulty_level": 5})
+    history = authenticated_client.get("/admin/content/history?limit=2").json()
     assert len(history) == 2
 
 

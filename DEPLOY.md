@@ -57,6 +57,13 @@ cat > <CHEMIN_APP>/backend/.env << EOF
 DATABASE_URL=sqlite:///./quizkw.db
 # Pour PostgreSQL (recommandé en production) :
 # DATABASE_URL=postgresql://quizkw_user:mot_de_passe_securise@localhost/quizkw_db
+
+# Requis depuis l'Epic F-ext-2 (AD-17, authentification admin) : secret de
+# signature du cookie de session /admin/*. Générer une valeur aléatoire unique
+# par déploiement (ex. openssl rand -hex 32) — jamais la valeur d'exemple ci-dessous.
+SESSION_SECRET_KEY=<valeur-aleatoire-generee-par-deploiement>
+# SESSION_COOKIE_SECURE=true est le défaut (cookie envoyé uniquement en HTTPS,
+# cohérent avec la section 7 ci-dessous) ; ne le mettre à false qu'en dev local HTTP.
 EOF
 ```
 
@@ -260,7 +267,7 @@ sudo systemctl status certbot.timer
 curl -I https://votre-domaine.com
 ```
 
-**Statut actuel** : la procédure et la configuration Nginx ci-dessus sont corrigées pour servir en HTTPS, mais **aucun nom de domaine ni certificat n'est disponible aujourd'hui** — cette story (H-006) livre la procédure, pas une exécution vérifiée sur un serveur réel. L'obtention et le renouvellement effectifs du certificat restent à valider lors du prochain déploiement, une fois qu'un domaine sera pointé sur le serveur. Le code d'accès à 6 caractères est le seul jeton d'identité du jeu (aucune authentification) — il transitait en clair avant application de ce chapitre.
+**Statut actuel (mis à jour 2026-07-29, Epic F-ext-2)** : HTTPS est réellement actif en production — la note précédente indiquant l'absence de domaine/certificat vérifié était périmée. `SESSION_COOKIE_SECURE` (Epic F-ext-2, cookie de session admin) est donc activé par défaut sans risque de casser le login admin sur cette prod.
 
 ## 8. PostgreSQL (optionnel, pas encore utilisé en prod)
 
