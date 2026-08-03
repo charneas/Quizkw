@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getGame, getRandomQuestion, spinWheel, advanceRound2Phase, getCurrentQuestion, setCurrentQuestion as setCurrentQuestionApi, getAnswersStatus, getRandomPingPongTheme, startPingPongDuel, getPingPongDuelState, getPingPongDuelResults, registerHost } from '../services/api'
+import { getGame, getRandomQuestion, spinWheel, advanceRound2Phase, getCurrentQuestion, setCurrentQuestion as setCurrentQuestionApi, getAnswersStatus, getRandomPingPongTheme, startPingPongDuel, getPingPongDuelState, getPingPongDuelResults, getHostToken } from '../services/api'
 import type { GameSession, QuestionResponse, WheelSpinResponse, Team } from '../types'
 import Scoreboard from '../components/Scoreboard'
 import WheelModal from '../components/WheelModal'
@@ -48,9 +48,12 @@ function HostGame() {
   }, [])
 
   const loadGame = async () => {
+    if (!getHostToken(code!)) {
+      setError("Cet écran est réservé à l'hôte qui a créé la partie.")
+      setLoading(false)
+      return
+    }
     try {
-      // Enregistrer qu'un hôte est connecté — désactive l'auto-validation côté backend
-      await registerHost(code!)
       const gameData = await getGame(code!)
       setGame(gameData)
       await loadQuestion()
@@ -299,8 +302,10 @@ function HostGame() {
   const handleValidateAnswers = async () => {
     if (!game) return
     try {
+      const token = getHostToken(code!)
       const result = await fetch(`/api/games/${code}/validate-answers`, {
         method: 'POST',
+        headers: token ? { 'X-Host-Token': token } : {},
       }).then(r => r.json())
       setAnswerResult(result)
       const freshGame = await getGame(code!)

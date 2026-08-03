@@ -16,11 +16,11 @@ def _make_two_teams(db_session, sample_game_session):
     return team1, team2
 
 
-def test_wheel_does_not_trigger_before_fifth_question(test_client, db_session, sample_game_session, sample_question):
+def test_wheel_does_not_trigger_before_fifth_question(test_client, db_session, sample_game_session, sample_question, host_headers):
     _make_two_teams(db_session, sample_game_session)
 
     for _ in range(4):
-        resp = test_client.post(f"/games/{sample_game_session.code}/next-question")
+        resp = test_client.post(f"/games/{sample_game_session.code}/next-question", headers=host_headers)
         assert resp.status_code == 200
         body = resp.json()
         assert body["question_id"] is not None
@@ -30,14 +30,14 @@ def test_wheel_does_not_trigger_before_fifth_question(test_client, db_session, s
     assert sample_game_session.questions_played == 4
 
 
-def test_wheel_triggers_malus_on_fifth_question(test_client, db_session, sample_game_session, sample_question, monkeypatch):
+def test_wheel_triggers_malus_on_fifth_question(test_client, db_session, sample_game_session, sample_question, monkeypatch, host_headers):
     team1, _team2 = _make_two_teams(db_session, sample_game_session)
     monkeypatch.setattr(main.random, "randint", lambda a, b: 3)  # 1-5 => malus
 
     for _ in range(4):
-        test_client.post(f"/games/{sample_game_session.code}/next-question")
+        test_client.post(f"/games/{sample_game_session.code}/next-question", headers=host_headers)
 
-    resp = test_client.post(f"/games/{sample_game_session.code}/next-question")
+    resp = test_client.post(f"/games/{sample_game_session.code}/next-question", headers=host_headers)
     assert resp.status_code == 200
     body = resp.json()
     assert body["question_id"] is None
@@ -54,7 +54,7 @@ def test_wheel_triggers_malus_on_fifth_question(test_client, db_session, sample_
     assert effect.is_applied is True
 
 
-def test_wheel_ping_pong_lets_target_team_choose_opponent(test_client, db_session, sample_game_session, sample_question, monkeypatch):
+def test_wheel_ping_pong_lets_target_team_choose_opponent(test_client, db_session, sample_game_session, sample_question, monkeypatch, host_headers):
     """L'équipe qui tombe sur le ping-pong choisit elle-même son adversaire
     (via /ping-pong/duel/start, comme sur l'écran mono-appareil) — la roue ne
     doit plus tirer l'adversaire au sort ni démarrer le duel elle-même."""
@@ -66,9 +66,9 @@ def test_wheel_ping_pong_lets_target_team_choose_opponent(test_client, db_sessio
     monkeypatch.setattr(main.random, "randint", lambda a, b: 12)  # 11-18 => ping_pong
 
     for _ in range(4):
-        test_client.post(f"/games/{sample_game_session.code}/next-question")
+        test_client.post(f"/games/{sample_game_session.code}/next-question", headers=host_headers)
 
-    resp = test_client.post(f"/games/{sample_game_session.code}/next-question")
+    resp = test_client.post(f"/games/{sample_game_session.code}/next-question", headers=host_headers)
     body = resp.json()
     assert body["wheel_event"]["effect_type"] == "ping_pong"
     assert body["wheel_event"]["target_team_id"] == team1.id
@@ -88,12 +88,12 @@ def test_wheel_ping_pong_lets_target_team_choose_opponent(test_client, db_sessio
     assert db_session.query(models.PingPongDuel).count() == 1
 
 
-def test_state_exposes_last_wheel_event_to_all_teams(test_client, db_session, sample_game_session, sample_question, monkeypatch):
+def test_state_exposes_last_wheel_event_to_all_teams(test_client, db_session, sample_game_session, sample_question, monkeypatch, host_headers):
     team1, team2 = _make_two_teams(db_session, sample_game_session)
     monkeypatch.setattr(main.random, "randint", lambda a, b: 20)  # 19-20 => bonus +3
 
     for _ in range(5):
-        test_client.post(f"/games/{sample_game_session.code}/next-question")
+        test_client.post(f"/games/{sample_game_session.code}/next-question", headers=host_headers)
 
     # L'équipe qui N'A PAS tourné la roue doit aussi voir l'événement.
     resp = test_client.get(f"/game/{sample_game_session.code}/team/{team2.id}/state")

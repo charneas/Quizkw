@@ -91,6 +91,7 @@ class TestMemoryGridRound3API:
         self.finalists = finalists
         self.themes = themes
         self.db_session = db_session
+        self.host_headers = {"X-Host-Token": game_session.host_token}
 
         yield
 
@@ -103,7 +104,8 @@ class TestMemoryGridRound3API:
 
     def test_create_memory_grid_with_themes_success(self):
         response = self.client.post(
-            f"/games/{self.game.code}/memory-grid/create-with-themes?rows=7&cols=5"
+            f"/games/{self.game.code}/memory-grid/create-with-themes?rows=7&cols=5",
+            headers=self.host_headers,
         )
 
         assert response.status_code == 200
@@ -141,7 +143,8 @@ class TestMemoryGridRound3API:
 
     def test_get_current_player_turn_success(self):
         create_response = self.client.post(
-            f"/games/{self.game.code}/memory-grid/create-with-themes?rows=7&cols=5"
+            f"/games/{self.game.code}/memory-grid/create-with-themes?rows=7&cols=5",
+            headers=self.host_headers,
         )
         assert create_response.status_code == 200
         memory_grid_id = create_response.json()["id"]
@@ -216,11 +219,12 @@ class TestMemoryGridRound3API:
 
     def _create_grid_and_round(self):
         create_response = self.client.post(
-            f"/games/{self.game.code}/memory-grid/create-with-themes?rows=7&cols=5"
+            f"/games/{self.game.code}/memory-grid/create-with-themes?rows=7&cols=5",
+            headers=self.host_headers,
         )
         memory_grid_id = create_response.json()["id"]
 
-        start_response = self.client.post(f"/games/{self.game.code}/memory-grid/start")
+        start_response = self.client.post(f"/games/{self.game.code}/memory-grid/start", headers=self.host_headers)
         round_id = start_response.json()["round_id"]
 
         return memory_grid_id, round_id
@@ -308,9 +312,9 @@ class TestMemoryGridRound3API:
 
     def test_create_memory_grid_is_idempotent(self):
         """C-003 Scenario 6 : un rechargement de page ne doit pas recréer la grille."""
-        first = self.client.post(f"/games/{self.game.code}/memory-grid/create")
+        first = self.client.post(f"/games/{self.game.code}/memory-grid/create", headers=self.host_headers)
         assert first.status_code == 200
-        second = self.client.post(f"/games/{self.game.code}/memory-grid/create")
+        second = self.client.post(f"/games/{self.game.code}/memory-grid/create", headers=self.host_headers)
         assert second.status_code == 200
 
         assert first.json()["id"] == second.json()["id"]
@@ -322,10 +326,10 @@ class TestMemoryGridRound3API:
 
     def test_start_memory_grid_round_is_idempotent(self):
         """C-003 Scenario 6 : un rechargement de page ne doit pas repartir sur un nouveau round."""
-        self.client.post(f"/games/{self.game.code}/memory-grid/create")
+        self.client.post(f"/games/{self.game.code}/memory-grid/create", headers=self.host_headers)
 
-        first = self.client.post(f"/games/{self.game.code}/memory-grid/start")
-        second = self.client.post(f"/games/{self.game.code}/memory-grid/start")
+        first = self.client.post(f"/games/{self.game.code}/memory-grid/start", headers=self.host_headers)
+        second = self.client.post(f"/games/{self.game.code}/memory-grid/start", headers=self.host_headers)
 
         assert first.status_code == 200
         assert second.status_code == 200
@@ -338,7 +342,8 @@ class TestMemoryGridRound3API:
 
         start_time = time.time()
         response = self.client.post(
-            f"/games/{self.game.code}/memory-grid/create-with-themes?rows=7&cols=5"
+            f"/games/{self.game.code}/memory-grid/create-with-themes?rows=7&cols=5",
+            headers=self.host_headers,
         )
         execution_time = time.time() - start_time
 
