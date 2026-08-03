@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { getGame, getRandomQuestion, spinWheel, advanceRound2Phase, getCurrentQuestion, setCurrentQuestion as setCurrentQuestionApi, getAnswersStatus, getRandomPingPongTheme, startPingPongDuel, getPingPongDuelState, getPingPongDuelResults, getHostToken } from '../services/api'
 import type { GameSession, QuestionResponse, WheelSpinResponse, Team } from '../types'
 import Scoreboard from '../components/Scoreboard'
+import TeamComposition from '../components/TeamComposition'
 import WheelModal from '../components/WheelModal'
 import WaitingForTeams from '../components/WaitingForTeams'
 import PingPongQuestion from '../components/PingPongQuestion'
@@ -46,6 +47,21 @@ function HostGame() {
       if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current)
     }
   }, [])
+
+  // BUG-114 : rafraîchit la composition des équipes (join tardif) sans
+  // attendre une action de jeu qui recharge déjà `game` par ailleurs.
+  useEffect(() => {
+    if (!code) return
+    const interval = setInterval(async () => {
+      try {
+        const freshGame = await getGame(code)
+        setGame(freshGame)
+      } catch {
+        // Ignoré : un prochain tick réessaiera.
+      }
+    }, 5000)
+    return () => clearInterval(interval)
+  }, [code])
 
   const loadGame = async () => {
     if (!getHostToken(code!)) {
@@ -375,8 +391,9 @@ function HostGame() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Scoreboard */}
-          <div className="lg:col-span-1">
+          <div className="lg:col-span-1 space-y-6">
             <Scoreboard teams={game.teams} currentTeamIndex={currentTeamIndex} />
+            <TeamComposition teams={game.teams} />
           </div>
 
           {/* Zone de contrôle */}
