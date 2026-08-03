@@ -22,7 +22,6 @@ def test_bonus_token_doubles_awarded_points(test_client, db_session, sample_game
     assert sample_team.bonus_active is True
 
     sample_game_session.current_question_id = sample_question.id
-    sample_game_session.has_host = True
     db_session.commit()
 
     answer_resp = test_client.post("/answers/", json={
@@ -32,7 +31,10 @@ def test_bonus_token_doubles_awarded_points(test_client, db_session, sample_game
     })
     assert answer_resp.status_code == 200
 
-    validate_resp = test_client.post(f"/games/{sample_game_session.code}/validate-answers")
+    validate_resp = test_client.post(
+        f"/games/{sample_game_session.code}/validate-answers",
+        headers={"X-Host-Token": sample_game_session.host_token},
+    )
     assert validate_resp.status_code == 200
     body = validate_resp.json()
 
@@ -53,7 +55,6 @@ def test_bonus_token_consumed_even_on_wrong_answer(test_client, db_session, samp
     assert sample_team.bonus_active is True
 
     sample_game_session.current_question_id = sample_question.id
-    sample_game_session.has_host = True
     db_session.commit()
 
     test_client.post("/answers/", json={
@@ -62,7 +63,10 @@ def test_bonus_token_consumed_even_on_wrong_answer(test_client, db_session, samp
         "player_answer": "wrong answer",
     })
 
-    test_client.post(f"/games/{sample_game_session.code}/validate-answers")
+    test_client.post(
+        f"/games/{sample_game_session.code}/validate-answers",
+        headers={"X-Host-Token": sample_game_session.host_token},
+    )
 
     db_session.refresh(sample_team)
     assert sample_team.score == 0

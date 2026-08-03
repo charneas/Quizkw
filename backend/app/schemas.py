@@ -165,6 +165,7 @@ class Answer(AnswerBase):
 class GameSessionResponse(BaseModel):
     game: GameSession
     message: str
+    host_token: str
 
 class QuestionResponse(BaseModel):
     question: Question

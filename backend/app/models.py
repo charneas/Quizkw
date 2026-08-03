@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, E
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import enum
+import secrets
 from .database import Base
 
 # Enums pour les types de difficulté et de jetons
@@ -52,7 +53,7 @@ class GameSession(Base):
     total_players = Column(Integer, nullable=False)
     players_per_team = Column(Integer, nullable=False)  # 2 ou 3 selon règles
     is_active = Column(Boolean, default=True)
-    has_host = Column(Boolean, default=False)
+    host_token = Column(String, nullable=False, default=lambda: secrets.token_urlsafe(24))
     started = Column(Boolean, default=False, nullable=False)
     questions_played = Column(Integer, default=0, nullable=False)  # déclenche la roue tous les 5
     created_at = Column(DateTime(timezone=True), server_default=func.now())
