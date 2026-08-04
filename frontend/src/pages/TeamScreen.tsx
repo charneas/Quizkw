@@ -16,6 +16,7 @@ interface TeamStateData {
   game_phase: string
   is_my_turn: boolean
   has_answered: boolean
+  answer_locked: boolean
   current_question: {
     id: number
     text: string
@@ -24,6 +25,8 @@ interface TeamStateData {
     points: number
     correct_answer: string | null
     options: string[]
+    answer_locked: boolean
+    current_team_answer: string | null
   } | null
   active_duel: {
     duel_id: number
@@ -62,7 +65,6 @@ function TeamScreen() {
 
   const [state, setState] = useState<TeamStateData | null>(null)
   const [answer, setAnswer] = useState('')
-  const [answerResult, setAnswerResult] = useState<{ is_correct: boolean; correct_answer: string; points_earned: number } | null>(null)
   const [duelResult, setDuelResult] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -164,9 +166,34 @@ function TeamScreen() {
 
   // Quand la question change (ou disparaît), effacer le résultat local de la question précédente
   // Mais ne PAS effacer duelResult (le duel est indépendant de la question courante)
+  // BUG-110 : synchroniser le champ avec la réponse d'équipe soumise par un
+  // coéquipier (polling), sans écraser une saisie en cours de frappe. On ne
+  // suit que si le champ local n'a pas divergé depuis la dernière valeur
+  // reçue du serveur (lastSyncedAnswerRef) — sinon l'utilisateur est en
+  // train de taper sa propre correction, on ne l'écrase pas.
+  const lastQuestionIdRef = useRef<number | null>(null)
+  const lastSyncedAnswerRef = useRef('')
   useEffect(() => {
-    setAnswerResult(null)
-  }, [state?.current_question?.id])
+    if (!state?.current_question) return
+    const q = state.current_question
+
+    if (lastQuestionIdRef.current !== q.id) {
+      // Nouvelle question : repartir d'un champ propre (vidé, ou pré-rempli
+      // si un coéquipier a déjà répondu avant que ce joueur ne charge l'état).
+      lastQuestionIdRef.current = q.id
+      const initial = q.current_team_answer ?? ''
+      lastSyncedAnswerRef.current = initial
+      setAnswer(initial)
+      return
+    }
+
+    if (q.answer_locked) return
+    const teamAnswer = q.current_team_answer ?? ''
+    if (answer === lastSyncedAnswerRef.current && teamAnswer !== answer) {
+      setAnswer(teamAnswer)
+    }
+    lastSyncedAnswerRef.current = teamAnswer
+  }, [state?.current_question?.id, state?.current_question?.current_team_answer, state?.current_question?.answer_locked])
 
   const loadState = async () => {
     try {
@@ -199,13 +226,16 @@ function TeamScreen() {
     if (!state?.current_question || !answer.trim()) return
 
     try {
-      const result = await submitAnswer({
+      const submitted = answer.trim()
+      await submitAnswer({
         question_id: state.current_question.id,
         team_id: teamIdNum,
-        player_answer: answer.trim(),
+        player_answer: submitted,
       })
-      setAnswerResult(result)
-      setAnswer('')
+      // La réponse soumise reste affichée (modifiable) — pas de setAnswer(''),
+      // sinon le prochain poll écraserait le champ avec la valeur qu'on vient
+      // nous-mêmes d'envoyer (cf. lastSyncedAnswerRef dans l'effet de sync).
+      lastSyncedAnswerRef.current = submitted
       await loadState()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur lors de la réponse')
@@ -250,7 +280,6 @@ function TeamScreen() {
     if (!code) return
     try {
       await nextQuestion(code)
-      setAnswerResult(null)
       await loadState()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur lors du changement de question')
@@ -377,8 +406,9 @@ function TeamScreen() {
           </div>
         )}
 
-        {/* Question courante */}
-        {state.current_question && !state.has_answered && (
+        {/* Question courante — le formulaire reste modifiable par n'importe quel
+            coéquipier tant que l'host n'a pas validé (BUG-110) */}
+        {state.current_question && !state.current_question.answer_locked && (
           <div className="card">
             <h3 className="text-lg font-semibold mb-3">
               {state.current_question.text}
@@ -386,6 +416,11 @@ function TeamScreen() {
             <p className="text-xs text-text-muted mb-4">
               {state.current_question.category} • {state.current_question.points} pts
             </p>
+            {state.current_question.current_team_answer && (
+              <p className="text-xs text-brand mb-3">
+                Réponse actuelle de l'équipe : <span className="font-semibold">{state.current_question.current_team_answer}</span> — modifiable jusqu'à validation
+              </p>
+            )}
 
             <div className="space-y-2 mb-4">
               {state.current_question.options.map((option, index) => (
@@ -446,17 +481,23 @@ function TeamScreen() {
           </div>
         )}
 
-        {/* Réponse envoyée — en attente des autres équipes */}
-        {state.has_answered && !state.validation_result && (
+        {/* Réponse validée par l'host — verrouillée */}
+        {state.current_question?.answer_locked && !state.validation_result && (
           <div className="card text-center py-8 border-brand">
             <div className="text-6xl mb-4">📤</div>
             <p className="text-xl text-brand font-semibold">
-              Réponse envoyée !
+              Réponse validée !
             </p>
-            {answerResult && (
-              <p className={`text-sm mt-2 ${answerResult.is_correct ? 'text-success' : 'text-danger'}`}>
-                {answerResult.is_correct ? '✅ Bonne réponse !' : '❌ Mauvaise réponse'}
-              </p>
+            {state.current_question.correct_answer !== null && state.current_question.current_team_answer !== null && (
+              (() => {
+                const isCorrect = state.current_question.current_team_answer!.trim().toLowerCase()
+                  === state.current_question.correct_answer!.trim().toLowerCase()
+                return (
+                  <p className={`text-sm mt-2 ${isCorrect ? 'text-success' : 'text-danger'}`}>
+                    {isCorrect ? '✅ Bonne réponse !' : '❌ Mauvaise réponse'}
+                  </p>
+                )
+              })()
             )}
             <p className="text-sm text-text-muted mt-2">
               ⏳ En attente des autres équipes...

@@ -8,6 +8,7 @@ import string
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from app.database import get_db, engine
 from app import models, schemas
@@ -431,43 +432,44 @@ def submit_answer(answer_create: schemas.AnswerCreate, db: Session = Depends(get
     if not team:
         raise HTTPException(status_code=404, detail="Équipe non trouvée")
 
-    # Empêcher les réponses en double pour la même question/équipe
-    existing = db.query(models.Answer).filter(
-        models.Answer.question_id == answer_create.question_id,
-        models.Answer.team_id == answer_create.team_id,
-    ).first()
-    if existing:
-        # Retourner la réponse existante sans créer de doublon
-        return {
-            "is_correct": existing.is_correct,
-            "correct_answer": question.correct_answer,
-            "points_earned": existing.points_earned,
-            "team_score": team.score,
-            "pending_validation": True,
-        }
-
-    # Vérifier si la réponse est correcte (sans attribuer les points — l'host valide)
     is_correct = answer_create.player_answer.strip().lower() == question.correct_answer.strip().lower()
-    
-    # Ne PAS ajouter les points maintenant — l'host les validera via /validate-answers
-    # On enregistre juste la réponse avec points_earned=0 (sera mis à jour par l'host)
-    answer = models.Answer(
+
+    # BUG-110 : upsert atomique sur la contrainte unique (question_id, team_id).
+    # Chaque coéquipier peut soumettre/corriger la réponse d'équipe tant que
+    # l'host n'a pas validé ; la clause WHERE rend le verrouillage post-validation
+    # atomique lui aussi (pas de fenêtre de course entre lecture et écriture).
+    stmt = sqlite_insert(models.Answer).values(
         question_id=answer_create.question_id,
         team_id=answer_create.team_id,
         player_answer=answer_create.player_answer,
         is_correct=is_correct,
-        points_earned=0  # Points attribués par l'host lors de la validation
+        points_earned=0,
+    ).on_conflict_do_update(
+        index_elements=[models.Answer.question_id, models.Answer.team_id],
+        set_={
+            "player_answer": answer_create.player_answer,
+            "is_correct": is_correct,
+        },
+        where=models.Answer.validated_at.is_(None),
     )
-    
-    db.add(answer)
+    db.execute(stmt)
     db.commit()
-    
+
+    existing = db.query(models.Answer).filter(
+        models.Answer.question_id == answer_create.question_id,
+        models.Answer.team_id == answer_create.team_id,
+    ).first()
+    locked = existing.validated_at is not None
+
+    # Ne révéler is_correct/correct_answer qu'une fois la réponse verrouillée
+    # (validée par l'host) — sinon la soumission étant rejouable à volonté,
+    # ce serait un oracle permettant de deviner la bonne réponse.
     return {
-        "is_correct": is_correct,
-        "correct_answer": question.correct_answer,
-        "points_earned": 0,  # Pas encore de points — en attente de validation
+        "is_correct": existing.is_correct if locked else None,
+        "correct_answer": question.correct_answer if locked else None,
+        "points_earned": existing.points_earned,
         "team_score": team.score,
-        "pending_validation": True
+        "pending_validation": not locked,
     }
 
 @app.post("/games/{code}/validate-answers")
@@ -503,6 +505,11 @@ def validate_answers(code: str, db: Session = Depends(get_db), _host: models.Gam
         if answer.team_id in teams_processed:
             continue
         teams_processed.add(answer.team_id)
+        # Récupérer l'état le plus frais possible juste avant de calculer les
+        # points : une soumission concurrente a pu modifier is_correct entre
+        # le SELECT initial de cette fonction et ce point de la boucle.
+        db.refresh(answer)
+        answer.validated_at = func.now()
         team = db.query(models.Team).filter(models.Team.id == answer.team_id).first()
         if team and answer.is_correct and answer.points_earned == 0:
             points = award_points_with_bonus(team, question.points)
@@ -1492,6 +1499,8 @@ def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_d
     # --- Statut de la question courante ---
     current_question_data = None
     has_answered = False
+    answer_locked = False
+    current_team_answer = None
     is_my_turn = True  # par défaut
 
     if game.current_question_id:
@@ -1500,13 +1509,18 @@ def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_d
         ).first()
 
         if question:
-            # Vérifier si cette équipe a déjà répondu à cette question
+            # Vérifier si cette équipe a déjà répondu à cette question.
+            # BUG-110 : has_answered ne verrouille plus le formulaire tant que
+            # l'host n'a pas validé — n'importe quel coéquipier peut corriger
+            # la réponse jusque-là (answer_locked = réponse validée par l'host).
             existing_answer = db.query(models.Answer).filter(
                 models.Answer.question_id == question.id,
                 models.Answer.team_id == team_id,
             ).first()
 
             has_answered = existing_answer is not None
+            answer_locked = existing_answer is not None and existing_answer.validated_at is not None
+            current_team_answer = existing_answer.player_answer if existing_answer else None
 
             # Mélanger les réponses de façon déterministe (basé sur le question_id)
             # pour que l'ordre soit stable entre les appels de polling
@@ -1524,8 +1538,10 @@ def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_d
                 "category": question.category,
                 "difficulty": question.difficulty.value,
                 "points": question.points,
-                "correct_answer": question.correct_answer if has_answered else None,  # Ne révéler qu'après réponse
+                "correct_answer": question.correct_answer if answer_locked else None,  # Ne révéler qu'après validation host
                 "options": options,
+                "answer_locked": answer_locked,
+                "current_team_answer": current_team_answer,
             }
 
     # Vérifier le statut des réponses pour déterminer si c'est le tour
@@ -1658,6 +1674,7 @@ def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_d
         "game_phase": game.current_round.value,
         "is_my_turn": is_my_turn,
         "has_answered": has_answered,
+        "answer_locked": answer_locked,
         "current_question": current_question_data,
         "active_duel": active_duel_for_team,
         "tokens": tokens_data,
