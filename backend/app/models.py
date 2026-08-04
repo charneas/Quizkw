@@ -119,7 +119,13 @@ class WheelEffect(Base):
 
 class Answer(Base):
     __tablename__ = "answers"
-    
+    __table_args__ = (
+        # BUG-110 : une seule réponse par équipe et par question — la contrainte
+        # doit vivre ici (pas seulement dans la migration) pour que les bases
+        # créées via Base.metadata.create_all (tests, dev) l'appliquent aussi.
+        UniqueConstraint('question_id', 'team_id', name='ix_answers_question_team_unique'),
+    )
+
     id = Column(Integer, primary_key=True, index=True)
     question_id = Column(Integer, ForeignKey("questions.id"))
     team_id = Column(Integer, ForeignKey("teams.id"))
@@ -127,7 +133,8 @@ class Answer(Base):
     is_correct = Column(Boolean)
     points_earned = Column(Integer, default=0)
     answered_at = Column(DateTime(timezone=True), server_default=func.now())
-    
+    validated_at = Column(DateTime(timezone=True), nullable=True)
+
     # Relations
     question = relationship("Question")
     team = relationship("Team")

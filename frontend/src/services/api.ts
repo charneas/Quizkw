@@ -340,6 +340,7 @@ export async function getTeamState(gameCode: string, teamId: number) {
     game_phase: string
     is_my_turn: boolean
     has_answered: boolean
+    answer_locked: boolean
     current_question: {
       id: number
       text: string
@@ -348,6 +349,8 @@ export async function getTeamState(gameCode: string, teamId: number) {
       points: number
       correct_answer: string | null
       options: string[]
+      answer_locked: boolean
+      current_team_answer: string | null
     } | null
     active_duel: {
       duel_id: number
