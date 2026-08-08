@@ -570,7 +570,7 @@ function MemoryGrid() {
                 onKeyDown={(e) => e.key === 'Enter' && handleSubmitAnswer()}
                 placeholder="Saisir la réponse..."
                 autoFocus
-                className="input w-full mb-3 text-center"
+                className="input-field w-full mb-3 text-center"
               />
               <button
                 onClick={handleSubmitAnswer}
