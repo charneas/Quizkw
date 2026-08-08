@@ -1722,6 +1722,40 @@ def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_d
             "message": message,
         }
 
+    # --- Dernier effet de jeton (BUG-102 : SWAP/PENALTY/BONUS n'avaient
+    # aucun retour visuel — même pattern que last_wheel_event ci-dessus) ---
+    last_token_event = None
+    latest_token_effect = db.query(models.TokenEffect).filter(
+        models.TokenEffect.game_session_id == game.id
+    ).order_by(models.TokenEffect.id.desc()).first()
+    if latest_token_effect:
+        using_team = db.query(models.Team).filter(models.Team.id == latest_token_effect.using_team_id).first()
+        using_name = using_team.name if using_team else "?"
+        target_name = None
+        if latest_token_effect.target_team_id:
+            target = db.query(models.Team).filter(models.Team.id == latest_token_effect.target_team_id).first()
+            target_name = target.name if target else "?"
+
+        token_type_value = latest_token_effect.token_type.value.upper()
+        if token_type_value == "PENALTY":
+            message = f"💀 {using_name} a utilisé PENALTY sur {target_name} (-{PENALTY_POINTS} points)"
+        elif token_type_value == "BONUS":
+            message = f"🎉 {using_name} a activé un BONUS pour sa prochaine réponse"
+        elif token_type_value == "SWAP":
+            message = f"🔀 {using_name} a utilisé SWAP : la question/le duel en cours a changé"
+        else:
+            message = f"Jeton {token_type_value} utilisé par {using_name}"
+
+        last_token_event = {
+            "id": latest_token_effect.id,
+            "token_type": token_type_value,
+            "using_team_id": latest_token_effect.using_team_id,
+            "using_team_name": using_name,
+            "target_team_id": latest_token_effect.target_team_id,
+            "target_team_name": target_name,
+            "message": message,
+        }
+
     return {
         "team_id": team_id,
         "team_name": team.name,
@@ -1739,6 +1773,7 @@ def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_d
         "all_answered": all_teams_answered,
         "validation_result": validation_result_data,
         "last_wheel_event": last_wheel_event,
+        "last_token_event": last_token_event,
     }
 
 def trigger_wheel_effect(db: Session, game: models.GameSession) -> Optional[dict]:
@@ -2066,6 +2101,17 @@ def use_token(data: dict, db: Session = Depends(get_db), x_team_token: Optional[
                     ).order_by(func.random()).first()
                     if new_question:
                         game.current_question_id = new_question.id
+
+        # BUG-102 : journalise l'effet pour que get_team_state puisse le
+        # signaler à tous les écrans qui pollent (y compris la cible d'une
+        # PENALTY, qui n'a sinon aucun moyen de savoir qu'un effet vient de
+        # s'appliquer — voir last_wheel_event, même pattern).
+        db.add(models.TokenEffect(
+            game_session_id=caller_team.game_session_id,
+            token_type=models.TokenType[token_type],
+            using_team_id=team_id,
+            target_team_id=target_team.id if target_team else None,
+        ))
 
         db.commit()
         return {

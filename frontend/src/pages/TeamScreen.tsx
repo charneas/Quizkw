@@ -56,6 +56,15 @@ interface TeamStateData {
     target_team_name: string
     message: string
   } | null
+  last_token_event: {
+    id: number
+    token_type: string
+    using_team_id: number
+    using_team_name: string
+    target_team_id: number | null
+    target_team_name: string | null
+    message: string
+  } | null
 }
 
 function TeamScreen() {
@@ -146,6 +155,37 @@ function TeamScreen() {
       }
     }
   }, [state?.last_wheel_event, teamIdNum])
+
+  // BUG-102 : un SWAP/PENALTY/BONUS n'avait aucun retour visuel — même
+  // pattern de détection que la roue ci-dessus (baseline au premier
+  // chargement pour ne pas rejouer un ancien événement à la reconnexion),
+  // mais rendu en toast léger plutôt qu'en modal bloquant : ces effets sont
+  // plus fréquents qu'un tour de roue et ne doivent pas interrompre le jeu.
+  const [tokenEventToShow, setTokenEventToShow] = useState<TeamStateData['last_token_event']>(null)
+  const seenTokenEventIdRef = useRef<number | null>(null)
+  const tokenEventBaselineSetRef = useRef(false)
+  const tokenEventTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    const event = state?.last_token_event
+    if (!tokenEventBaselineSetRef.current) {
+      tokenEventBaselineSetRef.current = true
+      seenTokenEventIdRef.current = event ? event.id : null
+      return
+    }
+    if (event && event.id !== seenTokenEventIdRef.current) {
+      seenTokenEventIdRef.current = event.id
+      setTokenEventToShow(event)
+      if (tokenEventTimerRef.current) clearTimeout(tokenEventTimerRef.current)
+      tokenEventTimerRef.current = setTimeout(() => setTokenEventToShow(null), 5000)
+    }
+  }, [state?.last_token_event])
+
+  useEffect(() => {
+    return () => {
+      if (tokenEventTimerRef.current) clearTimeout(tokenEventTimerRef.current)
+    }
+  }, [])
 
   const handleChooseWheelPingPongOpponent = async (opponent: Team) => {
     if (!state) return
@@ -589,6 +629,21 @@ function TeamScreen() {
           <div className="fixed bottom-4 right-4 z-[60] bg-danger/90 text-text px-4 py-2 rounded-lg text-sm">
             {error}
             <button onClick={() => setError('')} className="ml-2 hover:opacity-70">✕</button>
+          </div>
+        )}
+
+        {/* Effet de jeton (SWAP/PENALTY/BONUS) — toast léger auto-masqué */}
+        {tokenEventToShow && (
+          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 w-full max-w-md animate-fade-in">
+            <div className="card flex items-center justify-between gap-3 shadow-lg">
+              <p className="text-sm text-text">{tokenEventToShow.message}</p>
+              <button
+                onClick={() => setTokenEventToShow(null)}
+                className="text-text-muted hover:opacity-70 shrink-0"
+              >
+                ✕
+              </button>
+            </div>
           </div>
         )}
 

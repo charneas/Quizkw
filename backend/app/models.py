@@ -123,6 +123,29 @@ class WheelEffect(Base):
     game_session = relationship("GameSession", back_populates="wheel_effects")
     target_team = relationship("Team")
 
+class TokenEffect(Base):
+    """Journal des effets de jetons appliqués (BUG-102).
+
+    Sans ça, aucun écran ne pouvait détecter qu'un SWAP/PENALTY/BONUS venait
+    d'être joué : /tokens/use ne renvoyait le résultat qu'à l'appelant, et
+    les autres équipes (ex. la cible d'une PENALTY) n'avaient aucun signal
+    en pollant leur état. Même pattern que WheelEffect : la dernière ligne
+    est exposée par get_team_state pour que tout écran qui poll puisse la
+    détecter, y compris ceux qui n'ont pas déclenché l'action.
+    """
+    __tablename__ = "token_effects"
+
+    id = Column(Integer, primary_key=True, index=True)
+    game_session_id = Column(Integer, ForeignKey("game_sessions.id"))
+    token_type = Column(SQLEnum(TokenType), nullable=False)
+    using_team_id = Column(Integer, ForeignKey("teams.id"), nullable=False)
+    target_team_id = Column(Integer, ForeignKey("teams.id"), nullable=True)
+
+    # Relations
+    game_session = relationship("GameSession")
+    using_team = relationship("Team", foreign_keys=[using_team_id])
+    target_team = relationship("Team", foreign_keys=[target_team_id])
+
 class Answer(Base):
     __tablename__ = "answers"
     __table_args__ = (
