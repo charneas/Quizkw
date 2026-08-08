@@ -147,15 +147,7 @@ class GameSession(GameSessionBase):
 class AnswerBase(BaseModel):
     question_id: int
     team_id: int
-    player_answer: str = Field(min_length=1)
-
-    @field_validator('player_answer')
-    @classmethod
-    def player_answer_not_blank(cls, v: str) -> str:
-        stripped = v.strip()
-        if not stripped:
-            raise ValueError("La réponse ne peut pas être vide")
-        return stripped
+    player_answer: str
 
 class AnswerCreate(AnswerBase):
     pass
@@ -173,19 +165,14 @@ class Answer(AnswerBase):
 class GameSessionResponse(BaseModel):
     game: GameSession
     message: str
-    host_token: str
 
 class QuestionResponse(BaseModel):
     question: Question
     options: List[str]  # Mélange des bonnes et mauvaises réponses
 
 class AnswerResponse(BaseModel):
-    # BUG-110 : tant que la réponse n'est pas verrouillée (validée par l'host),
-    # on ne révèle ni is_correct ni correct_answer — la soumission étant
-    # rejouable à volonté, les renvoyer permettrait de deviner la bonne
-    # réponse par essais successifs (oracle non authentifié).
-    is_correct: Optional[bool] = None
-    correct_answer: Optional[str] = None
+    is_correct: bool
+    correct_answer: str
     points_earned: int
     team_score: int
     pending_validation: bool = True

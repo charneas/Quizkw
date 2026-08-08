@@ -40,9 +40,7 @@ function ThemeSelectorComponent({ themes, onSelectTheme, gameCode: _gameCode }: 
   return (
     <div className="bg-surface rounded-lg p-6">
       <h2 className="text-2xl font-display font-semibold text-text mb-2">Choose Your Theme</h2>
-      <p className="text-text-muted mb-6">
-        Select one of these {themes.length} random theme{themes.length > 1 ? 's' : ''} for your Round 2 questions
-      </p>
+      <p className="text-text-muted mb-6">Select one of these 3 random themes for your Round 2 questions</p>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {themes.map((theme) => (

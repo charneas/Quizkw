@@ -105,15 +105,6 @@ function Round2() {
       } else {
         setError('An unknown error occurred while selecting the theme.');
       }
-      // Le thème peut avoir été pris par un autre joueur entre le chargement
-      // de la liste et ce clic (BUG-210) — on rafraîchit pour ne pas laisser
-      // l'utilisateur cliquer à nouveau sur une option devenue invalide.
-      try {
-        const themesData = await getRound2Themes(code!)
-        setThemes(themesData.themes)
-      } catch {
-        // Le message d'erreur ci-dessus reste affiché même si ce refresh échoue.
-      }
     }
   }
 

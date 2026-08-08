@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { createGame, storeHostToken } from '../services/api'
+import { createGame } from '../services/api'
 
 function Home() {
   const navigate = useNavigate()
@@ -19,7 +19,6 @@ function Home() {
         total_players: totalPlayers,
         players_per_team: playersPerTeam,
       })
-      storeHostToken(result.game.code, result.host_token)
       navigate(`/lobby/${result.game.code}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur lors de la création')
