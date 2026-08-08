@@ -26,11 +26,11 @@ def test_penalty_token_reduces_target_team_score(test_client, db_session, sample
     db_session.add(models.Token(team_id=team.id, token_type=models.TokenType.PENALTY, is_used=False))
     db_session.commit()
 
-    resp = test_client.post("/tokens/use", json={
-        "team_id": team.id,
-        "token_type": "PENALTY",
-        "target_team_id": target.id,
-    })
+    resp = test_client.post(
+        "/tokens/use",
+        json={"team_id": team.id, "token_type": "PENALTY", "target_team_id": target.id},
+        headers={"X-Team-Token": team.team_token},
+    )
     assert resp.status_code == 200
     assert resp.json()["penalized_teams"] == [{"team_id": target.id, "new_score": 3}]
 
@@ -47,11 +47,11 @@ def test_penalty_token_floors_score_at_zero(test_client, db_session, sample_game
     db_session.add(models.Token(team_id=team.id, token_type=models.TokenType.PENALTY, is_used=False))
     db_session.commit()
 
-    resp = test_client.post("/tokens/use", json={
-        "team_id": team.id,
-        "token_type": "PENALTY",
-        "target_team_id": target.id,
-    })
+    resp = test_client.post(
+        "/tokens/use",
+        json={"team_id": team.id, "token_type": "PENALTY", "target_team_id": target.id},
+        headers={"X-Team-Token": team.team_token},
+    )
     assert resp.status_code == 200
 
     db_session.refresh(target)
@@ -103,22 +103,23 @@ def test_concurrent_penalties_on_same_target_both_apply():
         setup_db.commit()
 
         attacker1_id, attacker2_id, target_id = attacker1.id, attacker2.id, target.id
+        attacker1_token, attacker2_token = attacker1.team_token, attacker2.team_token
         setup_db.close()
 
         responses = []
         start_barrier = threading.Barrier(2)
 
-        def fire(attacker_id):
+        def fire(attacker_id, attacker_token):
             start_barrier.wait()  # force le chevauchement réel des 2 requêtes
-            resp = client.post("/tokens/use", json={
-                "team_id": attacker_id,
-                "token_type": "PENALTY",
-                "target_team_id": target_id,
-            })
+            resp = client.post(
+                "/tokens/use",
+                json={"team_id": attacker_id, "token_type": "PENALTY", "target_team_id": target_id},
+                headers={"X-Team-Token": attacker_token},
+            )
             responses.append(resp)
 
-        t1 = threading.Thread(target=fire, args=(attacker1_id,))
-        t2 = threading.Thread(target=fire, args=(attacker2_id,))
+        t1 = threading.Thread(target=fire, args=(attacker1_id, attacker1_token))
+        t2 = threading.Thread(target=fire, args=(attacker2_id, attacker2_token))
         t1.start()
         t2.start()
         t1.join()

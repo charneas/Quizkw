@@ -39,7 +39,11 @@ def test_swap_token_changes_active_duel_theme(test_client, db_session, sample_ga
     db_session.commit()
     db_session.refresh(duel)
 
-    resp = test_client.post("/tokens/use", json={"team_id": team1.id, "token_type": "SWAP"})
+    resp = test_client.post(
+        "/tokens/use",
+        json={"team_id": team1.id, "token_type": "SWAP"},
+        headers={"X-Team-Token": team1.team_token},
+    )
     assert resp.status_code == 200
 
     db_session.refresh(duel)
@@ -56,7 +60,11 @@ def test_swap_token_changes_current_question_outside_duel(test_client, db_sessio
     db_session.add(models.Token(team_id=team.id, token_type=models.TokenType.SWAP, is_used=False))
     db_session.commit()
 
-    resp = test_client.post("/tokens/use", json={"team_id": team.id, "token_type": "SWAP"})
+    resp = test_client.post(
+        "/tokens/use",
+        json={"team_id": team.id, "token_type": "SWAP"},
+        headers={"X-Team-Token": team.team_token},
+    )
     assert resp.status_code == 200
 
     db_session.refresh(sample_game_session)
@@ -74,14 +82,22 @@ def test_swap_token_rejected_once_already_used(test_client, db_session, sample_g
     db_session.add(models.Token(team_id=team.id, token_type=models.TokenType.SWAP, is_used=False))
     db_session.commit()
 
-    first = test_client.post("/tokens/use", json={"team_id": team.id, "token_type": "SWAP"})
+    first = test_client.post(
+        "/tokens/use",
+        json={"team_id": team.id, "token_type": "SWAP"},
+        headers={"X-Team-Token": team.team_token},
+    )
     assert first.status_code == 200
 
     db_session.refresh(sample_game_session)
     question_after_first_swap = sample_game_session.current_question_id
     assert question_after_first_swap != sample_questions_for_theme[0].id
 
-    again = test_client.post("/tokens/use", json={"team_id": team.id, "token_type": "SWAP"})
+    again = test_client.post(
+        "/tokens/use",
+        json={"team_id": team.id, "token_type": "SWAP"},
+        headers={"X-Team-Token": team.team_token},
+    )
     assert again.status_code == 400
 
     db_session.refresh(sample_game_session)
@@ -235,6 +251,7 @@ def test_concurrent_swap_requests_fire_only_once():
         setup_db.add(models.Token(team_id=team.id, token_type=models.TokenType.SWAP, is_used=False))
         setup_db.commit()
         team_id = team.id
+        team_token = team.team_token
         setup_db.close()
 
         responses = []
@@ -242,7 +259,11 @@ def test_concurrent_swap_requests_fire_only_once():
 
         def fire():
             start_barrier.wait()  # force le chevauchement réel des 2 requêtes
-            resp = client.post("/tokens/use", json={"team_id": team_id, "token_type": "SWAP"})
+            resp = client.post(
+                "/tokens/use",
+                json={"team_id": team_id, "token_type": "SWAP"},
+                headers={"X-Team-Token": team_token},
+            )
             responses.append(resp)
 
         t1 = threading.Thread(target=fire)

@@ -6,8 +6,12 @@ import json
 from app import models
 
 
-def _use_bonus(test_client, team_id):
-    return test_client.post("/tokens/use", json={"team_id": team_id, "token_type": "BONUS"})
+def _use_bonus(test_client, team):
+    return test_client.post(
+        "/tokens/use",
+        json={"team_id": team.id, "token_type": "BONUS"},
+        headers={"X-Team-Token": team.team_token},
+    )
 
 
 def test_bonus_token_doubles_awarded_points(test_client, db_session, sample_game_session, sample_team, sample_question):
@@ -15,7 +19,7 @@ def test_bonus_token_doubles_awarded_points(test_client, db_session, sample_game
         db_session.add(models.Token(team_id=sample_team.id, token_type=token_type, is_used=False))
     db_session.commit()
 
-    resp = _use_bonus(test_client, sample_team.id)
+    resp = _use_bonus(test_client, sample_team)
     assert resp.status_code == 200
 
     db_session.refresh(sample_team)
@@ -50,7 +54,7 @@ def test_bonus_token_consumed_even_on_wrong_answer(test_client, db_session, samp
     db_session.add(models.Token(team_id=sample_team.id, token_type=models.TokenType.BONUS, is_used=False))
     db_session.commit()
 
-    _use_bonus(test_client, sample_team.id)
+    _use_bonus(test_client, sample_team)
     db_session.refresh(sample_team)
     assert sample_team.bonus_active is True
 

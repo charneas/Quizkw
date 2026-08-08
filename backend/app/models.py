@@ -76,6 +76,12 @@ class Team(Base):
     color = Column(String, nullable=True)  # Round 3 color selection
     selected_theme_ids = Column(JSON, nullable=True)  # Round 3 selected theme IDs [1,2,3]
     bonus_active = Column(Boolean, default=False, nullable=False)  # Jeton BONUS consommé sur la prochaine validation
+    # BUG-101d : jamais vérifié jusqu'ici (team_id brut, non authentifié) sur
+    # les endpoints qui consomment les jetons de l'équipe. Généré à la
+    # création de l'équipe, renvoyé une fois (create_team) puis à chaque
+    # adhésion (join_team, qui reste public — voir décision produit sur #55)
+    # afin que tous les coéquipiers d'une même équipe l'obtiennent.
+    team_token = Column(String, nullable=False, default=lambda: secrets.token_urlsafe(24))
 
     # Relations
     game_session = relationship("GameSession", back_populates="teams")
