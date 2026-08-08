@@ -25,12 +25,25 @@ import PlayerSelection from '../components/PlayerSelection'
 import TournamentProgressComponent from '../components/TournamentProgress'
 import ThemeSelectorComponent from '../components/ThemeSelector'
 import IntermediateLeaderboardComponent from '../components/IntermediateLeaderboard'
+import type { RoundType } from '../types'
+
+function getCurrentRoundPath(code: string, round?: RoundType) {
+  switch (round) {
+    case 'manche_1':
+      return `/game/${code}`
+    case 'manche_3':
+      return `/game/${code}/memory-grid`
+    case 'manche_2':
+    default:
+      return `/game/${code}/round2`
+  }
+}
 
 function Round2() {
   const { code } = useParams<{ code: string }>()
   const navigate = useNavigate()
   
-  const [, setGame] = useState<GameSession | null>(null)
+  const [game, setGame] = useState<GameSession | null>(null)
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null)
   const [themes, setThemes] = useState<Theme[]>([])
   const [selectedTheme, setSelectedTheme] = useState<Theme | null>(null)
@@ -270,7 +283,7 @@ function Round2() {
             </div>
             <button
               className="btn-danger"
-              onClick={() => navigate(`/game/${code}`)}
+              onClick={() => navigate(getCurrentRoundPath(code!, game?.current_round))}
             >
               Back to Game
             </button>
