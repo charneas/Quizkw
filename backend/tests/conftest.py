@@ -133,11 +133,6 @@ def sample_game_session(db_session):
     return game
 
 @pytest.fixture
-def host_headers(sample_game_session):
-    """En-tête X-Host-Token pour appeler les endpoints réservés au host (BUG-103)."""
-    return {"X-Host-Token": sample_game_session.host_token}
-
-@pytest.fixture
 def sample_team(db_session, sample_game_session):
     """Créer une équipe de test."""
     team = models.Team(

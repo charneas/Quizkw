@@ -1,6 +1,5 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
-from sqlalchemy.exc import IntegrityError
 import random
 from datetime import datetime
 from typing import List, Dict, Optional
@@ -13,44 +12,18 @@ class Round2Manager:
     def __init__(self, db: Session):
         self.db = db
     
-    def get_available_themes(self, game_session_id: int, count: int = 3) -> List[models.Theme]:
-        """Récupérer X thèmes aléatoires disponibles pour cette session.
-
-        Exclut les thèmes déjà choisis par un autre joueur de la même partie
-        (BUG-210 : sans cette exclusion, deux joueurs pouvaient se voir
-        attribuer le même thème, et un joueur tardif pouvait n'avoir plus
-        aucun thème distinct à choisir — BUG-202/BUG-208).
-        """
-        taken_theme_ids = {
-            row[0]
-            for row in self.db.query(models.PlayerRound2Stats.theme_id)
-            .filter(
-                models.PlayerRound2Stats.game_session_id == game_session_id,
-                models.PlayerRound2Stats.theme_id.isnot(None),
-            )
-            .all()
-        }
-
-        total_theme_count = self.db.query(models.Theme).count()
-        if total_theme_count == 0:
+    def get_available_themes(self, count: int = 3) -> List[models.Theme]:
+        """Récupérer X thèmes aléatoires disponibles"""
+        # Pour MVP: retourner tous les thèmes disponibles
+        all_themes = self.db.query(models.Theme).all()
+        if not all_themes:
             raise ValueError("Aucun thème disponible dans la base de données")
-
-        available_themes = (
-            self.db.query(models.Theme)
-            .filter(~models.Theme.id.in_(taken_theme_ids))
-            .all()
-        )
-        if not available_themes:
-            raise ValueError(
-                "Tous les thèmes disponibles ont déjà été attribués à d'autres "
-                "joueurs de cette partie"
-            )
-
+        
         # Sélectionner des thèmes aléatoires
-        if len(available_themes) <= count:
-            return available_themes
-
-        return random.sample(available_themes, count)
+        if len(all_themes) <= count:
+            return all_themes
+        
+        return random.sample(all_themes, count)
     
     def get_player_stats(self, player_id: int, game_session_id: int) -> models.PlayerRound2Stats:
         """Get or create Round 2 statistics for a player"""
@@ -111,35 +84,16 @@ class Round2Manager:
         stats = self.get_player_stats(player_id, game_session_id)
         if stats.theme_id is not None:
             raise ValueError("Player has already selected a theme")
-
-        # Check if another player in this session already took this theme
-        # (BUG-210 : la vérification précédente ne portait que sur le joueur
-        # courant, jamais sur les autres joueurs de la même partie)
-        already_taken = self.db.query(models.PlayerRound2Stats).filter(
-            models.PlayerRound2Stats.game_session_id == game_session_id,
-            models.PlayerRound2Stats.player_id != player_id,
-            models.PlayerRound2Stats.theme_id == theme_id,
-        ).first()
-        if already_taken:
-            raise ValueError("Ce thème a déjà été choisi par un autre joueur")
-
+        
         # Update player stats
         stats.theme_id = theme_id
         stats.theme_selected_at = datetime.now()
         stats.qualification_status = models.QualificationStatus.PLAYING
         stats.current_question_index = 0
-
-        # Force flush and commit to ensure changes are persisted.
-        # La contrainte unique (game_session_id, theme_id) en base est le
-        # vrai garde-fou contre la race condition entre le check ci-dessus et
-        # ce commit : deux joueurs peuvent passer le check en même temps,
-        # seul le premier commit réussit.
-        try:
-            self.db.flush()
-            self.db.commit()
-        except IntegrityError:
-            self.db.rollback()
-            raise ValueError("Ce thème a déjà été choisi par un autre joueur")
+        
+        # Force flush and commit to ensure changes are persisted
+        self.db.flush()
+        self.db.commit()
         
         # CRITICAL FIX: Clear session cache and re-query to avoid object identity issues
         self.db.expire_all()
