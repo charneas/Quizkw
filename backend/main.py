@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import random
 import string
 from sqlalchemy.orm import Session
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, case
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
@@ -1942,8 +1942,21 @@ def use_token(data: dict, db: Session = Depends(get_db)):
     if chosen_token:
         penalized_teams = []
         if token_type == "PENALTY" and target_team:
-            # Retire des points à l'équipe ciblée uniquement (score plancher à 0).
-            target_team.score = max(0, target_team.score - PENALTY_POINTS)
+            # Mise à jour atomique du score (UPDATE ... SET score = CASE ...,
+            # même logique portable que plus haut) plutôt qu'un
+            # read-modify-write sur l'objet Python : deux PENALTY concurrentes
+            # visant la même équipe perdraient sinon l'une des deux
+            # pénalités (BUG-101b).
+            db.query(models.Team).filter(models.Team.id == target_team.id).update(
+                {
+                    "score": case(
+                        (models.Team.score - PENALTY_POINTS < 0, 0),
+                        else_=models.Team.score - PENALTY_POINTS,
+                    )
+                },
+                synchronize_session=False,
+            )
+            db.refresh(target_team)
             penalized_teams.append({"team_id": target_team.id, "new_score": target_team.score})
         elif token_type == "BONUS":
             # Consommé à la prochaine validation de réponse de cette équipe (voir validate_answers).
