@@ -1566,19 +1566,19 @@ def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_d
     ping_pong_manager = PingPongManager(db)
     active_duel_for_team = None
 
-    # Chercher un duel actif où cette équipe est impliquée
+    # Chercher un duel actif où cette équipe est impliquée. Une seule requête
+    # avec OR, triée par le plus récent (BUG-101c) — l'ancien schéma en deux
+    # requêtes séparées (team1 d'abord, puis team2 en repli) pouvait désigner
+    # un duel différent de celui utilisé par le jeton SWAP dans /tokens/use
+    # si l'équipe se retrouvait dans plusieurs duels actifs.
     active_duel = db.query(models.PingPongDuel).filter(
         models.PingPongDuel.game_session_id == game.id,
         models.PingPongDuel.is_completed == False,
-        models.PingPongDuel.team1_id == team_id,
-    ).first()
-
-    if not active_duel:
-        active_duel = db.query(models.PingPongDuel).filter(
-            models.PingPongDuel.game_session_id == game.id,
-            models.PingPongDuel.is_completed == False,
+        or_(
+            models.PingPongDuel.team1_id == team_id,
             models.PingPongDuel.team2_id == team_id,
-        ).first()
+        ),
+    ).order_by(models.PingPongDuel.id.desc()).first()
 
     if active_duel:
         try:
@@ -1798,27 +1798,41 @@ def resolve_manche1_end(db: Session, game: models.GameSession) -> dict:
             pp_manager = PingPongManager(db)
             theme = pp_manager.get_random_theme()
             if theme:
-                duel = pp_manager.start_duel(
-                    game_session_id=game.id,
-                    theme_id=theme.id,
-                    team1_id=team_a.id,
-                    team2_id=team_b.id,
-                )
-                duel.is_tiebreak = True
-                db.add(models.WheelEffect(
-                    game_session_id=game.id,
-                    effect_type="tiebreak",
-                    value=None,
-                    target_team_id=team_a.id,
-                    is_applied=True,
-                ))
-                db.commit()
-                return {
-                    "status": "tiebreak_started",
-                    "duel_id": duel.id,
-                    "team1_id": team_a.id,
-                    "team2_id": team_b.id,
-                }
+                try:
+                    duel = pp_manager.start_duel(
+                        game_session_id=game.id,
+                        theme_id=theme.id,
+                        team1_id=team_a.id,
+                        team2_id=team_b.id,
+                    )
+                except ValueError as e:
+                    # BUG-101c : start_duel refuse désormais de créer un duel
+                    # si une des deux équipes a déjà un duel actif (ex. duel
+                    # abandonné jamais complété). Ne doit pas bloquer la fin
+                    # de la Manche 1 pour autant — on qualifie sans trancher
+                    # par duel de départage plutôt que de planter la requête
+                    # (voir la branche de fallback "qualify" plus bas).
+                    logger.warning(
+                        "Fin de Manche 1 : duel de départage impossible pour %s : %s",
+                        game.code, e,
+                    )
+                    duel = None
+                if duel:
+                    duel.is_tiebreak = True
+                    db.add(models.WheelEffect(
+                        game_session_id=game.id,
+                        effect_type="tiebreak",
+                        value=None,
+                        target_team_id=team_a.id,
+                        is_applied=True,
+                    ))
+                    db.commit()
+                    return {
+                        "status": "tiebreak_started",
+                        "duel_id": duel.id,
+                        "team1_id": team_a.id,
+                        "team2_id": team_b.id,
+                    }
 
     try:
         result = manager.qualify_players_from_round1(game.id)
@@ -1968,13 +1982,17 @@ def use_token(data: dict, db: Session = Depends(get_db)):
             # touchait jusqu'ici que la question de Manche 1, jamais le
             # thème d'un duel en cours — bug utilisateur). Sinon : change la
             # question courante de la partie.
+            # order_by en défense en profondeur : PingPongManager.start_duel
+            # empêche désormais qu'une équipe se retrouve dans 2 duels actifs
+            # (BUG-101c), mais si ce garde-fou était contourné, on cible le
+            # duel le plus récent plutôt qu'un résultat arbitraire.
             active_duel = db.query(models.PingPongDuel).filter(
                 models.PingPongDuel.is_completed == False,
                 or_(
                     models.PingPongDuel.team1_id == team_id,
                     models.PingPongDuel.team2_id == team_id,
                 ),
-            ).first()
+            ).order_by(models.PingPongDuel.id.desc()).first()
             if active_duel:
                 new_theme = db.query(models.PingPongTheme).filter(
                     models.PingPongTheme.id != active_duel.theme_id

@@ -105,3 +105,42 @@ def test_manche1_end_triggers_tiebreak_duel_on_ambiguous_tie(test_client, db_ses
     winner_team = db_session.query(models.Team).filter(models.Team.id == winner_team_id).first()
     # 70 + 2 (victoire du duel, règle standard PingPongManager) + 1 (départage)
     assert winner_team.score == 73
+
+
+def test_manche1_end_qualifies_without_crashing_if_tiebreak_duel_unavailable(test_client, db_session, sample_game_session, sample_question, host_headers):
+    """BUG-101c : PingPongManager.start_duel refuse désormais de créer un
+    duel si une des deux équipes en a déjà un actif (ex. duel abandonné
+    jamais complété). resolve_manche1_end doit absorber ce refus et qualifier
+    normalement plutôt que de planter la requête qui termine la Manche 1 —
+    la fin de manche ne doit jamais être bloquée par un duel fantôme."""
+    t1 = _make_team(db_session, sample_game_session, "T1", score=100)
+    t2 = _make_team(db_session, sample_game_session, "T2", score=90)
+    t3 = _make_team(db_session, sample_game_session, "T3", score=80)
+    t4 = _make_team(db_session, sample_game_session, "T4", score=70)
+    t5 = _make_team(db_session, sample_game_session, "T5", score=70)
+
+    theme = models.PingPongTheme(title="Capitales", correct_answers=["Paris"])
+    db_session.add(theme)
+    db_session.commit()
+    db_session.refresh(theme)
+
+    # T4 a déjà un duel actif non lié au départage (ex. duel abandonné en
+    # cours de partie) : le duel de départage T4/T5 ne peut plus démarrer.
+    stuck_duel = models.PingPongDuel(
+        game_session_id=sample_game_session.id, theme_id=theme.id,
+        team1_id=t4.id, team2_id=t1.id,
+        current_turn_team_id=t4.id, is_completed=False, answers_used=[],
+    )
+    db_session.add(stuck_duel)
+    db_session.commit()
+
+    _play_to_question(test_client, sample_game_session.code, 19, host_headers)
+    resp = test_client.post(f"/games/{sample_game_session.code}/next-question", headers=host_headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    # Pas de 500, et la Manche 1 se termine quand même (qualification directe,
+    # sans duel de départage, faute de pouvoir en démarrer un).
+    assert body["manche1_end"]["status"] in ("qualified", "qualification_failed")
+
+    db_session.refresh(sample_game_session)
+    assert sample_game_session.current_round == models.RoundType.MANCHE_2

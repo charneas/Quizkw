@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from datetime import datetime
 from typing import Dict, Optional, List
 from . import models, schemas
@@ -53,6 +53,29 @@ class PingPongManager:
 
         if team1_id == team2_id:
             raise ValueError("A team cannot duel itself")
+
+        # Empêche une équipe de se retrouver dans 2 duels actifs simultanés
+        # (BUG-101c) : use_token (SWAP) et get_team_specific_state
+        # recherchent "le" duel actif d'une équipe via .first() sans critère
+        # de désambiguïsation — s'il en existait plusieurs, l'un d'eux serait
+        # choisi arbitrairement et pourrait recevoir l'effet d'un jeton ou
+        # un état affiché destiné à l'autre.
+        existing_active_duel = (
+            self.db.query(models.PingPongDuel)
+            .filter(
+                models.PingPongDuel.game_session_id == game_session_id,
+                models.PingPongDuel.is_completed == False,
+                or_(
+                    models.PingPongDuel.team1_id.in_([team1_id, team2_id]),
+                    models.PingPongDuel.team2_id.in_([team1_id, team2_id]),
+                ),
+            )
+            .first()
+        )
+        if existing_active_duel:
+            raise ValueError(
+                "One of the teams already has an active ping-pong duel"
+            )
 
         # Créer le duel
         duel = models.PingPongDuel(
