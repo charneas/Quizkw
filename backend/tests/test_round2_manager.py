@@ -10,7 +10,7 @@ import json
 class TestRound2Manager:
     """Tests pour la classe Round2Manager."""
     
-    def test_get_available_themes(self, round2_manager, sample_theme, sample_game_session):
+    def test_get_available_themes(self, round2_manager, sample_theme, sample_questions_for_theme, sample_game_session):
         """Test que get_available_themes retourne des thèmes disponibles."""
         themes = round2_manager.get_available_themes(sample_game_session.id, count=3)
         assert len(themes) > 0
@@ -18,6 +18,30 @@ class TestRound2Manager:
         # Au moins notre thème de test devrait être présent
         theme_names = [theme.name for theme in themes]
         assert "Test Theme" in theme_names
+
+    def test_get_available_themes_excludes_incomplete_themes(
+        self, round2_manager, db_session, sample_theme, sample_game_session
+    ):
+        """BUG-209 : un thème dont moins de 10 questions ont été seedées ne
+        doit pas être proposé (sinon les questions manquantes ne s'affichent
+        pas pour le joueur en fin de parcours)."""
+        from app.models import Question, Difficulty
+
+        for i in range(1, 6):
+            db_session.add(Question(
+                text=f"Incomplete theme question {i}",
+                category=sample_theme.category.value,
+                difficulty=Difficulty.EASY,
+                points=2,
+                correct_answer=f"Correct {i}",
+                wrong_answers=json.dumps([f"Wrong {i}a", f"Wrong {i}b", f"Wrong {i}c"]),
+                theme_id=sample_theme.id,
+                question_number=i,
+            ))
+        db_session.commit()
+
+        with pytest.raises(ValueError, match="Aucun thème disponible|déjà été attribués"):
+            round2_manager.get_available_themes(sample_game_session.id, count=3)
 
     def test_get_available_themes_no_themes(self, round2_manager, db_session, sample_game_session):
         """Test get_available_themes quand il n'y a pas de thèmes."""
@@ -29,11 +53,12 @@ class TestRound2Manager:
             round2_manager.get_available_themes(sample_game_session.id, count=3)
 
     def test_get_available_themes_excludes_themes_taken_by_other_players(
-        self, round2_manager, db_session, sample_theme, sample_game_session, sample_player
+        self, round2_manager, db_session, sample_theme, sample_questions_for_theme, sample_game_session, sample_player
     ):
         """BUG-202/BUG-210 : un thème déjà choisi par un autre joueur de la
         même partie ne doit plus être proposé aux joueurs suivants."""
-        from app.models import Theme
+        from app.models import Theme, Question, Difficulty
+        import json
 
         other_theme = Theme(
             name="Other Theme",
@@ -41,6 +66,20 @@ class TestRound2Manager:
             difficulty_level=sample_theme.difficulty_level,
         )
         db_session.add(other_theme)
+        db_session.commit()
+        db_session.refresh(other_theme)
+
+        for i in range(1, 11):
+            db_session.add(Question(
+                text=f"Other theme question {i}",
+                category=other_theme.category.value,
+                difficulty=Difficulty.EASY if i <= 3 else Difficulty.MEDIUM if i <= 6 else Difficulty.HARD,
+                points=2 if i <= 3 else 4 if i <= 6 else 6,
+                correct_answer=f"Correct {i}",
+                wrong_answers=json.dumps([f"Wrong {i}a", f"Wrong {i}b", f"Wrong {i}c"]),
+                theme_id=other_theme.id,
+                question_number=i,
+            ))
         db_session.commit()
 
         round2_manager.select_theme(

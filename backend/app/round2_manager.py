@@ -9,10 +9,16 @@ from . import models, schemas
 
 class Round2Manager:
     """Manager pour gérer la logique métier de Round 2"""
-    
+
+    # Nombre de questions attendu par thème (difficulté progressive 1-10,
+    # voir submit_answer/get_next_question). Un thème en dessous ne peut pas
+    # être joué jusqu'au bout sans tomber sur des questions de secours
+    # générées à la volée (BUG-209) — on l'exclut donc de la sélection.
+    QUESTIONS_PER_THEME = 10
+
     def __init__(self, db: Session):
         self.db = db
-    
+
     def get_available_themes(self, game_session_id: int, count: int = 3) -> List[models.Theme]:
         """Récupérer X thèmes aléatoires disponibles pour cette session.
 
@@ -20,6 +26,10 @@ class Round2Manager:
         (BUG-210 : sans cette exclusion, deux joueurs pouvaient se voir
         attribuer le même thème, et un joueur tardif pouvait n'avoir plus
         aucun thème distinct à choisir — BUG-202/BUG-208).
+
+        Exclut aussi les thèmes n'ayant pas leurs 10 questions complètes
+        (BUG-209 : un thème incomplet, ex. 5 questions seedées, ne peut pas
+        être proposé aux joueurs).
         """
         taken_theme_ids = {
             row[0]
@@ -35,9 +45,21 @@ class Round2Manager:
         if total_theme_count == 0:
             raise ValueError("Aucun thème disponible dans la base de données")
 
+        complete_theme_ids = {
+            row[0]
+            for row in self.db.query(models.Question.theme_id)
+            .filter(models.Question.theme_id.isnot(None))
+            .group_by(models.Question.theme_id)
+            .having(func.count(models.Question.id) >= self.QUESTIONS_PER_THEME)
+            .all()
+        }
+
         available_themes = (
             self.db.query(models.Theme)
-            .filter(~models.Theme.id.in_(taken_theme_ids))
+            .filter(
+                ~models.Theme.id.in_(taken_theme_ids),
+                models.Theme.id.in_(complete_theme_ids),
+            )
             .all()
         )
         if not available_themes:
