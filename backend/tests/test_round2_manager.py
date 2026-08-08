@@ -10,24 +10,89 @@ import json
 class TestRound2Manager:
     """Tests pour la classe Round2Manager."""
     
-    def test_get_available_themes(self, round2_manager, sample_theme):
+    def test_get_available_themes(self, round2_manager, sample_theme, sample_game_session):
         """Test que get_available_themes retourne des thèmes disponibles."""
-        themes = round2_manager.get_available_themes(count=3)
+        themes = round2_manager.get_available_themes(sample_game_session.id, count=3)
         assert len(themes) > 0
         assert isinstance(themes, list)
         # Au moins notre thème de test devrait être présent
         theme_names = [theme.name for theme in themes]
         assert "Test Theme" in theme_names
-        
-    def test_get_available_themes_no_themes(self, round2_manager, db_session):
+
+    def test_get_available_themes_no_themes(self, round2_manager, db_session, sample_game_session):
         """Test get_available_themes quand il n'y a pas de thèmes."""
         # Supprimer tous les thèmes
         db_session.query(self._get_theme_model()).delete()
         db_session.commit()
-        
+
         with pytest.raises(ValueError, match="Aucun thème disponible"):
-            round2_manager.get_available_themes(count=3)
-            
+            round2_manager.get_available_themes(sample_game_session.id, count=3)
+
+    def test_get_available_themes_excludes_themes_taken_by_other_players(
+        self, round2_manager, db_session, sample_theme, sample_game_session, sample_player
+    ):
+        """BUG-202/BUG-210 : un thème déjà choisi par un autre joueur de la
+        même partie ne doit plus être proposé aux joueurs suivants."""
+        from app.models import Theme
+
+        other_theme = Theme(
+            name="Other Theme",
+            category=sample_theme.category,
+            difficulty_level=sample_theme.difficulty_level,
+        )
+        db_session.add(other_theme)
+        db_session.commit()
+
+        round2_manager.select_theme(
+            player_id=sample_player.id,
+            game_session_id=sample_game_session.id,
+            theme_id=sample_theme.id,
+        )
+
+        themes = round2_manager.get_available_themes(sample_game_session.id, count=3)
+        theme_ids = [theme.id for theme in themes]
+        assert sample_theme.id not in theme_ids
+        assert other_theme.id in theme_ids
+
+    def test_get_available_themes_all_taken_raises_distinct_message(
+        self, round2_manager, db_session, sample_theme, sample_game_session, sample_player
+    ):
+        """BUG-202 : quand tous les thèmes existants sont déjà pris par
+        d'autres joueurs, l'erreur doit se distinguer d'une base vide."""
+        round2_manager.select_theme(
+            player_id=sample_player.id,
+            game_session_id=sample_game_session.id,
+            theme_id=sample_theme.id,
+        )
+
+        with pytest.raises(ValueError, match="déjà été attribués"):
+            round2_manager.get_available_themes(sample_game_session.id, count=3)
+
+    def test_select_theme_rejects_theme_taken_by_another_player(
+        self, round2_manager, db_session, sample_theme, sample_game_session, sample_player, sample_team
+    ):
+        """BUG-210 : select_theme doit refuser un thème déjà choisi par un
+        autre joueur de la même partie, pas seulement par le joueur courant."""
+        from app.models import Player
+
+        other_player = Player(name="Other Player", team_id=sample_team.id)
+        db_session.add(other_player)
+        db_session.commit()
+        db_session.refresh(other_player)
+
+        round2_manager.select_theme(
+            player_id=sample_player.id,
+            game_session_id=sample_game_session.id,
+            theme_id=sample_theme.id,
+        )
+
+        with pytest.raises(ValueError, match="déjà été choisi par un autre joueur"):
+            round2_manager.select_theme(
+                player_id=other_player.id,
+                game_session_id=sample_game_session.id,
+                theme_id=sample_theme.id,
+            )
+
     def _get_theme_model(self):
         """Helper pour obtenir le modèle Theme depuis l'import."""
         from app.models import Theme
@@ -590,8 +655,9 @@ class TestRound1ToRound2Qualification:
         # submit_answer:172-174).
         for stats in stats_list:
             round2_manager = self._round2_manager(db_session)
-            round2_manager.select_theme(stats.player_id, sample_game_session.id, sample_theme.id)
-            for question in sample_questions_for_theme:
+            theme, questions = self._make_theme_with_questions(db_session, sample_theme)
+            round2_manager.select_theme(stats.player_id, sample_game_session.id, theme.id)
+            for question in questions:
                 round2_manager.submit_answer(
                     stats.player_id, sample_game_session.id, question.id, question.correct_answer
                 )
@@ -611,6 +677,48 @@ class TestRound1ToRound2Qualification:
     def _round2_manager(self, db_session):
         from app.round2_manager import Round2Manager
         return Round2Manager(db_session)
+
+    def _make_theme_with_questions(self, db_session, sample_theme):
+        """Crée un thème distinct de sample_theme, avec les mêmes 10 questions.
+
+        Nécessaire depuis que select_theme refuse qu'un thème soit choisi par
+        deux joueurs de la même partie (BUG-210) : ces tests de pipeline
+        multi-joueurs ne peuvent plus faire choisir le même sample_theme à
+        tout le monde.
+        """
+        import json
+        import uuid
+        from app import models
+
+        theme = models.Theme(
+            name=f"Theme {sample_theme.id}-{uuid.uuid4().hex[:8]}",
+            category=sample_theme.category,
+            difficulty_level=sample_theme.difficulty_level,
+            description="Cloned test theme",
+        )
+        db_session.add(theme)
+        db_session.commit()
+        db_session.refresh(theme)
+
+        questions = []
+        for i in range(1, 11):
+            question = models.Question(
+                text=f"Test question {i} for theme {theme.name}",
+                category=theme.category.value,
+                difficulty=models.Difficulty.EASY if i <= 3 else models.Difficulty.MEDIUM if i <= 6 else models.Difficulty.HARD,
+                points=2 if i <= 3 else 4 if i <= 6 else 6,
+                correct_answer=f"Correct answer {i}",
+                wrong_answers=json.dumps([f"Wrong {i}a", f"Wrong {i}b", f"Wrong {i}c"]),
+                theme_id=theme.id,
+                question_number=i,
+            )
+            db_session.add(question)
+            questions.append(question)
+        db_session.commit()
+        for q in questions:
+            db_session.refresh(q)
+
+        return theme, questions
 
     def test_advance_blocks_promotion_while_a_qualified_player_still_playing(
         self, test_client, db_session, sample_game_session, sample_theme, sample_questions_for_theme, host_headers
@@ -638,8 +746,9 @@ class TestRound1ToRound2Qualification:
         still_playing_stats = stats_list[0]
         for stats in stats_list[1:]:
             round2_manager = self._round2_manager(db_session)
-            round2_manager.select_theme(stats.player_id, sample_game_session.id, sample_theme.id)
-            for question in sample_questions_for_theme:
+            theme, questions = self._make_theme_with_questions(db_session, sample_theme)
+            round2_manager.select_theme(stats.player_id, sample_game_session.id, theme.id)
+            for question in questions:
                 round2_manager.submit_answer(
                     stats.player_id, sample_game_session.id, question.id, question.correct_answer
                 )
@@ -673,8 +782,9 @@ class TestRound1ToRound2Qualification:
         ).all()
         for stats in stats_list:
             round2_manager = self._round2_manager(db_session)
-            round2_manager.select_theme(stats.player_id, sample_game_session.id, sample_theme.id)
-            for question in sample_questions_for_theme:
+            theme, questions = self._make_theme_with_questions(db_session, sample_theme)
+            round2_manager.select_theme(stats.player_id, sample_game_session.id, theme.id)
+            for question in questions:
                 round2_manager.submit_answer(
                     stats.player_id, sample_game_session.id, question.id, question.correct_answer
                 )
