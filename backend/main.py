@@ -1912,17 +1912,34 @@ def use_token(data: dict, db: Session = Depends(get_db)):
         if not target_team:
             raise HTTPException(status_code=404, detail="Équipe cible non trouvée dans cette partie")
 
-    # Recherche du jeton SPÉCIFIQUE demandé qui n'a pas encore été utilisé
-    chosen_token = db.query(models.Token).filter(
+    # Consomme le jeton via un UPDATE conditionnel (WHERE id=... AND
+    # is_used=False), et vérifie le nombre de lignes modifiées, plutôt qu'un
+    # SELECT suivi d'une écriture séparée sur l'objet en mémoire. Portable
+    # SQLite/PostgreSQL — contrairement à SELECT ... FOR UPDATE, qui est un
+    # no-op silencieux sur SQLite (le moteur utilisé en production ici) et ne
+    # protégeait donc pas réellement contre la course entre deux requêtes
+    # concurrentes sur le même jeton (ex. deux coéquipiers cliquant SWAP au
+    # même moment), cause de BUG-101 : "swaps infinis". L'UPDATE lui-même
+    # sérialise les écritures concurrentes ; seule l'une d'elles peut modifier
+    # une ligne encore à is_used=False, l'autre affecte 0 ligne.
+    candidate_token = db.query(models.Token).filter(
         models.Token.team_id == team_id,
         models.Token.token_type == token_type,
         models.Token.is_used == False
     ).first()
 
-    # Si le jeton de ce type existe et est disponible, on le consomme
-    if chosen_token:
-        chosen_token.is_used = True
+    chosen_token = None
+    if candidate_token:
+        rows_updated = db.query(models.Token).filter(
+            models.Token.id == candidate_token.id,
+            models.Token.is_used == False
+        ).update({"is_used": True}, synchronize_session=False)
+        if rows_updated:
+            candidate_token.is_used = True
+            chosen_token = candidate_token
 
+    # Si le jeton de ce type existe et était disponible, on applique son effet
+    if chosen_token:
         penalized_teams = []
         if token_type == "PENALTY" and target_team:
             # Retire des points à l'équipe ciblée uniquement (score plancher à 0).
