@@ -205,9 +205,16 @@ def test_question_stats_no_answers(authenticated_client):
 def test_question_stats_with_answers(authenticated_client, db_session, sample_team, sample_question):
     from app import models
 
+    # Une équipe ne répond qu'une fois par question (contrainte unique
+    # question_id+team_id, BUG-110) : il faut 2 équipes distinctes ici.
+    other_team = models.Team(name="Other Team", game_session_id=sample_team.game_session_id, score=0)
+    db_session.add(other_team)
+    db_session.commit()
+    db_session.refresh(other_team)
+
     db_session.add_all([
         models.Answer(question_id=sample_question.id, team_id=sample_team.id, player_answer="Paris", is_correct=True, points_earned=2),
-        models.Answer(question_id=sample_question.id, team_id=sample_team.id, player_answer="Berlin", is_correct=False, points_earned=0),
+        models.Answer(question_id=sample_question.id, team_id=other_team.id, player_answer="Berlin", is_correct=False, points_earned=0),
     ])
     db_session.commit()
 

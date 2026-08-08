@@ -1,12 +1,14 @@
 import logging
+import secrets
 from typing import Optional
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 import random
 import string
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from app.database import get_db, engine
 from app import models, schemas
@@ -81,6 +83,26 @@ app.include_router(propositions_router)
 def generate_session_code(length=6):
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
 
+
+def require_host(code: str, x_host_token: Optional[str] = Header(default=None), db: Session = Depends(get_db)) -> models.GameSession:
+    """
+    Dépendance FastAPI protégeant les endpoints de contrôle de partie (BUG-103).
+    Le host_token est généré à la création de la partie (POST /games/) et
+    connu du seul créateur : c'est la seule preuve d'identité host, il n'y a
+    pas de notion de compte/session par ailleurs.
+    """
+    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
+    if not x_host_token or not secrets.compare_digest(x_host_token, game.host_token):
+        raise HTTPException(status_code=403, detail="Action réservée à l'hôte de la partie")
+    return game
+
+
+def require_host_by_game_code(game_code: str, x_host_token: Optional[str] = Header(default=None), db: Session = Depends(get_db)) -> models.GameSession:
+    """Variante de require_host pour les routes utilisant `game_code` (Manche 2)."""
+    return require_host(game_code, x_host_token, db)
+
 @app.get("/")
 def read_root():
     return {"message": "Bienvenue sur l'API Quizkw !", "version": "1.0.0"}
@@ -106,16 +128,18 @@ def create_game(game_create: schemas.GameSessionCreate, db: Session = Depends(ge
         players_per_team=game_create.players_per_team,
         current_round=models.RoundType.MANCHE_1,
         is_active=True,
-        started=False
+        started=False,
+        host_token=secrets.token_urlsafe(24)
     )
-    
+
     db.add(game)
     db.commit()
     db.refresh(game)
-    
+
     return {
         "game": game,
-        "message": f"Session de jeu créée avec le code: {code}"
+        "message": f"Session de jeu créée avec le code: {code}",
+        "host_token": game.host_token
     }
 
 @app.get("/games/{code}", response_model=schemas.GameSession)
@@ -213,7 +237,7 @@ def join_team(code: str, team_id: int, player_create: schemas.PlayerCreate, db: 
     return player
 
 @app.post("/games/{code}/start")
-def start_game(code: str, db: Session = Depends(get_db)):
+def start_game(code: str, db: Session = Depends(get_db), _host: models.GameSession = Depends(require_host)):
     """
     Démarrer une session de jeu (avec auto-fill des joueurs si nécessaire pour le développement)
     """
@@ -304,7 +328,7 @@ def get_random_question(category: str = None, difficulty: schemas.DifficultyEnum
     }
 
 @app.post("/games/{code}/set-current-question")
-def set_current_question(code: str, request: schemas.SetCurrentQuestionRequest, db: Session = Depends(get_db)):
+def set_current_question(code: str, request: schemas.SetCurrentQuestionRequest, db: Session = Depends(get_db), _host: models.GameSession = Depends(require_host)):
     """
     Définir la question courante pour toutes les équipes (synchronisation)
     """
@@ -408,47 +432,48 @@ def submit_answer(answer_create: schemas.AnswerCreate, db: Session = Depends(get
     if not team:
         raise HTTPException(status_code=404, detail="Équipe non trouvée")
 
-    # Empêcher les réponses en double pour la même question/équipe
-    existing = db.query(models.Answer).filter(
-        models.Answer.question_id == answer_create.question_id,
-        models.Answer.team_id == answer_create.team_id,
-    ).first()
-    if existing:
-        # Retourner la réponse existante sans créer de doublon
-        return {
-            "is_correct": existing.is_correct,
-            "correct_answer": question.correct_answer,
-            "points_earned": existing.points_earned,
-            "team_score": team.score,
-            "pending_validation": True,
-        }
-
-    # Vérifier si la réponse est correcte (sans attribuer les points — l'host valide)
     is_correct = answer_create.player_answer.strip().lower() == question.correct_answer.strip().lower()
-    
-    # Ne PAS ajouter les points maintenant — l'host les validera via /validate-answers
-    # On enregistre juste la réponse avec points_earned=0 (sera mis à jour par l'host)
-    answer = models.Answer(
+
+    # BUG-110 : upsert atomique sur la contrainte unique (question_id, team_id).
+    # Chaque coéquipier peut soumettre/corriger la réponse d'équipe tant que
+    # l'host n'a pas validé ; la clause WHERE rend le verrouillage post-validation
+    # atomique lui aussi (pas de fenêtre de course entre lecture et écriture).
+    stmt = sqlite_insert(models.Answer).values(
         question_id=answer_create.question_id,
         team_id=answer_create.team_id,
         player_answer=answer_create.player_answer,
         is_correct=is_correct,
-        points_earned=0  # Points attribués par l'host lors de la validation
+        points_earned=0,
+    ).on_conflict_do_update(
+        index_elements=[models.Answer.question_id, models.Answer.team_id],
+        set_={
+            "player_answer": answer_create.player_answer,
+            "is_correct": is_correct,
+        },
+        where=models.Answer.validated_at.is_(None),
     )
-    
-    db.add(answer)
+    db.execute(stmt)
     db.commit()
-    
+
+    existing = db.query(models.Answer).filter(
+        models.Answer.question_id == answer_create.question_id,
+        models.Answer.team_id == answer_create.team_id,
+    ).first()
+    locked = existing.validated_at is not None
+
+    # Ne révéler is_correct/correct_answer qu'une fois la réponse verrouillée
+    # (validée par l'host) — sinon la soumission étant rejouable à volonté,
+    # ce serait un oracle permettant de deviner la bonne réponse.
     return {
-        "is_correct": is_correct,
-        "correct_answer": question.correct_answer,
-        "points_earned": 0,  # Pas encore de points — en attente de validation
+        "is_correct": existing.is_correct if locked else None,
+        "correct_answer": question.correct_answer if locked else None,
+        "points_earned": existing.points_earned,
         "team_score": team.score,
-        "pending_validation": True
+        "pending_validation": not locked,
     }
 
 @app.post("/games/{code}/validate-answers")
-def validate_answers(code: str, db: Session = Depends(get_db)):
+def validate_answers(code: str, db: Session = Depends(get_db), _host: models.GameSession = Depends(require_host)):
     """
     L'host valide les réponses de toutes les équipes pour la question courante.
     Attribue les points aux équipes qui ont répondu correctement.
@@ -480,6 +505,11 @@ def validate_answers(code: str, db: Session = Depends(get_db)):
         if answer.team_id in teams_processed:
             continue
         teams_processed.add(answer.team_id)
+        # Récupérer l'état le plus frais possible juste avant de calculer les
+        # points : une soumission concurrente a pu modifier is_correct entre
+        # le SELECT initial de cette fonction et ce point de la boucle.
+        db.refresh(answer)
+        answer.validated_at = func.now()
         team = db.query(models.Team).filter(models.Team.id == answer.team_id).first()
         if team and answer.is_correct and answer.points_earned == 0:
             points = award_points_with_bonus(team, question.points)
@@ -587,7 +617,7 @@ def spin_wheel(wheel_spin: schemas.WheelSpinRequest, db: Session = Depends(get_d
 
 # Phase 3 - Memory Grid Endpoints
 @app.post("/games/{code}/memory-grid/create", response_model=schemas.MemoryGrid)
-def create_memory_grid(code: str, db: Session = Depends(get_db)):
+def create_memory_grid(code: str, db: Session = Depends(get_db), _host: models.GameSession = Depends(require_host)):
     """
     Créer une grille mémoire pour la manche 3 (7x5 grid)
     """
@@ -615,7 +645,7 @@ def create_memory_grid(code: str, db: Session = Depends(get_db)):
     return memory_grid
 
 @app.post("/games/{code}/memory-grid/start", response_model=schemas.StartMemoryGridRoundResponse)
-def start_memory_grid_round(code: str, db: Session = Depends(get_db)):
+def start_memory_grid_round(code: str, db: Session = Depends(get_db), _host: models.GameSession = Depends(require_host)):
     """
     Démarrer un tour de grille mémoire
     """
@@ -755,7 +785,7 @@ def skip_turn(memory_grid_id: int, expected_turn: int = None, db: Session = Depe
     return {"memory_grid_id": memory_grid_id, "current_turn": new_turn}
 
 @app.post("/games/{code}/advance-to-phase3")
-def advance_to_phase3(code: str, db: Session = Depends(get_db)):
+def advance_to_phase3(code: str, db: Session = Depends(get_db), _host: models.GameSession = Depends(require_host)):
     """
     Pass to phase 3 (final round with memory grid)
     """
@@ -803,7 +833,7 @@ def advance_to_phase3(code: str, db: Session = Depends(get_db)):
 
 # Round 3 Enhanced Memory Grid Endpoints
 @app.post("/games/{code}/memory-grid/create-with-themes", response_model=schemas.MemoryGrid)
-def create_memory_grid_with_themes(code: str, rows: int = 7, cols: int = 5, db: Session = Depends(get_db)):
+def create_memory_grid_with_themes(code: str, rows: int = 7, cols: int = 5, db: Session = Depends(get_db), _host: models.GameSession = Depends(require_host)):
     """
     Create memory grid for Round 3 with theme-based cell assignment.
     Uses team.selected_theme_ids to assign 5 cells per team.
@@ -845,7 +875,7 @@ def get_finalists_from_round2(code: str, db: Session = Depends(get_db)):
     }
 
 @app.post("/games/{code}/qualify-round2")
-def qualify_players_from_round1(code: str, db: Session = Depends(get_db)):
+def qualify_players_from_round1(code: str, db: Session = Depends(get_db), _host: models.GameSession = Depends(require_host)):
     """
     Qualifier les 8 joueurs de la Manche 2 depuis les meilleures équipes.
 
@@ -1006,7 +1036,7 @@ def get_round2_themes(game_code: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Game session not found")
     
     manager = Round2Manager(db)
-    themes = manager.get_available_themes(count=3)
+    themes = manager.get_available_themes(game.id, count=3)
     
     return {
         "themes": themes,
@@ -1200,7 +1230,7 @@ def get_round2_leaderboard(game_code: str, db: Session = Depends(get_db)):
     return leaderboard
 
 @app.post("/round2/{game_code}/advance", response_model=schemas.Round2AdvanceResponse)
-def advance_round2_phase(game_code: str, db: Session = Depends(get_db)):
+def advance_round2_phase(game_code: str, db: Session = Depends(get_db), _host: models.GameSession = Depends(require_host_by_game_code)):
     """
     Advance to the next phase (16→8 or 8→4)
     """
@@ -1469,6 +1499,8 @@ def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_d
     # --- Statut de la question courante ---
     current_question_data = None
     has_answered = False
+    answer_locked = False
+    current_team_answer = None
     is_my_turn = True  # par défaut
 
     if game.current_question_id:
@@ -1477,13 +1509,18 @@ def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_d
         ).first()
 
         if question:
-            # Vérifier si cette équipe a déjà répondu à cette question
+            # Vérifier si cette équipe a déjà répondu à cette question.
+            # BUG-110 : has_answered ne verrouille plus le formulaire tant que
+            # l'host n'a pas validé — n'importe quel coéquipier peut corriger
+            # la réponse jusque-là (answer_locked = réponse validée par l'host).
             existing_answer = db.query(models.Answer).filter(
                 models.Answer.question_id == question.id,
                 models.Answer.team_id == team_id,
             ).first()
 
             has_answered = existing_answer is not None
+            answer_locked = existing_answer is not None and existing_answer.validated_at is not None
+            current_team_answer = existing_answer.player_answer if existing_answer else None
 
             # Mélanger les réponses de façon déterministe (basé sur le question_id)
             # pour que l'ordre soit stable entre les appels de polling
@@ -1501,8 +1538,10 @@ def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_d
                 "category": question.category,
                 "difficulty": question.difficulty.value,
                 "points": question.points,
-                "correct_answer": question.correct_answer if has_answered else None,  # Ne révéler qu'après réponse
+                "correct_answer": question.correct_answer if answer_locked else None,  # Ne révéler qu'après validation host
                 "options": options,
+                "answer_locked": answer_locked,
+                "current_team_answer": current_team_answer,
             }
 
     # Vérifier le statut des réponses pour déterminer si c'est le tour
@@ -1588,9 +1627,8 @@ def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_d
             "has_answered": t.id in answered_ids if game.current_question_id else False,
         })
 
-    # --- Auto-validation (no-host mode) ---
-    # When all teams have answered AND no host is present, auto-validate and return results.
-    # When a host IS present, the host validates manually via /validate-answers.
+    # Un host est désormais toujours présent (BUG-103) : la validation des
+    # réponses est systématiquement manuelle, via /validate-answers.
     all_teams_answered = False
     validation_result_data = None
 
@@ -1598,61 +1636,6 @@ def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_d
         all_teams_answered = (
             len(answered_ids) == len(team_ids_in_game) and len(team_ids_in_game) > 0
         )
-
-        if all_teams_answered and not game.has_host:
-            # No host → auto-validate answers and award points
-            question = db.query(models.Question).filter(
-                models.Question.id == game.current_question_id
-            ).first()
-
-            if question:
-                # Get answers for this game's teams only
-                game_answers = db.query(models.Answer).filter(
-                    models.Answer.question_id == game.current_question_id,
-                    models.Answer.team_id.in_(team_ids_in_game),
-                ).all()
-
-                # Auto-validate: award points (idempotent — won't double-count)
-                needs_validation = any(
-                    a.is_correct and a.points_earned == 0 for a in game_answers
-                )
-                if needs_validation:
-                    processed = set()
-                    for a in game_answers:
-                        if a.team_id in processed:
-                            continue
-                        processed.add(a.team_id)
-                        t = db.query(models.Team).filter(models.Team.id == a.team_id).first()
-                        if t and a.is_correct and a.points_earned == 0:
-                            points = award_points_with_bonus(t, question.points)
-                            a.points_earned = points
-                            t.score += points
-                        elif t:
-                            # Réponse fausse : le bonus visait cette question, consommé quand même.
-                            t.bonus_active = False
-                    db.commit()
-                    # Refresh this team's score after auto-validation
-                    db.refresh(team)
-
-                # Build validation result
-                teams_results = []
-                processed = set()
-                for a in game_answers:
-                    if a.team_id in processed:
-                        continue
-                    processed.add(a.team_id)
-                    t = db.query(models.Team).filter(models.Team.id == a.team_id).first()
-                    if t:
-                        teams_results.append({
-                            "team_name": t.name,
-                            "is_correct": a.is_correct,
-                            "points_earned": a.points_earned,
-                        })
-
-                validation_result_data = {
-                    "correct_answer": question.correct_answer,
-                    "teams": teams_results,
-                }
 
     # --- Dernier effet de roue (pour afficher un modal sur tous les écrans,
     # y compris ceux qui n'ont pas cliqué sur "Tour suivant") ---
@@ -1691,6 +1674,7 @@ def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_d
         "game_phase": game.current_round.value,
         "is_my_turn": is_my_turn,
         "has_answered": has_answered,
+        "answer_locked": answer_locked,
         "current_question": current_question_data,
         "active_duel": active_duel_for_team,
         "tokens": tokens_data,
@@ -1699,23 +1683,6 @@ def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_d
         "validation_result": validation_result_data,
         "last_wheel_event": last_wheel_event,
     }
-
-@app.post("/games/{code}/register-host")
-def register_host(code: str, db: Session = Depends(get_db)):
-    """
-    Enregistre qu'un hôte est connecté à cette session.
-    Quand un hôte est présent, la validation des réponses est manuelle (par l'hôte).
-    Sans hôte, les réponses sont auto-validées quand toutes les équipes ont répondu.
-    """
-    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
-    if not game:
-        raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
-    
-    game.has_host = True
-    db.commit()
-    
-    return {"message": "Hôte enregistré", "has_host": True}
-
 
 def trigger_wheel_effect(db: Session, game: models.GameSession) -> Optional[dict]:
     """Fait tourner la roue automatiquement pour l'équipe dont c'est le tour
@@ -1865,7 +1832,7 @@ def resolve_manche1_end(db: Session, game: models.GameSession) -> dict:
 
 
 @app.post("/games/{code}/next-question")
-def next_question(code: str, db: Session = Depends(get_db)):
+def next_question(code: str, db: Session = Depends(get_db), _host: models.GameSession = Depends(require_host)):
     """
     Passer à la question suivante (utilisable sans hôte).
     Choisit une question aléatoire et la définit comme question courante —
@@ -1945,17 +1912,34 @@ def use_token(data: dict, db: Session = Depends(get_db)):
         if not target_team:
             raise HTTPException(status_code=404, detail="Équipe cible non trouvée dans cette partie")
 
-    # Recherche du jeton SPÉCIFIQUE demandé qui n'a pas encore été utilisé
-    chosen_token = db.query(models.Token).filter(
+    # Consomme le jeton via un UPDATE conditionnel (WHERE id=... AND
+    # is_used=False), et vérifie le nombre de lignes modifiées, plutôt qu'un
+    # SELECT suivi d'une écriture séparée sur l'objet en mémoire. Portable
+    # SQLite/PostgreSQL — contrairement à SELECT ... FOR UPDATE, qui est un
+    # no-op silencieux sur SQLite (le moteur utilisé en production ici) et ne
+    # protégeait donc pas réellement contre la course entre deux requêtes
+    # concurrentes sur le même jeton (ex. deux coéquipiers cliquant SWAP au
+    # même moment), cause de BUG-101 : "swaps infinis". L'UPDATE lui-même
+    # sérialise les écritures concurrentes ; seule l'une d'elles peut modifier
+    # une ligne encore à is_used=False, l'autre affecte 0 ligne.
+    candidate_token = db.query(models.Token).filter(
         models.Token.team_id == team_id,
         models.Token.token_type == token_type,
         models.Token.is_used == False
     ).first()
 
-    # Si le jeton de ce type existe et est disponible, on le consomme
-    if chosen_token:
-        chosen_token.is_used = True
+    chosen_token = None
+    if candidate_token:
+        rows_updated = db.query(models.Token).filter(
+            models.Token.id == candidate_token.id,
+            models.Token.is_used == False
+        ).update({"is_used": True}, synchronize_session=False)
+        if rows_updated:
+            candidate_token.is_used = True
+            chosen_token = candidate_token
 
+    # Si le jeton de ce type existe et était disponible, on applique son effet
+    if chosen_token:
         penalized_teams = []
         if token_type == "PENALTY" and target_team:
             # Retire des points à l'équipe ciblée uniquement (score plancher à 0).

@@ -8,6 +8,26 @@ import type {
 
 const API_BASE = '/api'
 
+// BUG-103 : le host_token est reçu à la création de la partie (createGame) et
+// stocké ici, côté navigateur du créateur uniquement — jamais transmis aux
+// joueurs. Il prouve l'identité host sur les endpoints de contrôle de partie.
+function hostTokenStorageKey(gameCode: string) {
+  return `quizkw_host_token_${gameCode}`
+}
+
+export function storeHostToken(gameCode: string, hostToken: string) {
+  localStorage.setItem(hostTokenStorageKey(gameCode), hostToken)
+}
+
+export function getHostToken(gameCode: string): string | null {
+  return localStorage.getItem(hostTokenStorageKey(gameCode))
+}
+
+function hostHeaders(gameCode: string): Record<string, string> {
+  const token = getHostToken(gameCode)
+  return token ? { 'X-Host-Token': token } : {}
+}
+
 async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${endpoint}`, {
     credentials: 'include',
@@ -52,12 +72,14 @@ export async function getGame(code: string) {
 export async function startGame(code: string) {
   return fetchApi<any>(`/games/${code}/start`, {
     method: 'POST',
+    headers: hostHeaders(code),
   })
 }
 
 export async function advanceToPhase3(code: string) {
   return fetchApi<any>(`/games/${code}/advance-to-phase3`, {
     method: 'POST',
+    headers: hostHeaders(code),
   })
 }
 
@@ -115,6 +137,7 @@ export async function setCurrentQuestion(gameCode: string, questionId: number) {
   return fetchApi<any>(`/games/${gameCode}/set-current-question`, {
     method: 'POST',
     body: JSON.stringify({ question_id: questionId }),
+    headers: hostHeaders(gameCode),
   })
 }
 
@@ -147,12 +170,14 @@ export async function spinWheel(teamId: number) {
 export async function createMemoryGrid(code: string) {
   return fetchApi<MemoryGridCreateResponse>(`/games/${code}/memory-grid/create`, {
     method: 'POST',
+    headers: hostHeaders(code),
   })
 }
 
 export async function startMemoryGridRound(code: string) {
   return fetchApi<{ round_id: number; message: string }>(`/games/${code}/memory-grid/start`, {
     method: 'POST',
+    headers: hostHeaders(code),
   })
 }
 
@@ -280,6 +305,7 @@ export { getRound2Leaderboard as getLeaderboard }
 export async function advanceRound2Phase(gameCode: string) {
   return fetchApi<any>(`/round2/${gameCode}/advance`, {
     method: 'POST',
+    headers: hostHeaders(gameCode),
   })
 }
 export { advanceRound2Phase as advancePhase }
@@ -314,6 +340,7 @@ export async function getTeamState(gameCode: string, teamId: number) {
     game_phase: string
     is_my_turn: boolean
     has_answered: boolean
+    answer_locked: boolean
     current_question: {
       id: number
       text: string
@@ -322,6 +349,8 @@ export async function getTeamState(gameCode: string, teamId: number) {
       points: number
       correct_answer: string | null
       options: string[]
+      answer_locked: boolean
+      current_team_answer: string | null
     } | null
     active_duel: {
       duel_id: number
@@ -430,15 +459,10 @@ export async function getPingPongDuelState(duelId: number) {
   }>(`/ping-pong/duel/${duelId}`)
 }
 
-export async function registerHost(gameCode: string) {
-  return fetchApi<{ message: string; has_host: boolean }>(`/games/${gameCode}/register-host`, {
-    method: 'POST',
-  })
-}
-
 export async function nextQuestion(gameCode: string) {
   return fetchApi<{ message: string; question_id: number; question_text: string }>(`/games/${gameCode}/next-question`, {
     method: 'POST',
+    headers: hostHeaders(gameCode),
   })
 }
 

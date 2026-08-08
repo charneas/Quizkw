@@ -17,7 +17,7 @@ interface OtherTeam {
 interface TokenPanelProps {
   tokens: Token[]
   otherTeams?: OtherTeam[]
-  onUseToken: (type: TokenType, targetTeamId?: number) => void
+  onUseToken: (type: TokenType, targetTeamId?: number) => void | Promise<unknown>
 }
 
 function TokenPanel({ tokens = [], otherTeams = [], onUseToken }: TokenPanelProps) {
@@ -25,6 +25,14 @@ function TokenPanel({ tokens = [], otherTeams = [], onUseToken }: TokenPanelProp
   const [confirmingPenalty, setConfirmingPenalty] = useState<TokenType | null>(null)
   const [selectedTargetId, setSelectedTargetId] = useState<number | null>(null)
   const penaltyConfirmedRef = useRef(false)
+  // Garde anti double-clic : `token.is_used` ne redevient vrai qu'après
+  // l'aller-retour réseau du parent (loadTeamTokens/loadState). Entre-temps,
+  // un double-tap (notamment mobile) pouvait renvoyer plusieurs requêtes
+  // /tokens/use pour le même jeton avant que le bouton ne se désactive
+  // (BUG-101 : "swaps infinis" — voir aussi le verrou ajouté côté backend).
+  // useState (pas une simple ref) pour que le bouton se désactive visuellement
+  // dès le premier clic, sans attendre le prochain rendu déclenché ailleurs.
+  const [firingTokenIds, setFiringTokenIds] = useState<Set<number>>(new Set())
 
   const tokenLabels: Record<string, { label: string; desc: string; icon: string; apiType: TokenType }> = {
     swap: { label: 'SWAP', desc: 'Change de question', icon: '🔄', apiType: 'swap' },
@@ -35,14 +43,26 @@ function TokenPanel({ tokens = [], otherTeams = [], onUseToken }: TokenPanelProp
   // PENALTY requiert de choisir une équipe cible puis de confirmer (clic
   // accidentel à fort impact identifié en session UX) — SWAP/BONUS restent
   // sans confirmation.
-  const handleTokenClick = (apiType: TokenType) => {
+  const handleTokenClick = (apiType: TokenType, tokenId: number) => {
     if (apiType === 'penalty') {
       penaltyConfirmedRef.current = false
       setSelectedTargetId(null)
       setConfirmingPenalty(apiType)
-    } else {
-      onUseToken(apiType)
+      return
     }
+    if (firingTokenIds.has(tokenId)) return
+    setFiringTokenIds((prev) => new Set(prev).add(tokenId))
+    // onUseToken gère déjà ses propres erreurs (voir Game.tsx/TeamScreen.tsx) ;
+    // on ne fait que garantir que le bouton se redébloque dans tous les cas
+    // (succès, 400 "déjà utilisé", erreur réseau...), sinon un jeton encore
+    // possédé par l'équipe resterait inutilisable jusqu'au démontage du composant.
+    Promise.resolve(onUseToken(apiType)).finally(() => {
+      setFiringTokenIds((prev) => {
+        const next = new Set(prev)
+        next.delete(tokenId)
+        return next
+      })
+    })
   }
 
   const handleConfirmPenalty = () => {
@@ -75,8 +95,8 @@ function TokenPanel({ tokens = [], otherTeams = [], onUseToken }: TokenPanelProp
             return (
               <button
                 key={token.id}
-                disabled={token.is_used}
-                onClick={() => handleTokenClick(config.apiType)}
+                disabled={token.is_used || firingTokenIds.has(token.id)}
+                onClick={() => handleTokenClick(config.apiType, token.id)}
                 className={`flex flex-col items-center justify-center p-4 rounded-xl border text-center transition-all ${
                   token.is_used
                     ? 'bg-slate-900/40 border-slate-800 text-slate-600 cursor-not-allowed opacity-50'

@@ -18,21 +18,21 @@ def _make_team(db_session, game, name, score, n_players=2):
     return team
 
 
-def _play_to_question(test_client, code, n):
+def _play_to_question(test_client, code, n, host_headers):
     for _ in range(n):
-        test_client.post(f"/games/{code}/next-question")
+        test_client.post(f"/games/{code}/next-question", headers=host_headers)
 
 
-def test_manche1_caps_at_20_questions_no_tie(test_client, db_session, sample_game_session, sample_question):
+def test_manche1_caps_at_20_questions_no_tie(test_client, db_session, sample_game_session, sample_question, host_headers):
     # 4 équipes de 2 joueurs = exactement 8 places (ROUND2_SLOTS) : pas d'ambiguïté.
     for i in range(4):
         _make_team(db_session, sample_game_session, f"Team {i}", score=100 - i * 10)
 
     for _ in range(19):
-        resp = test_client.post(f"/games/{sample_game_session.code}/next-question")
+        resp = test_client.post(f"/games/{sample_game_session.code}/next-question", headers=host_headers)
         assert resp.json()["question_id"] is not None or resp.json().get("wheel_event") is not None
 
-    resp = test_client.post(f"/games/{sample_game_session.code}/next-question")
+    resp = test_client.post(f"/games/{sample_game_session.code}/next-question", headers=host_headers)
     assert resp.status_code == 200
     body = resp.json()
     assert body["question_id"] is None
@@ -42,7 +42,7 @@ def test_manche1_caps_at_20_questions_no_tie(test_client, db_session, sample_gam
     assert sample_game_session.current_round == models.RoundType.MANCHE_2
 
 
-def test_manche1_end_triggers_tiebreak_duel_on_ambiguous_tie(test_client, db_session, sample_game_session, sample_question):
+def test_manche1_end_triggers_tiebreak_duel_on_ambiguous_tie(test_client, db_session, sample_game_session, sample_question, host_headers):
     # 5 équipes de 2 joueurs = 10 places demandées pour 8 disponibles.
     # Les deux moins bien classées sont à égalité (70) pour la dernière place.
     t1 = _make_team(db_session, sample_game_session, "T1", score=100)
@@ -55,8 +55,8 @@ def test_manche1_end_triggers_tiebreak_duel_on_ambiguous_tie(test_client, db_ses
     db_session.add(theme)
     db_session.commit()
 
-    _play_to_question(test_client, sample_game_session.code, 19)
-    resp = test_client.post(f"/games/{sample_game_session.code}/next-question")
+    _play_to_question(test_client, sample_game_session.code, 19, host_headers)
+    resp = test_client.post(f"/games/{sample_game_session.code}/next-question", headers=host_headers)
     body = resp.json()
     assert body["manche1_end"]["status"] == "tiebreak_started"
     tied_ids = {t4.id, t5.id}
@@ -72,7 +72,7 @@ def test_manche1_end_triggers_tiebreak_duel_on_ambiguous_tie(test_client, db_ses
     assert duel.is_tiebreak is True
 
     # Un appel next-question pendant le duel de départage ne doit rien casser.
-    guard_resp = test_client.post(f"/games/{sample_game_session.code}/next-question")
+    guard_resp = test_client.post(f"/games/{sample_game_session.code}/next-question", headers=host_headers)
     assert guard_resp.json()["question_id"] is None
     db_session.refresh(sample_game_session)
     questions_played_before = sample_game_session.questions_played
