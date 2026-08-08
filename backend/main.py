@@ -1036,7 +1036,7 @@ def get_round2_themes(game_code: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Game session not found")
     
     manager = Round2Manager(db)
-    themes = manager.get_available_themes(count=3)
+    themes = manager.get_available_themes(game.id, count=3)
     
     return {
         "themes": themes,

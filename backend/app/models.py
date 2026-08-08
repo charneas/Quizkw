@@ -199,7 +199,10 @@ class Admin(Base):
 
 class PlayerRound2Stats(Base):
     __tablename__ = "player_round2_stats"
-    
+    __table_args__ = (
+        UniqueConstraint("game_session_id", "theme_id", name="uq_round2_session_theme"),
+    )
+
     id = Column(Integer, primary_key=True, index=True)
     player_id = Column(Integer, ForeignKey("players.id"), nullable=False)
     game_session_id = Column(Integer, ForeignKey("game_sessions.id"), nullable=False)
