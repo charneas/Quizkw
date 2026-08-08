@@ -103,6 +103,27 @@ def require_host_by_game_code(game_code: str, x_host_token: Optional[str] = Head
     """Variante de require_host pour les routes utilisant `game_code` (Manche 2)."""
     return require_host(game_code, x_host_token, db)
 
+
+def require_team_token(db: Session, team_id, x_team_token: Optional[str]) -> models.Team:
+    """Analogue de require_host, à l'échelle d'une équipe (BUG-101d).
+    team_token est généré à la création de l'équipe (create_team) et connu
+    de tous ses membres (renvoyé aussi par join_team, qui reste public — les
+    autres endpoints acceptant team_id sans vérification, plus nombreux,
+    restent hors périmètre, voir #55). Prend team_id/x_team_token en
+    paramètres explicites plutôt qu'en Depends() FastAPI : les endpoints
+    concernés lisent team_id depuis un corps `dict` brut, pas un chemin,
+    donc l'injection automatique ne s'applique pas directement ici.
+    """
+    if not isinstance(team_id, int):
+        raise HTTPException(status_code=400, detail="team_id requis")
+    team = db.query(models.Team).filter(models.Team.id == team_id).first()
+    # Même 403 que l'équipe existe ou non : un 404 distinct laisserait un
+    # appelant non authentifié énumérer les team_id valides — exactement ce
+    # que ce token doit empêcher de deviner.
+    if not team or not x_team_token or not secrets.compare_digest(x_team_token, team.team_token):
+        raise HTTPException(status_code=403, detail="Action réservée aux membres de cette équipe")
+    return team
+
 @app.get("/")
 def read_root():
     return {"message": "Bienvenue sur l'API Quizkw !", "version": "1.0.0"}
@@ -152,7 +173,7 @@ def get_game(code: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
     return game
 
-@app.post("/games/{code}/teams/", response_model=schemas.Team)
+@app.post("/games/{code}/teams/", response_model=schemas.TeamWithToken)
 def create_team(code: str, team_create: schemas.TeamCreate, db: Session = Depends(get_db)):
     """
     Créer une équipe dans une session de jeu
@@ -196,7 +217,7 @@ def create_team(code: str, team_create: schemas.TeamCreate, db: Session = Depend
 
     return team
 
-@app.post("/games/{code}/teams/{team_id}/players/", response_model=schemas.Player)
+@app.post("/games/{code}/teams/{team_id}/players/", response_model=schemas.PlayerWithTeamToken)
 def join_team(code: str, team_id: int, player_create: schemas.PlayerCreate, db: Session = Depends(get_db)):
     """
     Rejoindre une équipe existante en tant que joueur, avec son pseudo.
@@ -234,7 +255,14 @@ def join_team(code: str, team_id: int, player_create: schemas.PlayerCreate, db: 
     db.commit()
     db.refresh(player)
 
-    return player
+    # team_token n'est pas une colonne de Player : construit explicitement
+    # plutôt que sérialisé depuis l'objet ORM (BUG-101d).
+    return schemas.PlayerWithTeamToken(
+        id=player.id,
+        name=player.name,
+        team_id=player.team_id,
+        team_token=team.team_token,
+    )
 
 @app.post("/games/{code}/start")
 def start_game(code: str, db: Session = Depends(get_db), _host: models.GameSession = Depends(require_host)):
@@ -1889,10 +1917,14 @@ def next_question(code: str, db: Session = Depends(get_db), _host: models.GameSe
 
 
 @app.post("/tokens/use")
-def use_token(data: dict, db: Session = Depends(get_db)):
+def use_token(data: dict, db: Session = Depends(get_db), x_team_token: Optional[str] = Header(default=None)):
     team_id = data.get("team_id")
     target_team_id = data.get("target_team_id")
     token_type = data.get("token_type", "").upper()  # Ex: "SWAP", "PENALTY", "BONUS"
+
+    # BUG-101d : sans ça, n'importe quel client connaissant un team_id pouvait
+    # consommer les jetons d'une équipe qui n'est pas la sienne.
+    caller_team = require_team_token(db, team_id, x_team_token)
 
     # Le jeton PENALTY cible une équipe adverse précise : on valide la cible
     # avant de consommer le jeton, pour ne pas le perdre sur une requête invalide.
@@ -1900,14 +1932,11 @@ def use_token(data: dict, db: Session = Depends(get_db)):
     if token_type == "PENALTY":
         if not target_team_id:
             raise HTTPException(status_code=400, detail="Une équipe cible est requise pour utiliser un jeton PENALTY")
-        team = db.query(models.Team).filter(models.Team.id == team_id).first()
-        if not team:
-            raise HTTPException(status_code=404, detail="Équipe non trouvée")
         if target_team_id == team_id:
             raise HTTPException(status_code=400, detail="Impossible de cibler sa propre équipe")
         target_team = db.query(models.Team).filter(
             models.Team.id == target_team_id,
-            models.Team.game_session_id == team.game_session_id,
+            models.Team.game_session_id == caller_team.game_session_id,
         ).first()
         if not target_team:
             raise HTTPException(status_code=404, detail="Équipe cible non trouvée dans cette partie")
@@ -1960,9 +1989,7 @@ def use_token(data: dict, db: Session = Depends(get_db)):
             penalized_teams.append({"team_id": target_team.id, "new_score": target_team.score})
         elif token_type == "BONUS":
             # Consommé à la prochaine validation de réponse de cette équipe (voir validate_answers).
-            team = db.query(models.Team).filter(models.Team.id == team_id).first()
-            if team:
-                team.bonus_active = True
+            caller_team.bonus_active = True
         elif token_type == "SWAP":
             # En duel ping-pong : change le thème du duel (le jeton ne
             # touchait jusqu'ici que la question de Manche 1, jamais le
@@ -1983,10 +2010,9 @@ def use_token(data: dict, db: Session = Depends(get_db)):
                     active_duel.theme_id = new_theme.id
                     active_duel.answers_used = []
             else:
-                team = db.query(models.Team).filter(models.Team.id == team_id).first()
                 game = db.query(models.GameSession).filter(
-                    models.GameSession.id == team.game_session_id
-                ).first() if team else None
+                    models.GameSession.id == caller_team.game_session_id
+                ).first()
                 if game and game.current_question_id:
                     new_question = db.query(models.Question).filter(
                         models.Question.id != game.current_question_id

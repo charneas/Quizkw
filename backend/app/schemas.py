@@ -83,9 +83,14 @@ class PlayerCreate(PlayerBase):
 class Player(PlayerBase):
     id: int
     team_id: Optional[int] = None
-    
+
     class Config:
         from_attributes = True
+
+class PlayerWithTeamToken(Player):
+    """Réponse de join_team uniquement (BUG-101d) — voir TeamWithToken plus
+    bas pour l'explication de team_token."""
+    team_token: str
 
 class TeamBase(BaseModel):
     name: str
@@ -106,9 +111,16 @@ class Team(TeamBase):
     game_session_id: int
     score: int
     players: List[Player] = []
-    
+
     class Config:
         from_attributes = True
+
+class TeamWithToken(Team):
+    """Réponse de create_team/join_team uniquement : team_token authentifie
+    l'équipe sur /tokens/use (BUG-101d) et ne doit jamais apparaître dans les
+    réponses publiques (listes d'équipes visibles par les adversaires, état
+    de partie...) — voir la classe Team ci-dessus, qui reste sans ce champ."""
+    team_token: str
 
 class TokenBase(BaseModel):
     token_type: TokenTypeEnum

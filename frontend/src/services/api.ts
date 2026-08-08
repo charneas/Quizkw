@@ -28,14 +28,43 @@ function hostHeaders(gameCode: string): Record<string, string> {
   return token ? { 'X-Host-Token': token } : {}
 }
 
+// BUG-101d : team_token est reçu à la création de l'équipe (createTeam) et à
+// chaque adhésion (joinTeam), stocké ici par équipe (les ids d'équipe sont
+// uniques tous jeux confondus, pas besoin de le préfixer par gameCode). Il
+// prouve l'appartenance à l'équipe sur /tokens/use — seul endpoint couvert
+// pour l'instant, voir #55.
+function teamTokenStorageKey(teamId: number) {
+  return `quizkw_team_token_${teamId}`
+}
+
+export function storeTeamToken(teamId: number, teamToken: string) {
+  localStorage.setItem(teamTokenStorageKey(teamId), teamToken)
+}
+
+export function getTeamToken(teamId: number): string | null {
+  return localStorage.getItem(teamTokenStorageKey(teamId))
+}
+
+function teamHeaders(teamId: number): Record<string, string> {
+  const token = getTeamToken(teamId)
+  return token ? { 'X-Team-Token': token } : {}
+}
+
 async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  // ...options DOIT venir avant `headers`, sinon un appelant qui passe ses
+  // propres `headers` (ex. useToken avec X-Team-Token) écrase entièrement
+  // l'objet headers construit ci-dessous — y compris Content-Type, ce qui
+  // fait échouer silencieusement toute requête avec un corps JSON (le body
+  // part comme text/plain, FastAPI ne le parse plus). Bug détecté en revue
+  // de code indépendante avant que le premier appelant réel (useToken,
+  // BUG-101d) ne le déclenche.
   const response = await fetch(`${API_BASE}${endpoint}`, {
     credentials: 'include',
+    ...options,
     headers: {
       'Content-Type': 'application/json',
       ...options?.headers,
     },
-    ...options,
   })
 
   if (!response.ok) {
@@ -86,10 +115,14 @@ export async function advanceToPhase3(code: string) {
 // === Équipes et Joueurs ===
 
 export async function createTeam(gameCode: string, data: any) {
-  return fetchApi<any>(`/games/${gameCode}/teams/`, {
+  const team = await fetchApi<any>(`/games/${gameCode}/teams/`, {
     method: 'POST',
     body: JSON.stringify(data),
   })
+  if (team?.id && team?.team_token) {
+    storeTeamToken(team.id, team.team_token)
+  }
+  return team
 }
 
 export async function createPlayer(gameCode: string, data: { name: string }) {
@@ -100,10 +133,14 @@ export async function createPlayer(gameCode: string, data: { name: string }) {
 }
 
 export async function joinTeam(gameCode: string, teamId: number, data: { name: string }) {
-  return fetchApi<{ id: number; name: string; team_id: number }>(`/games/${gameCode}/teams/${teamId}/players/`, {
+  const player = await fetchApi<{ id: number; name: string; team_id: number; team_token?: string }>(`/games/${gameCode}/teams/${teamId}/players/`, {
     method: 'POST',
     body: JSON.stringify(data),
   })
+  if (player?.team_token) {
+    storeTeamToken(teamId, player.team_token)
+  }
+  return player
 }
 
 export async function getRound2QualifiedPlayers(gameCode: string) {
@@ -124,6 +161,7 @@ export async function useToken(data: { team_id: number; token_type: string; targ
   return fetchApi<any>('/tokens/use', {
     method: 'POST',
     body: JSON.stringify(data),
+    headers: teamHeaders(data.team_id),
   })
 }
 
