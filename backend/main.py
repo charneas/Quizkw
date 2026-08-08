@@ -1038,11 +1038,35 @@ def get_round2_qualified_players(game_code: str, db: Session = Depends(get_db)):
     stats = db.query(models.PlayerRound2Stats).filter(
         models.PlayerRound2Stats.game_session_id == game.id
     ).all()
-    player_ids = [s.player_id for s in stats]
+    stats_by_player_id = {s.player_id: s for s in stats}
+    player_ids = list(stats_by_player_id.keys())
     players = db.query(models.Player).filter(models.Player.id.in_(player_ids)).all()
     teams_by_id = {t.id: t for t in db.query(models.Team).filter(
         models.Team.id.in_([p.team_id for p in players if p.team_id])
     ).all()}
+    themes_by_id = {t.id: t for t in db.query(models.Theme).filter(
+        models.Theme.id.in_([s.theme_id for s in stats if s.theme_id])
+    ).all()}
+
+    def stats_payload(s: models.PlayerRound2Stats):
+        theme = themes_by_id.get(s.theme_id) if s.theme_id else None
+        return {
+            "theme_id": s.theme_id,
+            "theme": {
+                "id": theme.id,
+                "name": theme.name,
+                "category": theme.category,
+                "difficulty_level": theme.difficulty_level,
+                "description": theme.description,
+                "created_at": theme.created_at,
+            } if theme else None,
+            "score": s.score,
+            "questions_answered": s.questions_answered,
+            "correct_answers": s.correct_answers,
+            "current_question_index": s.current_question_index,
+            "qualification_status": s.qualification_status,
+            "completed_at": s.completed_at,
+        }
 
     return [
         {
@@ -1050,6 +1074,11 @@ def get_round2_qualified_players(game_code: str, db: Session = Depends(get_db)):
             "name": p.name,
             "team_id": p.team_id,
             "team_name": teams_by_id[p.team_id].name if p.team_id in teams_by_id else None,
+            # BUG-207 : la stats du joueur est renvoyée ici pour permettre au
+            # front de restaurer selectedTheme/currentQuestion au reconnect
+            # au lieu de retomber sur ThemeSelector (qui échoue avec "already
+            # selected a theme" si un thème a déjà été choisi).
+            "round2_stats": stats_payload(stats_by_player_id[p.id]) if p.id in stats_by_player_id else None,
         }
         for p in players
     ]

@@ -9,7 +9,8 @@ import {
   advanceRound2Phase,
   getRound2Progress,
   getGame,
-  getRound2QualifiedPlayers
+  getRound2QualifiedPlayers,
+  getHostToken
 } from '../services/api'
 import type {
   Theme,
@@ -85,6 +86,43 @@ function Round2() {
       const qualified = await getRound2QualifiedPlayers(code!)
       setQualifiedPlayers(qualified)
 
+      // BUG-207 : restaurer l'état d'un joueur ayant déjà choisi un thème
+      // (refresh/reconnect en pleine manche) plutôt que de le laisser sur
+      // ThemeSelector, qui échoue en backend avec "already selected a theme"
+      // et bloque la page sans retour possible vers la question en cours.
+      const savedPlayerRaw = localStorage.getItem(`quizkw_player_${code}`)
+      if (savedPlayerRaw) {
+        try {
+          const savedPlayer = JSON.parse(savedPlayerRaw)
+          const existing = qualified.find(p => p.id === savedPlayer.id)
+          const savedStats = existing?.round2_stats
+          if (savedStats?.theme) {
+            setCurrentPlayer(savedPlayer)
+            setSelectedTheme(savedStats.theme)
+            const hydratedStats: PlayerRound2Stats = {
+              id: 0,
+              player_id: savedPlayer.id,
+              game_session_id: gameData.id,
+              theme_id: savedStats.theme_id ?? undefined,
+              score: savedStats.score,
+              questions_answered: savedStats.questions_answered,
+              correct_answers: savedStats.correct_answers,
+              current_question_index: savedStats.current_question_index,
+              qualification_status: savedStats.qualification_status,
+            }
+            setPlayerStats(hydratedStats)
+            if (savedStats.questions_answered < 10) {
+              await loadNextQuestion(hydratedStats, savedPlayer.id)
+            } else {
+              setIsWaitingForLeaderboard(true)
+              await checkIfAllPlayersFinished()
+            }
+          }
+        } catch (e) {
+          // Hydratation best-effort : en cas d'échec on retombe sur le flux normal.
+        }
+      }
+
       setLoading(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error loading Round 2')
@@ -111,7 +149,7 @@ function Round2() {
       setError('')
       
       // Load first question
-      await loadNextQuestion(response.player_stats)
+      await loadNextQuestion(response.player_stats, currentPlayer.id)
     } catch (err) {
       if (err instanceof Error) {
         setError(err.message);
@@ -130,11 +168,11 @@ function Round2() {
     }
   }
 
-  const loadNextQuestion = async (stats: PlayerRound2Stats) => {
-    if (!stats || !currentPlayer) return
-    
+  const loadNextQuestion = async (stats: PlayerRound2Stats, playerId: number) => {
+    if (!stats) return
+
     try {
-      const question = await getRound2Question(code!, currentPlayer.id)
+      const question = await getRound2Question(code!, playerId)
       setCurrentQuestion(question)
       setAnswerResult(null)
       setTimeRemaining(question.time_limit)
@@ -185,9 +223,12 @@ function Round2() {
   const handleNextQuestion = async () => {
     setAnswerResult(null)
     if (answerResult?.next_question_available) {
-      await loadNextQuestion(playerStats!)
+      await loadNextQuestion(playerStats!, currentPlayer!.id)
     } else {
-      // Player has finished all questions
+      // Player has finished all questions (BUG-205 : sans ce reset,
+      // currentQuestion garde la dernière question et le bloc "Question Flow"
+      // se réaffiche dès que answerResult repasse à null ci-dessus).
+      setCurrentQuestion(null)
       setIsWaitingForLeaderboard(true)
       await checkIfAllPlayersFinished()
     }
@@ -441,6 +482,12 @@ function Round2() {
             leaderboard={leaderboard}
             tournamentProgress={tournamentProgress}
             onAdvance={handleAdvancePhase}
+            // BUG-206 : le bouton était affiché à tous les joueurs mais
+            // l'endpoint /round2/{code}/advance est host-only ; sans token
+            // (stocké uniquement sur le navigateur qui a créé la partie), le
+            // clic échouait silencieusement avec un 403. On ne montre le
+            // bouton qu'au détenteur du token.
+            canAdvance={!!getHostToken(code!)}
           />
         )}
 
