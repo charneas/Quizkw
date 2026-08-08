@@ -4,6 +4,8 @@ import type {
   SelectCellRequest,
   AnswerCellRequest,
   AnswerCellResponse,
+  Theme,
+  QualificationStatus,
 } from '../types'
 
 const API_BASE = '/api'
@@ -143,8 +145,27 @@ export async function joinTeam(gameCode: string, teamId: number, data: { name: s
   return player
 }
 
+export interface Round2QualifiedPlayer {
+  id: number
+  name: string
+  team_id: number | null
+  team_name: string | null
+  // BUG-207 : présent dès qu'un thème a été choisi, pour permettre au front
+  // de restaurer selectedTheme/currentQuestion au reconnect.
+  round2_stats: {
+    theme_id: number | null
+    theme: Theme | null
+    score: number
+    questions_answered: number
+    correct_answers: number
+    current_question_index: number
+    qualification_status: QualificationStatus
+    completed_at: string | null
+  } | null
+}
+
 export async function getRound2QualifiedPlayers(gameCode: string) {
-  return fetchApi<{ id: number; name: string; team_id: number | null; team_name: string | null }[]>(`/round2/${gameCode}/players`)
+  return fetchApi<Round2QualifiedPlayer[]>(`/round2/${gameCode}/players`)
 }
 
 // === Jetons (Tokens) ===
@@ -303,10 +324,6 @@ export async function getCurrentPlayerTurn(memoryGridId: number) {
 }
 
 // === Round 2 (16→8→4 Tournament) ===
-
-import type {
-  Theme,
-} from '../types'
 
 // CORRECTION DES EXPORTS POUR S'ALIGNER AVEC ROUND2.TSX
 export async function getRound2Themes(gameCode: string) {

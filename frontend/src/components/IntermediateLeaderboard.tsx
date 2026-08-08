@@ -4,9 +4,10 @@ interface IntermediateLeaderboardProps {
   leaderboard: IntermediateLeaderboardResponse
   tournamentProgress: TournamentProgress
   onAdvance: () => void
+  canAdvance: boolean
 }
 
-function IntermediateLeaderboardComponent({ leaderboard, tournamentProgress, onAdvance }: IntermediateLeaderboardProps) {
+function IntermediateLeaderboardComponent({ leaderboard, tournamentProgress, onAdvance, canAdvance }: IntermediateLeaderboardProps) {
   return (
     <div className="bg-surface rounded-lg p-6">
       <div className="flex items-center justify-between mb-6">
@@ -97,14 +98,18 @@ function IntermediateLeaderboardComponent({ leaderboard, tournamentProgress, onA
           </div>
         </div>
 
-        {/* Action Button */}
+        {/* Action Button — visible seulement au détenteur du host token (BUG-206) */}
         <div className="text-center">
-          <button
-            onClick={onAdvance}
-            className="btn-primary text-lg"
-          >
-            Advance to 8→4 Phase
-          </button>
+          {canAdvance ? (
+            <button
+              onClick={onAdvance}
+              className="btn-primary text-lg"
+            >
+              Advance to 8→4 Phase
+            </button>
+          ) : (
+            <p className="text-text-muted">Waiting for the host to advance to the next phase...</p>
+          )}
           <p className="text-text-muted mt-2">
             Top 8 will compete for 4 finalist spots in the next phase
           </p>
