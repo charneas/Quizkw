@@ -267,7 +267,8 @@ def join_team(code: str, team_id: int, player_create: schemas.PlayerCreate, db: 
 @app.post("/games/{code}/start")
 def start_game(code: str, db: Session = Depends(get_db), _host: models.GameSession = Depends(require_host)):
     """
-    Démarrer une session de jeu (avec auto-fill des joueurs si nécessaire pour le développement)
+    Démarrer une session de jeu. Échoue si une équipe n'a pas encore son
+    nombre complet de joueurs (BUG-201).
     """
     game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
     if not game:
@@ -277,15 +278,14 @@ def start_game(code: str, db: Session = Depends(get_db), _host: models.GameSessi
     teams = db.query(models.Team).filter(models.Team.game_session_id == game.id).all()
     if len(teams) < 2:
         raise HTTPException(status_code=400, detail="Au moins 2 équipes sont nécessaires pour démarrer")
-    
-    # DEV FIX: Auto-remplir les joueurs si manquants
-    for team in teams:
-        count = db.query(models.Player).filter(models.Player.team_id == team.id).count()
-        if count < game.players_per_team:
-            for i in range(game.players_per_team - count):
-                p = models.Player(name=f"Player {team.name} {i+1}", team_id=team.id)
-                db.add(p)
-    db.commit()
+
+    # BUG-201 : l'auto-remplissage silencieux de joueurs factices
+    # ("Player {team.name} {i+1}") a été retiré — le bouton "Démarrer" du
+    # lobby ne bloquait pas sur les équipes incomplètes, donc ces noms
+    # génériques remontaient jusqu'en Manche 2 pour de vrais joueurs qui
+    # n'avaient simplement pas encore rejoint. La validation ci-dessous
+    # (déjà présente, mais rendue inopérante par l'auto-fill qui la
+    # satisfaisait toujours) rejette maintenant réellement ce cas.
 
     # Vérifier que chaque équipe a le bon nombre de joueurs
     for team in teams:
