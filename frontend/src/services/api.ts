@@ -546,15 +546,6 @@ export async function getTeamState(gameCode: string, teamId: number) {
       target_team_name: string
       message: string
     } | null
-    last_token_event: {
-      id: number
-      token_type: string
-      using_team_id: number
-      using_team_name: string
-      target_team_id: number | null
-      target_team_name: string | null
-      message: string
-    } | null
   }>(`/game/${gameCode}/team/${teamId}/state`)
 }
 
