@@ -1657,30 +1657,65 @@ def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_d
     # --- Dernier effet de roue (pour afficher un modal sur tous les écrans,
     # y compris ceux qui n'ont pas cliqué sur "Tour suivant") ---
     last_wheel_event = None
+    last_token_used = None
+
     latest_effect = db.query(models.WheelEffect).filter(
         models.WheelEffect.game_session_id == game.id
     ).order_by(models.WheelEffect.id.desc()).first()
+
     if latest_effect:
         target = db.query(models.Team).filter(models.Team.id == latest_effect.target_team_id).first()
         target_name = target.name if target else "?"
-        if latest_effect.effect_type == "malus":
-            message = f"💀 Malus : {target_name} perd {abs(latest_effect.value or 0)} points"
-        elif latest_effect.effect_type == "bonus":
-            message = f"🎉 Bonus : {target_name} gagne {latest_effect.value or 0} points"
-        elif latest_effect.effect_type == "ping_pong":
-            message = f"🏓 Duel Ping-Pong déclenché pour {target_name} !"
-        elif latest_effect.effect_type == "tiebreak":
-            message = f"⚖️ Égalité en fin de Manche 1 : duel de départage pour {target_name} !"
+
+        # Si l'effet est un jeton joué
+        if latest_effect.effect_type.startswith("TOKEN_"):
+            token_type_name = latest_effect.effect_type.replace("TOKEN_", "")
+            
+            # 1. On récupère la cible (target)
+            target_team = db.query(models.Team).filter(models.Team.id == latest_effect.target_team_id).first()
+            
+            # 2. Pour SWAP / BONUS, l'émetteur est la cible (l'équipe qui a cliqué)
+            # Pour PENALTY, l'émetteur est l'équipe qui A LANCÉ la pénalité
+            # (Si tu n'as pas de champ user_team_id dans WheelEffect, on cherche l'équipe qui n'est PAS la cible)
+            if token_type_name == "PENALTY":
+                # Trouver qui est l'émetteur : l'équipe qui n'a PAS subi la pénalité
+                # (Ou idéalement, celle qui a déclenché le jeton)
+                user_team = db.query(models.Team).filter(
+                    models.Team.game_session_id == game.id,
+                    models.Team.id != latest_effect.target_team_id
+                ).first()
+            else:
+                user_team = target_team
+
+            last_token_used = {
+                "id": latest_effect.id,
+                "user_team_id": user_team.id if user_team else team_id,
+                "user_team_name": user_team.name if user_team else "Une équipe",
+                "token_type": token_type_name,
+                "target_team_id": latest_effect.target_team_id,
+                "target_team_name": target_team.name if target_team else None
+            }
         else:
-            message = "Effet de roue appliqué"
-        last_wheel_event = {
-            "id": latest_effect.id,
-            "effect_type": latest_effect.effect_type,
-            "value": latest_effect.value,
-            "target_team_id": latest_effect.target_team_id,
-            "target_team_name": target_name,
-            "message": message,
-        }
+            # Effet classique de la roue
+            if latest_effect.effect_type == "malus":
+                message = f"💀 Malus : {target_name} perd {abs(latest_effect.value or 0)} points"
+            elif latest_effect.effect_type == "bonus":
+                message = f"🎉 Bonus : {target_name} gagne {latest_effect.value or 0} points"
+            elif latest_effect.effect_type == "ping_pong":
+                message = f"🏓 Duel Ping-Pong déclenché pour {target_name} !"
+            elif latest_effect.effect_type == "tiebreak":
+                message = f"⚖️ Égalité en fin de Manche 1 : duel de départage pour {target_name} !"
+            else:
+                message = "Effet de roue appliqué"
+
+            last_wheel_event = {
+                "id": latest_effect.id,
+                "effect_type": latest_effect.effect_type,
+                "value": latest_effect.value,
+                "target_team_id": latest_effect.target_team_id,
+                "target_team_name": target_name,
+                "message": message,
+            }
 
     return {
         "team_id": team_id,
@@ -1698,6 +1733,7 @@ def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_d
         "all_answered": all_teams_answered,
         "validation_result": validation_result_data,
         "last_wheel_event": last_wheel_event,
+        "last_token_used": last_token_used  # <-- CHAMP AJOUTÉ POUR SYNCHRO REACT
     }
 
 @app.post("/games/{code}/register-host")
@@ -1956,21 +1992,17 @@ def use_token(data: dict, db: Session = Depends(get_db)):
     if chosen_token:
         chosen_token.is_used = True
 
+        team = db.query(models.Team).filter(models.Team.id == team_id).first()
         penalized_teams = []
+
         if token_type == "PENALTY" and target_team:
             # Retire des points à l'équipe ciblée uniquement (score plancher à 0).
             target_team.score = max(0, target_team.score - PENALTY_POINTS)
             penalized_teams.append({"team_id": target_team.id, "new_score": target_team.score})
         elif token_type == "BONUS":
-            # Consommé à la prochaine validation de réponse de cette équipe (voir validate_answers).
-            team = db.query(models.Team).filter(models.Team.id == team_id).first()
             if team:
                 team.bonus_active = True
         elif token_type == "SWAP":
-            # En duel ping-pong : change le thème du duel (le jeton ne
-            # touchait jusqu'ici que la question de Manche 1, jamais le
-            # thème d'un duel en cours — bug utilisateur). Sinon : change la
-            # question courante de la partie.
             active_duel = db.query(models.PingPongDuel).filter(
                 models.PingPongDuel.is_completed == False,
                 or_(
@@ -1986,7 +2018,6 @@ def use_token(data: dict, db: Session = Depends(get_db)):
                     active_duel.theme_id = new_theme.id
                     active_duel.answers_used = []
             else:
-                team = db.query(models.Team).filter(models.Team.id == team_id).first()
                 game = db.query(models.GameSession).filter(
                     models.GameSession.id == team.game_session_id
                 ).first() if team else None
@@ -1996,6 +2027,21 @@ def use_token(data: dict, db: Session = Depends(get_db)):
                     ).order_by(func.random()).first()
                     if new_question:
                         game.current_question_id = new_question.id
+
+# --- AJOUT : Enregistrer l'événement du jeton pour la synchronisation React ---
+        if team:
+            # Pour une PÉNALITÉ, la cible est l'équipe victime (target_team_id).
+            # Pour un SWAP ou BONUS, la cible enregistrée doit être l'équipe qui joue (team_id).
+            actual_target = target_team_id if (token_type == "PENALTY" and target_team_id) else team_id
+
+            token_event = models.WheelEffect(
+                game_session_id=team.game_session_id,
+                effect_type=f"TOKEN_{token_type}",
+                value=None,
+                target_team_id=actual_target,
+                is_applied=True
+            )
+            db.add(token_event)
 
         db.commit()
         return {

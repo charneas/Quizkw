@@ -53,6 +53,14 @@ interface TeamStateData {
     target_team_name: string
     message: string
   } | null
+  last_token_used?: {
+    id: number
+    user_team_id: number
+    user_team_name: string
+    token_type: string
+    target_team_id?: number
+    target_team_name?: string
+  } | null
 }
 
 function TeamScreen() {
@@ -66,18 +74,14 @@ function TeamScreen() {
   const [duelResult, setDuelResult] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  // E-001 AC1/AC4 : dès que le serveur signale (AD-8) que la partie a quitté
-  // la Manche 1, on l'explique puis on redirige automatiquement vers l'écran
-  // de Manche 2 — jusqu'ici la seule navigation existante était le clic de
-  // l'hôte sur son propre écran, qui ne redirigeait personne d'autre.
+  const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'swap' | 'penalty' | 'bonus', text: string } | null>(null)
+
   const [advancingToPhase, setAdvancingToPhase] = useState<string | null>(null)
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const lastDuelRef = useRef<TeamStateData['active_duel']>(null)
   const duelResultRef = useRef<any>(null)
-  // Ref plutôt que le state advancingToPhase lui-même : sinon le mettre à
-  // jour redéclencherait cet effet (il est nécessairement dans les deps pour
-  // le lire) et son nettoyage annulerait le timer qu'il vient de programmer.
   const hasStartedAdvanceRef = useRef(false)
+  const lastSeenTokenIdRef = useRef<number | null>(null)
 
   useEffect(() => {
     if (code && teamIdNum) {
@@ -102,26 +106,64 @@ function TeamScreen() {
     return () => clearTimeout(timer)
   }, [state?.game_phase, code, navigate])
 
-  // Sauvegarder les données du duel dans le ref tant qu'il est actif
   useEffect(() => {
     if (state?.active_duel) {
       lastDuelRef.current = state.active_duel
     }
   }, [state?.active_duel])
 
-  // Synchroniser le ref avec l'état du duelResult
   useEffect(() => {
     duelResultRef.current = duelResult
   }, [duelResult])
 
-  // La roue de fortune (tous les 5 tours) est déclenchée côté serveur et
-  // diffusée à tous les écrans via last_wheel_event — on affiche un modal la
-  // première fois qu'un nouvel id apparaît, sur CHAQUE appareil (pas
-  // seulement celui qui a cliqué sur "Tour suivant").
+  // ÉCOUTE DES JETONS DÉCLENCHÉS PAR D'AUTRES ÉQUIPES (POLLING)
+  useEffect(() => {
+    const tokenEvent = state?.last_token_used
+    if (!tokenEvent) return
+
+    // Si le jeton est identique à celui déjà traité, on ne fait rien
+    if (tokenEvent.id === lastSeenTokenIdRef.current) return
+
+    // Initialisation lors du tout premier chargement
+    if (lastSeenTokenIdRef.current === null) {
+      lastSeenTokenIdRef.current = tokenEvent.id
+      return
+    }
+
+    lastSeenTokenIdRef.current = tokenEvent.id
+
+    const rawType = String(tokenEvent.token_type || '').toUpperCase()
+    const userTeamId = Number(tokenEvent.user_team_id)
+    const targetTeamId = Number(tokenEvent.target_team_id)
+    const currentTeamId = Number(teamIdNum)
+
+    // L'action locale est déjà gérée par handleUseToken au clic
+    if (userTeamId === currentTeamId) return
+
+    if (rawType.includes('SWAP')) {
+      setFeedbackMessage({
+        type: 'swap',
+        text: `🔀 Changement de question ! L'équipe ${tokenEvent.user_team_name || 'adverse'} a utilisé un SWAP !`
+      })
+    } else if (rawType.includes('PENALT') || rawType.includes('PÉNALIT')) {
+      if (targetTeamId === currentTeamId) {
+        setFeedbackMessage({
+          type: 'penalty',
+          text: `⚡ PÉNALITÉ ! L'équipe ${tokenEvent.user_team_name} vous a infligé une pénalité !`
+        })
+      } else {
+        setFeedbackMessage({
+          type: 'penalty',
+          text: `⚡ Pénalité ! L'équipe ${tokenEvent.user_team_name} a ciblé ${tokenEvent.target_team_name || 'une équipe'} !`
+        })
+      }
+    }
+
+    const timer = setTimeout(() => setFeedbackMessage(null), 5000)
+    return () => clearTimeout(timer)
+  }, [state?.last_token_used?.id, teamIdNum])
+
   const [wheelEventToShow, setWheelEventToShow] = useState<TeamStateData['last_wheel_event']>(null)
-  // Quand l'effet de roue est "ping_pong" et que c'est NOTRE équipe qui est
-  // tombée dessus, on doit choisir l'adversaire nous-même (au lieu d'un
-  // tirage au sort côté serveur) — voir PingPongTeamSelector plus bas.
   const [choosingPingPongOpponent, setChoosingPingPongOpponent] = useState(false)
   const seenWheelEventIdRef = useRef<number | null>(null)
   const wheelEventBaselineSetRef = useRef(false)
@@ -129,8 +171,6 @@ function TeamScreen() {
   useEffect(() => {
     const event = state?.last_wheel_event
     if (!wheelEventBaselineSetRef.current) {
-      // Au premier chargement, on ne montre pas un événement déjà passé
-      // (ex. reconnexion en cours de partie) — seuls les nouveaux comptent.
       wheelEventBaselineSetRef.current = true
       seenWheelEventIdRef.current = event ? event.id : null
       return
@@ -162,8 +202,6 @@ function TeamScreen() {
     }
   }
 
-  // Quand la question change (ou disparaît), effacer le résultat local de la question précédente
-  // Mais ne PAS effacer duelResult (le duel est indépendant de la question courante)
   useEffect(() => {
     setAnswerResult(null)
   }, [state?.current_question?.id])
@@ -183,8 +221,6 @@ function TeamScreen() {
     pollingRef.current = setInterval(async () => {
       try {
         const data = await getTeamState(code!, teamIdNum)
-        // Préserver active_duel si on affiche des résultats de duel
-        // (le backend retourne null une fois le duel terminé, mais on veut garder l'UI)
         if (duelResultRef.current && !data.active_duel && lastDuelRef.current) {
           data.active_duel = lastDuelRef.current
         }
@@ -258,6 +294,29 @@ function TeamScreen() {
   }
 
   const handleUseToken = async (tokenType: TokenType, targetTeamId?: number) => {
+    const type = String(tokenType).toUpperCase()
+
+    // Feedback visuel instantané pour l'utilisateur qui a cliqué
+    if (type.includes('BONUS') || type.includes('DOUBLE')) {
+      setFeedbackMessage({
+        type: 'bonus',
+        text: `⭐ BONUS ACTIVÉ ! Votre prochaine bonne réponse rapportera x2 points !`
+      })
+    } else if (type.includes('SWAP')) {
+      setFeedbackMessage({
+        type: 'swap',
+        text: `🔀 SWAP ! Vous avez demandé un changement de question !`
+      })
+    } else if (type.includes('PENALT') || type.includes('PÉNALIT')) {
+      const targetTeam = state?.other_teams.find((t) => t.team_id === targetTeamId)?.team_name || 'l\'équipe adverse'
+      setFeedbackMessage({
+        type: 'penalty',
+        text: `⚡ Pénalité appliquée pour ${targetTeam} !`
+      })
+    }
+
+    setTimeout(() => setFeedbackMessage(null), 5000)
+
     try {
       await useToken({ team_id: teamIdNum, token_type: tokenType, target_team_id: targetTeamId })
       await loadState()
@@ -275,11 +334,6 @@ function TeamScreen() {
   }
 
   if (advancingToPhase) {
-    // Le libellé reflète la phase réellement observée : un joueur peut charger
-    // cet écran pour la première fois alors que la partie est déjà en Manche 3
-    // (rechargement tardif, onglet ouvert après les deux transitions) — le
-    // texte ne doit pas prétendre que la Manche 1 vient tout juste de finir
-    // dans ce cas (trouvé en revue de code).
     const message =
       advancingToPhase === 'manche_3'
         ? "La partie est déjà en Manche 3. Direction la Manche 2 pour voir où vous en êtes dans le tournoi..."
@@ -326,7 +380,6 @@ function TeamScreen() {
   return (
     <div className="min-h-screen p-4">
       <div className="max-w-2xl mx-auto space-y-6">
-        {/* Header */}
         <div className="text-center">
           <h1 className="text-2xl font-bold text-text">{state.team_name}</h1>
           <p className="text-text-muted">
@@ -336,7 +389,23 @@ function TeamScreen() {
           </p>
         </div>
 
-        {/* Roue : choix de l'adversaire du duel ping-pong */}
+        {feedbackMessage && (
+          <div className={`p-4 rounded-xl text-white font-bold text-center shadow-2xl transition-all border-2 ${
+            feedbackMessage.type === 'swap' ? 'bg-blue-600 border-blue-400' :
+            feedbackMessage.type === 'penalty' ? 'bg-red-600 border-red-400' : 'bg-amber-500 border-amber-300 text-slate-900'
+          }`}>
+            <div className="flex items-center justify-between">
+              <span className="flex-1 text-base">{feedbackMessage.text}</span>
+              <button 
+                onClick={() => setFeedbackMessage(null)} 
+                className="ml-2 font-bold px-2 py-1 hover:opacity-75 rounded"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
+
         {choosingPingPongOpponent && !state.active_duel && (
           <PingPongTeamSelector
             currentTeam={{
@@ -358,7 +427,6 @@ function TeamScreen() {
           />
         )}
 
-        {/* Statut des autres équipes */}
         {state.other_teams.length > 0 && (
           <div className="card">
             <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">
@@ -377,7 +445,6 @@ function TeamScreen() {
           </div>
         )}
 
-        {/* Question courante */}
         {state.current_question && !state.has_answered && (
           <div className="card">
             <h3 className="text-lg font-semibold mb-3">
@@ -423,7 +490,6 @@ function TeamScreen() {
           </div>
         )}
 
-        {/* Résultats validés (auto-validation quand toutes les équipes ont répondu) */}
         {state.validation_result && (
           <div className="card border-success">
             <h3 className="text-lg font-bold text-success mb-3">✅ Réponses validées !</h3>
@@ -446,7 +512,6 @@ function TeamScreen() {
           </div>
         )}
 
-        {/* Réponse envoyée — en attente des autres équipes */}
         {state.has_answered && !state.validation_result && (
           <div className="card text-center py-8 border-brand">
             <div className="text-6xl mb-4">📤</div>
@@ -464,7 +529,6 @@ function TeamScreen() {
           </div>
         )}
 
-        {/* Pas de question en cours — possibilité d'en lancer une */}
         {!state.current_question && !state.has_answered && !state.validation_result && !state.active_duel && (
           <div className="card text-center py-8">
             <div className="text-6xl mb-4">🎯</div>
@@ -477,7 +541,6 @@ function TeamScreen() {
           </div>
         )}
 
-        {/* Duel Ping-Pong */}
         {state.active_duel && (
           <div className="card">
             {duelResult ? (
@@ -534,7 +597,6 @@ function TeamScreen() {
           </div>
         )}
 
-        {/* Jetons */}
         {state.tokens.length > 0 && (
           <TokenPanel
             tokens={state.tokens}
@@ -543,7 +605,6 @@ function TeamScreen() {
           />
         )}
 
-        {/* Erreur */}
         {error && (
           <div className="fixed bottom-4 right-4 z-[60] bg-danger/90 text-text px-4 py-2 rounded-lg text-sm">
             {error}
@@ -551,7 +612,6 @@ function TeamScreen() {
           </div>
         )}
 
-        {/* Roue de fortune (tous les 5 tours) */}
         {wheelEventToShow && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
             <div className="card max-w-sm w-full text-center">

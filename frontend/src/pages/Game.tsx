@@ -47,6 +47,7 @@ function Game() {
   const [showTeamSelector, setShowTeamSelector] = useState(false)
   const [confirmingAdvance, setConfirmingAdvance] = useState(false)
   const [penaltyFeedback, setPenaltyFeedback] = useState('')
+  const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'swap' | 'penalty' | 'bonus', text: string } | null>(null)
 
   useEffect(() => {
     if (code) loadGame()
@@ -349,25 +350,37 @@ function Game() {
       // 1. Consomme le jeton en BDD
       const tokenResult = await useToken({ team_id: currentTeam.id, token_type: normalizedType, target_team_id: targetTeamId })
 
-      // 2. Déclenche l'effet du jeton
+      // 2. Déclenche l'effet du jeton + notification visuelle
       if (normalizedType === 'SWAP') {
         await loadQuestion()
+        setFeedbackMessage({
+          type: 'swap',
+          text: `🔀 SWAP ! La question a été changée par ${currentTeam.name} !`
+        })
       } else if (normalizedType === 'PENALTY' || normalizedType === 'PÉNALITÉ') {
         // ⚡ Retire des points aux équipes adverses (appliqué côté backend)
         await loadGame()
 
         const penalizedTeams: { team_id: number; new_score: number }[] = tokenResult?.penalized_teams || []
-        if (penalizedTeams.length > 0) {
-          const names = penalizedTeams
-            .map((p) => game.teams.find((t) => t.id === p.team_id)?.name || `Équipe #${p.team_id}`)
-            .join(', ')
-          setPenaltyFeedback(`⚡ Pénalité appliquée : -2 points pour ${names}`)
-          setTimeout(() => setPenaltyFeedback(''), 4000)
-        }
+        const names = penalizedTeams.length > 0
+          ? penalizedTeams.map((p) => game.teams.find((t) => t.id === p.team_id)?.name || `Équipe #${p.team_id}`).join(', ')
+          : 'l\'équipe adverse'
+
+        setFeedbackMessage({
+          type: 'penalty',
+          text: `⚡ Pénalité appliquée : -2 points pour ${names} !`
+        })
       } else if (normalizedType === 'BONUS') {
         // ⭐ Active le multiplicateur x2
         setIsBonusActive(true)
+        setFeedbackMessage({
+          type: 'bonus',
+          text: `⭐ BONUS ACTIVÉ ! La prochaine bonne réponse de ${currentTeam.name} rapportera x2 points !`
+        })
       }
+
+      // Masque le message après 5 secondes
+      setTimeout(() => setFeedbackMessage(null), 5000)
       
       // 3. Rafraîchit les jetons
       await loadTeamTokens(currentTeam.id)
@@ -467,51 +480,69 @@ function Game() {
           </div>
 
           <div className="lg:col-span-2 space-y-4">
+            {/* ⚡ BANNIÈRE DE FEEDBACK DES JETONS ⚡ */}
+            {feedbackMessage && (
+              <div className={`p-4 rounded-xl text-white font-bold text-center shadow-2xl transition-all border-2 ${
+                feedbackMessage.type === 'swap' ? 'bg-blue-600 border-blue-400' :
+                feedbackMessage.type === 'penalty' ? 'bg-red-600 border-red-400' : 'bg-amber-500 border-amber-300 text-slate-900'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <span className="flex-1 text-base">{feedbackMessage.text}</span>
+                  <button 
+                    onClick={() => setFeedbackMessage(null)} 
+                    className="ml-2 font-bold px-2 py-1 hover:opacity-75 rounded"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            )}
+
             {currentTeam && (
-        <div className="card text-center">
-          <p className="text-sm text-slate-400">C'est au tour de</p>
-          <p className="text-2xl font-bold text-game-accent">{currentTeam.name}</p>
-        </div>
-      )}
+              <div className="card text-center">
+                <p className="text-sm text-slate-400">C'est au tour de</p>
+                <p className="text-2xl font-bold text-game-accent">{currentTeam.name}</p>
+              </div>
+            )}
 
-      {currentQuestion && !answerResult && !waitingForTeams && (
-        <QuestionCard
-          question={currentQuestion}
-          onAnswer={handleAnswer}
-          isBonusActive={isBonusActive}
-        />
-      )}
+            {currentQuestion && !answerResult && !waitingForTeams && (
+              <QuestionCard
+                question={currentQuestion}
+                onAnswer={handleAnswer}
+                isBonusActive={isBonusActive}
+              />
+            )}
 
-      {waitingForTeams && answersStatus && currentTeam && (
-        <WaitingForTeams
-          currentTeam={currentTeam}
-          totalTeams={answersStatus.total_teams}
-          answeredCount={answersStatus.answered_teams.length}
-          onAllAnswered={handleAllAnswered}
-        />
-      )}
+            {waitingForTeams && answersStatus && currentTeam && (
+              <WaitingForTeams
+                currentTeam={currentTeam}
+                totalTeams={answersStatus.total_teams}
+                answeredCount={answersStatus.answered_teams.length}
+                onAllAnswered={handleAllAnswered}
+              />
+            )}
 
-      {answerResult && (
-        <div className={`card text-center ${answerResult.is_correct ? 'border-success' : 'border-danger'}`}>
-          <div className="text-4xl mb-3">
-            {answerResult.is_correct ? '✅' : '❌'}
-          </div>
-          <h3 className={`text-xl font-bold ${answerResult.is_correct ? 'text-success' : 'text-danger'}`}>
-            {answerResult.is_correct ? 'Bonne réponse !' : 'Mauvaise réponse !'}
-          </h3>
-          {!answerResult.is_correct && (
-            <p className="text-text-muted mt-2">
-              Réponse correcte : <span className="text-text font-semibold">{answerResult.correct_answer}</span>
-            </p>
-          )}
-          <p className="text-text-muted mt-2">
-            Points gagnés : <span className="text-brand font-bold">+{answerResult.points_earned}</span>
-          </p>
-          <button onClick={handleNextTurn} className="btn-primary mt-4">
-            Tour suivant →
-          </button>
-        </div>
-      )}
+            {answerResult && (
+              <div className={`card text-center ${answerResult.is_correct ? 'border-success' : 'border-danger'}`}>
+                <div className="text-4xl mb-3">
+                  {answerResult.is_correct ? '✅' : '❌'}
+                </div>
+                <h3 className={`text-xl font-bold ${answerResult.is_correct ? 'text-success' : 'text-danger'}`}>
+                  {answerResult.is_correct ? 'Bonne réponse !' : 'Mauvaise réponse !'}
+                </h3>
+                {!answerResult.is_correct && (
+                  <p className="text-text-muted mt-2">
+                    Réponse correcte : <span className="text-text font-semibold">{answerResult.correct_answer}</span>
+                  </p>
+                )}
+                <p className="text-text-muted mt-2">
+                  Points gagnés : <span className="text-brand font-bold">+{answerResult.points_earned}</span>
+                </p>
+                <button onClick={handleNextTurn} className="btn-primary mt-4">
+                  Tour suivant →
+                </button>
+              </div>
+            )}
 
             <TokenPanel
               tokens={activeTeamTokens}
