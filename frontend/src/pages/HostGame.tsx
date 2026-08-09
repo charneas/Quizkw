@@ -366,7 +366,10 @@ function HostGame() {
   }
 
   const currentTeam = game.teams[currentTeamIndex]
-  const showQuestion = currentQuestion && !waitingForTeams
+  // BUG-108 : l'hôte doit voir la question pendant que les équipes répondent,
+  // pas seulement une fois qu'elles ont toutes fini — waitingForTeams ne doit
+  // pas masquer la question, les deux blocs sont complémentaires.
+  const showQuestion = !!currentQuestion
 
   return (
     <div className="min-h-screen p-4">
