@@ -342,10 +342,8 @@ function MemoryGrid() {
     if (cell.status === 'revealed') {
       return 'bg-accent/30 border-2 border-accent animate-pulse cursor-not-allowed'
     }
-    const owner = colorFor(cell.assigned_player_id)
-    if (owner) {
-      return `bg-surface-raised hover:bg-brand-muted cursor-pointer hover:scale-105 border-2 ${owner.border} border-opacity-40`
-    }
+    // BUG-304 : une cellule cachée ne doit rien révéler sur son propriétaire
+    // (couleur ou bordure) avant d'être effectivement révélée par un joueur.
     return 'bg-surface-raised hover:bg-brand-muted cursor-pointer hover:scale-105 border-2 border-border'
   }
 
@@ -516,7 +514,8 @@ function MemoryGrid() {
                       ${cell.status !== 'hidden' || selectedCell ? '' : 'active:scale-95'}
                     `}
                     title={
-                      cell.assigned_player_id
+                      // BUG-303 : ne pas fuiter le propriétaire au survol avant révélation.
+                      cell.status === 'matched' && cell.assigned_player_id
                         ? `Cellule de ${nameFor(cell.assigned_player_id)}`
                         : ''
                     }
