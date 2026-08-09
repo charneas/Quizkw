@@ -233,6 +233,75 @@ export async function createMemoryGrid(code: string) {
   })
 }
 
+// H.011 (BUG-302) : variante de création de grille pilotée par les couleurs
+// et thèmes choisis par chaque finaliste (au lieu d'une attribution aléatoire).
+export async function createMemoryGridWithThemes(code: string) {
+  return fetchApi<MemoryGridCreateResponse>(`/games/${code}/memory-grid/create-with-themes`, {
+    method: 'POST',
+    headers: hostHeaders(code),
+  })
+}
+
+export interface AvailableColorsResponse {
+  available_colors: string[]
+  game_session_id: number
+}
+
+export async function getAvailableColors(gameSessionId: number) {
+  return fetchApi<AvailableColorsResponse>(`/memory-grid/colors/available/${gameSessionId}`)
+}
+
+export interface AvailableTheme {
+  id: number
+  name: string
+  category: string
+  difficulty_level: number
+  description: string
+}
+
+export interface AvailableThemesResponse {
+  available_themes: AvailableTheme[]
+  count: number
+  message: string
+}
+
+export async function getAvailableThemesForSelection(gameSessionId: number) {
+  return fetchApi<AvailableThemesResponse>(`/memory-grid/themes/available/${gameSessionId}`)
+}
+
+export async function selectPlayerColor(playerId: number, gameSessionId: number, color: string) {
+  return fetchApi<{ success: boolean; player_id: number; color: string; message: string }>(
+    '/memory-grid/color/select',
+    {
+      method: 'POST',
+      body: JSON.stringify({ player_id: playerId, game_session_id: gameSessionId, color }),
+    }
+  )
+}
+
+export async function selectPlayerThemes(playerId: number, gameSessionId: number, themeIds: number[]) {
+  return fetchApi<{ success: boolean; player_id: number; theme_ids: number[]; theme_names: string[]; message: string }>(
+    '/memory-grid/theme/select',
+    {
+      method: 'POST',
+      body: JSON.stringify({ player_id: playerId, game_session_id: gameSessionId, theme_ids: themeIds }),
+    }
+  )
+}
+
+export interface PlayerSetupStatus {
+  player_id: number
+  color_selected: boolean
+  themes_selected: boolean
+  selected_color: string | null
+  selected_themes: number[] | null
+  setup_complete: boolean
+}
+
+export async function getPlayerSetupStatus(playerId: number, gameSessionId: number) {
+  return fetchApi<PlayerSetupStatus>(`/memory-grid/player/${playerId}/setup-status/${gameSessionId}`)
+}
+
 export async function startMemoryGridRound(code: string) {
   return fetchApi<{ round_id: number; message: string }>(`/games/${code}/memory-grid/start`, {
     method: 'POST',

@@ -185,9 +185,12 @@ class TestGridWithThemes:
                                                             sample_game_session, round3_finalists):
         self._seed_hard_questions(db_session)
 
-        for player in round3_finalists:
+        # BUG-302 : les thèmes sont désormais exclusifs entre finalistes
+        # (select_player_themes rejette un conflit), chaque finaliste doit
+        # donc choisir un triplet distinct.
+        for i, player in enumerate(round3_finalists):
             memory_grid_manager.select_player_themes(
-                sample_game_session.id, player.id, [1, 2, 3]
+                sample_game_session.id, player.id, [i * 3 + 1, i * 3 + 2, i * 3 + 3]
             )
         db_session.commit()
 
@@ -205,9 +208,9 @@ class TestGridWithThemes:
                                                 sample_game_session, round3_finalists):
         self._seed_hard_questions(db_session, count=5)
 
-        for player in round3_finalists:
+        for i, player in enumerate(round3_finalists):
             memory_grid_manager.select_player_themes(
-                sample_game_session.id, player.id, [1, 2, 3]
+                sample_game_session.id, player.id, [i * 3 + 1, i * 3 + 2, i * 3 + 3]
             )
         db_session.commit()
 

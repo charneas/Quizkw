@@ -338,8 +338,26 @@ def seed_round2_themes_and_questions(db: Session):
                 ("Combien d'yeux a une araignée en général ?", "8", ["6", "4", "10"]),
             ]
         },
+        # BUG-302 : la Manche 3 exige des thèmes exclusifs entre les 4
+        # finalistes (3 chacun = 12 minimum) — avec seulement les 10 thèmes
+        # ci-dessus, le 4e finaliste n'a plus rien à choisir. 5 thèmes
+        # supplémentaires légers (sans questions Round 2 : par construction
+        # ils restent donc exclus de la sélection Round 2, qui exige 10
+        # questions par thème — voir Round2Manager.get_available_themes), pour
+        # atteindre les 15 déjà supposés par get_available_themes_for_selection
+        # (memory_grid_enhanced.py, count=15 par défaut).
+        {"name": "Espace & Astronomie", "category": ThemeCategory.SERIOUS, "difficulty_level": 6,
+         "description": "Planètes, étoiles et exploration spatiale", "questions": []},
+        {"name": "Technologie & Informatique", "category": ThemeCategory.SERIOUS, "difficulty_level": 5,
+         "description": "Ordinateurs, internet et innovations numériques", "questions": []},
+        {"name": "Bandes Dessinées & Comics", "category": ThemeCategory.POP_CULTURE, "difficulty_level": 4,
+         "description": "Super-héros, mangas et BD franco-belges", "questions": []},
+        {"name": "Records du Monde", "category": ThemeCategory.WHIMSICAL, "difficulty_level": 5,
+         "description": "Exploits, extrêmes et curiosités du Guinness", "questions": []},
+        {"name": "Langues & Étymologie", "category": ThemeCategory.WHIMSICAL, "difficulty_level": 6,
+         "description": "Origine des mots et curiosités linguistiques", "questions": []},
     ]
-    
+
     theme_count = 0
     question_count = 0
     
@@ -486,6 +504,15 @@ def seed_round3_hard_questions(db: Session):
         ("Combien de muses y a-t-il dans la mythologie grecque ?", "Mythologie", "9", ["7", "12", "5"]),
     ]
     
+    # BUG-302 : les questions HARD de Manche 3 n'étaient liées à aucun thème
+    # (theme_id toujours NULL), alors que create_memory_grid_with_themes est
+    # censée piocher les questions d'un finaliste dans SES thèmes choisis.
+    # Répartition cyclique sur les thèmes déjà seedés (Round 2) : ce n'est pas
+    # une curation thématique fine (les catégories HARD ci-dessus, ex.
+    # "Mythologie", ne correspondent pas 1:1 aux noms des thèmes Round 2),
+    # mais ça suffit à donner un theme_id exploitable pour le filtrage.
+    themes = db.query(Theme).order_by(Theme.id).all()
+
     question_count = 0
     for text, category, correct, wrong in hard_questions_data:
         question = Question(
@@ -494,11 +521,12 @@ def seed_round3_hard_questions(db: Session):
             difficulty=Difficulty.HARD,
             points=6,
             correct_answer=correct,
-            wrong_answers=json.dumps(wrong)
+            wrong_answers=json.dumps(wrong),
+            theme_id=themes[question_count % len(themes)].id if themes else None,
         )
         db.add(question)
         question_count += 1
-    
+
     db.commit()
     print(f"✅ {question_count} questions HARD Round 3 créées")
 

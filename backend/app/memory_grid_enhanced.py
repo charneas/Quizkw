@@ -116,38 +116,55 @@ class MemoryGridEnhancer:
     def get_available_colors(self, game_session_id):
         """
         Retourne la liste des couleurs disponibles pour une session.
-        
+
         Args:
             game_session_id: ID de la session de jeu
-        
+
         Returns:
-            list: Couleurs disponibles
+            list: Couleurs disponibles (déjà prises exclues)
         """
-        # Pour l'instant, on retourne toutes les couleurs
-        # Dans une implémentation complète, on exclurait les couleurs déjà prises
-        return [color.value for color in PlayerColor]
+        # BUG-302 : cette méthode retournait auparavant systématiquement les
+        # 20 couleurs, sans jamais exclure celles déjà prises par un autre
+        # finaliste — l'unique implémentation qui filtre réellement est
+        # MemoryGridManager.get_available_colors (memory_grid.py), qui lit
+        # PlayerRound3Stats. On délègue à celle-ci au lieu de dupliquer/diverger.
+        from app.memory_grid import MemoryGridManager
+        return MemoryGridManager(self.db).get_available_colors(game_session_id)
     
-    def get_available_themes_for_selection(self, count=15):
+    def get_available_themes_for_selection(self, game_session_id, count=15):
         """
-        Retourne 15 thèmes disponibles pour la sélection.
-        
+        Retourne jusqu'à `count` thèmes disponibles pour la sélection.
+
         Args:
+            game_session_id: ID de la session de jeu — sert à exclure les
+                thèmes déjà pris par un autre finaliste (BUG-302, cf.
+                select_player_themes qui applique désormais la même exclusivité)
             count: Nombre de thèmes à retourner (par défaut 15)
-        
+
         Returns:
             list: Thèmes disponibles
         """
-        from app.models import Theme
-        
-        # Récupérer tous les thèmes
-        all_themes = self.db.query(Theme).all()
-        
-        # Si on a moins de thèmes que demandé, on retourne tous les thèmes disponibles
-        if len(all_themes) < count:
-            return all_themes
-        
-        # Sinon, on en sélectionne aléatoirement
-        return random.sample(all_themes, count)
+        from app.models import Theme, PlayerRound3Stats
+
+        taken_theme_ids = {
+            tid
+            for s in self.db.query(PlayerRound3Stats).filter(
+                PlayerRound3Stats.game_session_id == game_session_id,
+                PlayerRound3Stats.selected_theme_ids.isnot(None),
+            ).all()
+            for tid in (s.selected_theme_ids or [])
+        }
+
+        available_themes = (
+            self.db.query(Theme).filter(~Theme.id.in_(taken_theme_ids)).all()
+            if taken_theme_ids
+            else self.db.query(Theme).all()
+        )
+
+        if len(available_themes) <= count:
+            return available_themes
+
+        return random.sample(available_themes, count)
     
     def advance_turn(self, memory_grid_id):
         """
