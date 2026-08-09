@@ -449,24 +449,37 @@ class MemoryGridManager:
         difficult_questions = self.db.query(Question).filter(
             Question.difficulty == Difficulty.HARD
         ).all()
-        
+
         total_cells = rows * cols
         if len(difficult_questions) < total_cells:
             raise ValueError(f"Not enough difficult questions for the memory grid. Need {total_cells}, have {len(difficult_questions)}")
 
-        # Shuffle questions
+        # Shuffle once, puis on retire les questions au fur et à mesure
+        # qu'elles sont assignées à une cellule (pas de doublon possible).
         random.shuffle(difficult_questions)
-        
+        remaining_questions = list(difficult_questions)
+
+        def pick_question(theme_ids):
+            """BUG-302 : privilégie une question dont le thème fait partie de
+            ceux choisis par le finaliste ; si son pool thématique est épuisé
+            (thèmes peu fournis en questions HARD), on retombe sur n'importe
+            quelle question HARD restante plutôt que de faire échouer la
+            création de la grille.
+            """
+            for i, q in enumerate(remaining_questions):
+                if q.theme_id in theme_ids:
+                    return remaining_questions.pop(i)
+            return remaining_questions.pop(0)
+
         # Create grid cells
         cells = []
-        question_index = 0
         assigned_cells = []
-        
+
         # 5 cellules par finaliste, d'après ses thèmes
         cells_per_player = 5
 
         for player_id in finalists:
-            theme_ids = finalist_themes[player_id]
+            theme_ids = set(finalist_themes[player_id])
 
             for _ in range(cells_per_player):
                 # Find an unassigned cell position
@@ -477,18 +490,17 @@ class MemoryGridManager:
                     if position not in assigned_cells:
                         assigned_cells.append(position)
                         break
-                
+
                 cell = GridCell(
                     memory_grid_id=memory_grid.id,
                     row=row,
                     col=col,
-                    question_id=difficult_questions[question_index].id,
+                    question_id=pick_question(theme_ids).id,
                     status=GridCellStatus.HIDDEN,
                     assigned_player_id=player_id
                 )
                 cells.append(cell)
-                question_index += 1
-        
+
         # Fill remaining cells with unassigned difficult questions
         for row in range(rows):
             for col in range(cols):
@@ -497,21 +509,20 @@ class MemoryGridManager:
                         memory_grid_id=memory_grid.id,
                         row=row,
                         col=col,
-                        question_id=difficult_questions[question_index].id,
+                        question_id=remaining_questions.pop(0).id,
                         status=GridCellStatus.HIDDEN,
                         assigned_player_id=None  # Cellule neutre
                     )
                     cells.append(cell)
-                    question_index += 1
-        
+
         self.db.add_all(cells)
         self.db.commit()
-        
+
         return memory_grid
     
     def get_available_colors(self, game_session_id):
         """Couleurs encore libres pour les finalistes de la Manche 3 (AD-0)."""
-        from app.memory_grid_enhanced import PlayerColor
+        from app.schemas_extended import PlayerColorEnum
         from app.models import PlayerRound3Stats
 
         taken = {
@@ -520,7 +531,12 @@ class MemoryGridManager:
             ).all() if s.color
         }
 
-        return [c.value for c in PlayerColor if c.value not in taken]
+        # BUG-302 : seules les couleurs exposées par le schéma API
+        # (PlayerColorEnum, 12 valeurs) sont sélectionnables via
+        # ColorSelectionRequest — l'enum interne PlayerColor (memory_grid_enhanced,
+        # 20 valeurs) en propose davantage, mais les renvoyer ici ferait échouer
+        # la validation Pydantic de ColorPaletteResponse.available_colors.
+        return [c.value for c in PlayerColorEnum if c.value not in taken]
 
     def select_player_color(self, game_session_id, player_id, color):
         """Attribuer une couleur à un finaliste. AD-0 : par joueur, pas par équipe.
@@ -553,9 +569,27 @@ class MemoryGridManager:
         return {"success": True, "player_id": player_id, "color": color.value}
 
     def select_player_themes(self, game_session_id, player_id, theme_ids):
-        """Enregistrer les 3 thèmes d'un finaliste. AD-5 : pas de commit ici."""
+        """Enregistrer les 3 thèmes d'un finaliste. AD-5 : pas de commit ici.
+
+        BUG-302 : les thèmes doivent être exclusifs entre finalistes, comme
+        la couleur (select_player_color ci-dessus) — sans quoi deux finalistes
+        peuvent choisir les mêmes thèmes et create_memory_grid_with_themes
+        n'a plus de base cohérente pour distinguer leurs cellules.
+        """
+        from app.models import PlayerRound3Stats
+
         if not isinstance(theme_ids, list) or len(theme_ids) != 3:
             raise ValueError("Un finaliste doit choisir exactement 3 thèmes")
+
+        others = self.db.query(PlayerRound3Stats).filter(
+            PlayerRound3Stats.game_session_id == game_session_id,
+            PlayerRound3Stats.player_id != player_id,
+            PlayerRound3Stats.selected_theme_ids.isnot(None),
+        ).all()
+        taken_theme_ids = {tid for s in others for tid in (s.selected_theme_ids or [])}
+        conflict = taken_theme_ids.intersection(theme_ids)
+        if conflict:
+            raise ValueError(f"Thème(s) déjà choisi(s) par un autre finaliste : {sorted(conflict)}")
 
         stats = self._get_or_create_round3_stats(game_session_id, player_id)
         stats.selected_theme_ids = theme_ids

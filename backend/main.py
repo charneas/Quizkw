@@ -873,7 +873,19 @@ def create_memory_grid_with_themes(code: str, rows: int = 7, cols: int = 5, db: 
     # Verify game is in round 3
     if game.current_round != models.RoundType.MANCHE_3:
         raise HTTPException(status_code=400, detail="La grille mémoire avec thèmes est seulement disponible en manche 3")
-    
+
+    # H.011 : idempotence, comme create_memory_grid — le client (écran de
+    # setup) peut détecter "tous les finalistes prêts" par deux voies
+    # concurrentes (polling + dernière soumission du picker) et appeler cet
+    # endpoint deux fois quasi simultanément. Sans ce garde, ça créerait deux
+    # grilles pour la même partie.
+    existing = db.query(MemoryGrid).filter(
+        MemoryGrid.game_session_id == game.id,
+        MemoryGrid.is_completed == False
+    ).first()
+    if existing:
+        return existing
+
     manager = MemoryGridManager(db)
     try:
         memory_grid = manager.create_memory_grid_with_themes(game.id, rows=rows, cols=cols)

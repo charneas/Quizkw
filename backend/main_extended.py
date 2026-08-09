@@ -97,7 +97,7 @@ def get_available_themes(game_session_id: int, db: Session = Depends(get_db)):
     enhancer = MemoryGridEnhancer(db)
     
     try:
-        themes = enhancer.get_available_themes_for_selection(count=15)
+        themes = enhancer.get_available_themes_for_selection(game_session_id, count=15)
         
         theme_data = []
         for theme in themes:

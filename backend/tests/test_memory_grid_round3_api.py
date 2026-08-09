@@ -167,7 +167,11 @@ class TestMemoryGridRound3API:
 
         assert response.status_code == 200
         data = response.json()
-        assert len(data["available_colors"]) == 20
+        # BUG-302 : seules les 12 couleurs exposées par PlayerColorEnum (le
+        # schéma API) sont réellement sélectionnables — get_available_colors
+        # renvoyait auparavant les 20 valeurs de l'enum interne PlayerColor,
+        # dont 8 que le client ne peut de toute façon jamais choisir.
+        assert len(data["available_colors"]) == 12
         assert all(isinstance(color, str) for color in data["available_colors"])
 
     def test_select_player_color_success(self):

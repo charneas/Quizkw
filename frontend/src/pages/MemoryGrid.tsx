@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   getGame,
-  createMemoryGrid,
   startMemoryGridRound,
   getMemoryGridState,
   getMemoryGridStandings,
@@ -11,8 +10,17 @@ import {
   answerCell,
   advanceToPhase3,
   skipTurn,
+  getMemoryGridFinalists,
+  getRound2QualifiedPlayers,
+  getPlayerSetupStatus,
+  getAvailableColors,
+  getAvailableThemesForSelection,
+  selectPlayerColor,
+  selectPlayerThemes,
+  createMemoryGridWithThemes,
 } from '../services/api'
 import type { GameSession, MemoryGridState, GridCell } from '../types'
+import type { AvailableTheme, PlayerSetupStatus } from '../services/api'
 
 // C-003 AC2 : durée de tour, alignée sur le pattern déjà utilisé en Manche 2.
 const TURN_DURATION_SECONDS = 30
@@ -69,6 +77,24 @@ function MemoryGrid() {
   const [loading, setLoading] = useState(true)
   const [initStep, setInitStep] = useState('')
   const [error, setError] = useState('')
+
+  // H.011 (BUG-302) : setup thème/couleur par finaliste avant que la grille
+  // n'existe. Tant que setupPhase est vrai, aucune grille n'est créée.
+  const [setupPhase, setSetupPhase] = useState(false)
+  const [gameSessionId, setGameSessionId] = useState<number | null>(null)
+  const [finalistIds, setFinalistIds] = useState<number[]>([])
+  const [finalistNames, setFinalistNames] = useState<Record<number, string>>({})
+  const [setupStatuses, setSetupStatuses] = useState<Record<number, PlayerSetupStatus>>({})
+  // Écran partagé (pas d'identité de joueur par appareil, comme le reste de
+  // la Manche 3) : n'importe quel finaliste peut ouvrir SON propre picker sur
+  // cet écran commun, à tour de rôle.
+  const [configuringPlayerId, setConfiguringPlayerId] = useState<number | null>(null)
+  const [pickerColors, setPickerColors] = useState<string[]>([])
+  const [pickerThemes, setPickerThemes] = useState<AvailableTheme[]>([])
+  const [pickerSelectedColor, setPickerSelectedColor] = useState<string | null>(null)
+  const [pickerSelectedThemeIds, setPickerSelectedThemeIds] = useState<number[]>([])
+  const [pickerError, setPickerError] = useState('')
+  const [pickerSubmitting, setPickerSubmitting] = useState(false)
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null)
   // C-004 : effet visuel transitoire sur la cellule qui vient d'être jouée,
   // en plus de la modale de feedback existante. S'efface tout seul — ne doit
@@ -168,25 +194,140 @@ function MemoryGrid() {
         await advanceToPhase3(code!)
       }
 
-      setInitStep('Préparation de la grille mémoire 7×5 pour les 4 finalistes...')
-      const grid = await createMemoryGrid(code!)
-      setGridId(grid.id)
+      setInitStep('Détermination des 4 finalistes...')
+      const { finalists, game_session_id } = await getMemoryGridFinalists(code!)
+      setGameSessionId(game_session_id)
+      setFinalistIds(finalists)
 
-      setInitStep('Chargement des cellules...')
-      setGridState(await getMemoryGridState(grid.id))
+      const qualified = await getRound2QualifiedPlayers(code!)
+      const names: Record<number, string> = {}
+      for (const p of qualified) {
+        if (finalists.includes(p.id)) names[p.id] = p.name
+      }
+      setFinalistNames(names)
 
-      setInitStep('Démarrage du tournoi final...')
-      const round = await startMemoryGridRound(code!)
-      setRoundId(round.round_id)
+      setInitStep('Vérification du setup des finalistes (couleur + thèmes)...')
+      const statuses = await fetchSetupStatuses(finalists, game_session_id)
 
-      setInitStep('Détermination du premier tour...')
-      await refreshPlayers(grid.id)
+      if (Object.values(statuses).some((s) => !s.setup_complete)) {
+        setSetupStatuses(statuses)
+        setSetupPhase(true)
+        setLoading(false)
+        return
+      }
 
-      setInitStep('')
+      await createGridAndStart()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur initialisation grille')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchSetupStatuses = async (ids: number[], sessionId: number) => {
+    const results = await Promise.all(ids.map((id) => getPlayerSetupStatus(id, sessionId)))
+    const map: Record<number, PlayerSetupStatus> = {}
+    results.forEach((s) => { map[s.player_id] = s })
+    return map
+  }
+
+  // Appelée une fois que tous les finalistes ont setup_complete === true,
+  // que ce soit d'emblée (reconnexion) ou juste après le dernier picker.
+  const createGridAndStart = async () => {
+    setInitStep('Préparation de la grille mémoire 7×5 selon les thèmes choisis...')
+    const grid = await createMemoryGridWithThemes(code!)
+    setGridId(grid.id)
+
+    setInitStep('Chargement des cellules...')
+    setGridState(await getMemoryGridState(grid.id))
+
+    setInitStep('Démarrage du tournoi final...')
+    const round = await startMemoryGridRound(code!)
+    setRoundId(round.round_id)
+
+    setInitStep('Détermination du premier tour...')
+    await refreshPlayers(grid.id)
+
+    setInitStep('')
+    setSetupPhase(false)
+  }
+
+  // Tant qu'on est en phase de setup, on poll l'avancement de TOUS les
+  // finalistes (au même rythme que le reste de la Manche 3) pour savoir
+  // quand débloquer la création de la grille — sans jamais exposer leurs
+  // choix de couleur/thème avant que ce ne soit fait (BUG-303/304).
+  useEffect(() => {
+    if (!setupPhase || !gameSessionId || finalistIds.length === 0) return
+    const interval = setInterval(async () => {
+      try {
+        const statuses = await fetchSetupStatuses(finalistIds, gameSessionId)
+        setSetupStatuses(statuses)
+        if (Object.values(statuses).every((s) => s.setup_complete)) {
+          await createGridAndStart()
+        }
+      } catch (err) {
+        console.error('Erreur refresh (setup):', err)
+      }
+    }, POLL_INTERVAL_MS)
+    return () => clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setupPhase, gameSessionId, finalistIds])
+
+  const openPicker = async (playerId: number) => {
+    if (!gameSessionId) return
+    setPickerError('')
+    setPickerSelectedColor(null)
+    setPickerSelectedThemeIds([])
+    setConfiguringPlayerId(playerId)
+    try {
+      const [colorsRes, themesRes] = await Promise.all([
+        getAvailableColors(gameSessionId),
+        getAvailableThemesForSelection(gameSessionId),
+      ])
+      setPickerColors(colorsRes.available_colors)
+      setPickerThemes(themesRes.available_themes)
+    } catch (err) {
+      setPickerError(err instanceof Error ? err.message : 'Erreur chargement des options')
+    }
+  }
+
+  const closePicker = () => {
+    setConfiguringPlayerId(null)
+    setPickerError('')
+  }
+
+  const toggleThemeSelection = (themeId: number) => {
+    setPickerSelectedThemeIds((prev) => {
+      if (prev.includes(themeId)) return prev.filter((id) => id !== themeId)
+      if (prev.length >= 3) return prev
+      return [...prev, themeId]
+    })
+  }
+
+  const submitPicker = async () => {
+    if (!gameSessionId || configuringPlayerId === null || pickerSubmitting) return
+    if (!pickerSelectedColor || pickerSelectedThemeIds.length !== 3) {
+      setPickerError('Choisissez une couleur et exactement 3 thèmes.')
+      return
+    }
+
+    setPickerSubmitting(true)
+    setPickerError('')
+    try {
+      await selectPlayerColor(configuringPlayerId, gameSessionId, pickerSelectedColor)
+      await selectPlayerThemes(configuringPlayerId, gameSessionId, pickerSelectedThemeIds)
+
+      const statuses = await fetchSetupStatuses(finalistIds, gameSessionId)
+      setSetupStatuses(statuses)
+      closePicker()
+
+      if (Object.values(statuses).every((s) => s.setup_complete)) {
+        await createGridAndStart()
+      }
+    } catch (err) {
+      setPickerError(err instanceof Error ? err.message : 'Erreur lors de la sélection')
+    } finally {
+      setPickerSubmitting(false)
     }
   }
 
@@ -301,6 +442,115 @@ function MemoryGrid() {
         <div className="text-center">
           <div className="text-2xl text-text animate-pulse mb-2">🧠 Manche 3</div>
           <p className="text-text-muted">{initStep}</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (setupPhase) {
+    const configuringName = configuringPlayerId !== null ? finalistNames[configuringPlayerId] : null
+    return (
+      <div className="min-h-screen p-4">
+        <div className="max-w-3xl mx-auto">
+          <h1 className="text-2xl font-bold font-display mb-1">🎨 Manche 3 — Préparation</h1>
+          <p className="text-text-muted text-sm mb-6">
+            Chaque finaliste choisit sa couleur et 3 thèmes avant que la grille ne soit constituée.
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+            {finalistIds.map((id) => {
+              const status = setupStatuses[id]
+              const ready = status?.setup_complete ?? false
+              return (
+                <div key={id} className={`card flex items-center justify-between ${ready ? 'border-success' : ''}`}>
+                  <div>
+                    <p className="font-bold">{finalistNames[id] ?? `Joueur ${id}`}</p>
+                    {/* BUG-303/304 : jamais la couleur/les thèmes des autres avant la fin du setup — juste prêt/pas prêt. */}
+                    <p className="text-xs text-text-muted">{ready ? '✅ Prêt' : '⏳ En attente'}</p>
+                  </div>
+                  {!ready && (
+                    <button onClick={() => openPicker(id)} className="btn-secondary text-sm">
+                      Configurer
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
+          {configuringPlayerId !== null && (
+            <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+              <div className="card max-w-lg w-full max-h-[90vh] overflow-y-auto">
+                <h3 className="text-xl font-bold mb-4">Setup de {configuringName}</h3>
+
+                <p className="text-sm font-semibold text-text-muted mb-2">Couleur</p>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {pickerColors.map((color) => (
+                    <button
+                      key={color}
+                      onClick={() => setPickerSelectedColor(color)}
+                      className={`px-3 py-1 rounded border-2 text-sm capitalize ${
+                        pickerSelectedColor === color ? 'border-accent' : 'border-border'
+                      }`}
+                    >
+                      {color}
+                    </button>
+                  ))}
+                  {pickerColors.length === 0 && (
+                    <p className="text-xs text-text-muted">Aucune couleur disponible.</p>
+                  )}
+                </div>
+
+                <p className="text-sm font-semibold text-text-muted mb-2">
+                  Thèmes ({pickerSelectedThemeIds.length}/3)
+                </p>
+                <div className="grid grid-cols-1 gap-2 mb-4">
+                  {pickerThemes.map((theme) => {
+                    const selected = pickerSelectedThemeIds.includes(theme.id)
+                    return (
+                      <button
+                        key={theme.id}
+                        onClick={() => toggleThemeSelection(theme.id)}
+                        className={`text-left px-3 py-2 rounded border-2 text-sm ${
+                          selected ? 'border-accent' : 'border-border'
+                        }`}
+                      >
+                        <span className="font-semibold">{theme.name}</span>
+                        <span className="text-text-muted"> — {theme.category}</span>
+                      </button>
+                    )
+                  })}
+                  {pickerThemes.length === 0 && (
+                    <p className="text-xs text-text-muted">Aucun thème disponible.</p>
+                  )}
+                </div>
+
+                {pickerError && <p className="text-sm text-danger mb-3">{pickerError}</p>}
+
+                <div className="flex gap-2">
+                  <button onClick={closePicker} className="btn-secondary flex-1">
+                    Annuler
+                  </button>
+                  <button
+                    onClick={submitPicker}
+                    disabled={pickerSubmitting}
+                    className="btn-primary flex-1"
+                  >
+                    {pickerSubmitting ? 'Validation...' : 'Valider'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <div className="fixed bottom-4 right-4 bg-danger/90 text-bg px-4 py-2 rounded-lg text-sm max-w-md">
+              {error}
+              <button onClick={() => setError('')} className="ml-2 text-bg/70 hover:text-bg">
+                ✕
+              </button>
+            </div>
+          )}
         </div>
       </div>
     )

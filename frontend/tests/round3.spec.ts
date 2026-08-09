@@ -21,22 +21,26 @@ const PLAYERS_PER_TEAM = 2;
 const TEAM_COUNT = TOTAL_PLAYERS / PLAYERS_PER_TEAM;
 const GRID_CELLS = 35;
 
-async function qualifyAndReachFinalists(request: APIRequestContext, code: string) {
+async function qualifyAndReachFinalists(request: APIRequestContext, code: string, hostToken: string) {
+  const hostHeaders = { 'X-Host-Token': hostToken };
+
   // Manche 1 -> Manche 2 : peuple PlayerRound2Stats et passe current_round à MANCHE_2.
-  const qualifyRes = await request.post(`/api/games/${code}/qualify-round2`);
+  const qualifyRes = await request.post(`/api/games/${code}/qualify-round2`, { headers: hostHeaders });
   expect(qualifyRes.ok(), await qualifyRes.text()).toBeTruthy();
   const qualifyBody = await qualifyRes.json();
   const qualifiedPlayerIds: number[] = qualifyBody.qualified_player_ids;
   expect(qualifiedPlayerIds).toHaveLength(TOTAL_PLAYERS);
 
   // Chaque joueur qualifié choisit un thème et répond à ses 10 questions de Manche 2.
-  const themesRes = await request.get(`/api/round2/${code}/themes`);
-  expect(themesRes.ok(), await themesRes.text()).toBeTruthy();
-  const { themes } = await themesRes.json();
-  expect(themes.length).toBeGreaterThan(0);
-  const themeId = themes[0].id;
-
+  // BUG-210 : les thèmes sont exclusifs entre joueurs — il faut en récupérer
+  // une liste fraîche à chaque itération plutôt que réutiliser le même id.
   for (const playerId of qualifiedPlayerIds) {
+    const themesRes = await request.get(`/api/round2/${code}/themes`);
+    expect(themesRes.ok(), await themesRes.text()).toBeTruthy();
+    const { themes } = await themesRes.json();
+    expect(themes.length).toBeGreaterThan(0);
+    const themeId = themes[0].id;
+
     const selectRes = await request.post(`/api/round2/${code}/select-theme`, {
       data: { player_id: playerId, theme_id: themeId },
     });
@@ -64,7 +68,7 @@ async function qualifyAndReachFinalists(request: APIRequestContext, code: string
   // "8_qualified". On appelle jusqu'à obtenir "4_finalists", sans figer l'ordre exact.
   let phase = '';
   for (let i = 0; i < 2 && phase !== '4_finalists'; i++) {
-    const advanceRes = await request.post(`/api/round2/${code}/advance`);
+    const advanceRes = await request.post(`/api/round2/${code}/advance`, { headers: hostHeaders });
     expect(advanceRes.ok(), await advanceRes.text()).toBeTruthy();
     phase = (await advanceRes.json()).new_phase;
   }
@@ -89,6 +93,15 @@ test.describe('Manche 3 - Grille mémoire (E2E réel)', () => {
     const code = page.url().split('/').pop()!;
     console.log(`Partie créée : ${code}`);
 
+    // BUG-103 : le host_token est stocké côté navigateur (localStorage) par
+    // Home.tsx à la création — nécessaire pour les appels API directs de
+    // qualifyAndReachFinalists ci-dessous (qualify-round2, advance).
+    const hostToken = await page.evaluate(
+      (c) => localStorage.getItem(`quizkw_host_token_${c}`),
+      code
+    );
+    if (!hostToken) throw new Error('host_token introuvable dans localStorage après création de partie');
+
     for (let i = 1; i <= TEAM_COUNT; i++) {
       await page.fill('input[placeholder="Nom de l\'équipe"]', `Équipe ${i}`);
       await page.click('button:has-text("Ajouter")');
@@ -110,13 +123,48 @@ test.describe('Manche 3 - Grille mémoire (E2E réel)', () => {
     // ============================================================
     // Manche 2 et entrée en Manche 3 : setup API direct (voir en-tête de fichier)
     // ============================================================
-    await qualifyAndReachFinalists(request, code);
+    await qualifyAndReachFinalists(request, code, hostToken);
 
     // ============================================================
     // Manche 3 par l'UI réelle
     // ============================================================
     await page.goto(`/game/${code}/memory-grid`);
     await expect(page.locator('text=Manche 3')).toBeVisible({ timeout: 20_000 });
+
+    // ============================================================
+    // H.011 (BUG-302) : setup couleur + 3 thèmes pour chacun des 4 finalistes,
+    // avant que la grille ne soit constituée. Écran partagé (pas d'identité de
+    // joueur par appareil) : on configure les 4 finalistes l'un après l'autre
+    // depuis cette même page, comme le prévoit le nouvel écran de préparation.
+    // ============================================================
+    for (let finalistIndex = 0; finalistIndex < 4; finalistIndex++) {
+      const configureButton = page.getByRole('button', { name: 'Configurer' }).first();
+      await expect(configureButton).toBeVisible({ timeout: 15_000 });
+      await configureButton.click();
+
+      await expect(page.locator('h3:has-text("Setup de")')).toBeVisible({ timeout: 10_000 });
+
+      // Couleur : la première proposée est toujours disponible (les prises sont
+      // exclues côté serveur, BUG-302). Sélecteur scopé au conteneur des
+      // couleurs (flex-wrap) pour ne jamais matcher "Annuler"/"Valider" en bas
+      // de la modale pendant que le fetch async des couleurs est encore en vol.
+      const colorButtons = page.locator('div.card.max-w-lg .flex-wrap button');
+      await expect(colorButtons.first()).toBeVisible({ timeout: 10_000 });
+      await colorButtons.first().click();
+
+      // 3 premiers thèmes disponibles.
+      const themeButtons = page.locator('div.card.max-w-lg .grid button');
+      await expect(themeButtons.first()).toBeVisible({ timeout: 10_000 });
+      for (let i = 0; i < 3; i++) {
+        await themeButtons.nth(i).click();
+      }
+
+      await page.getByRole('button', { name: 'Valider' }).click();
+      await expect(page.locator('h3:has-text("Setup de")')).not.toBeVisible({ timeout: 10_000 });
+    }
+
+    // Tous les finalistes prêts -> la grille est créée automatiquement (polling).
+    await expect(page.locator('text=Manche 3 — Grille Mémoire')).toBeVisible({ timeout: 20_000 });
 
     // Boucle : révéler une cellule -> répondre -> attendre la mise à jour, jusqu'à 35/35.
     let previousProgress = -1;
