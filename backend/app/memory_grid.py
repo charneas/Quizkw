@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, Enum as SQLAlchemyEnum, JSON
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Enum as SQLAlchemyEnum, JSON, func
 from sqlalchemy.orm import relationship
 from app.models import Base, Question
 import enum
@@ -46,6 +46,27 @@ class GridCell(Base):
     question = relationship("Question")
     assigned_player = relationship("Player", foreign_keys=[assigned_player_id])
     answered_by_player = relationship("Player", foreign_keys=[answered_by_player_id])
+
+class SuddenDeathRound(Base):
+    """Manche de départage jouée quand la Manche 3 se termine sur une égalité.
+
+    AD-1 : départage uniquement, n'écrit jamais dans PlayerRound3Stats.score.
+    tied_player_ids / eliminated_player_ids sont des listes JSON d'IDs joueurs.
+    """
+    __tablename__ = "sudden_death_rounds"
+
+    id = Column(Integer, primary_key=True, index=True)
+    memory_grid_id = Column(Integer, ForeignKey("memory_grids.id"), nullable=False)
+    question_id = Column(Integer, ForeignKey("questions.id"), nullable=False)
+    tied_player_ids = Column(JSON, nullable=False)
+    eliminated_player_ids = Column(JSON, default=list, nullable=False)
+    winner_player_id = Column(Integer, ForeignKey("players.id"), nullable=True)
+    is_completed = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    memory_grid = relationship("MemoryGrid")
+    question = relationship("Question")
+    winner_player = relationship("Player", foreign_keys=[winner_player_id])
 
 class MemoryGridRound(Base):
     __tablename__ = "memory_grid_rounds"

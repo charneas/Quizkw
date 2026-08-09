@@ -616,3 +616,22 @@ class PingPongDuelResultsResponse(BaseModel):
     winner_team_name: str
     total_turns: int
     answers_used: List[str]
+
+# Mort subite Manche 3 (story L.001, BUG-305)
+class SuddenDeathStateResponse(BaseModel):
+    id: int
+    question_text: str
+    tied_player_ids: List[int]
+    eliminated_player_ids: List[int]
+    is_completed: bool
+    winner_player_id: Optional[int] = None
+
+class SuddenDeathAnswerRequest(BaseModel):
+    sudden_death_round_id: int
+    player_id: int
+    player_answer: str
+
+class SuddenDeathAnswerResponse(BaseModel):
+    is_correct: bool
+    is_completed: bool
+    winner_player_id: Optional[int] = None

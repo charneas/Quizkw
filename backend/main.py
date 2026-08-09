@@ -13,7 +13,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from app.database import get_db, engine
 from app import models, schemas
 from app.models import Base
-from app.memory_grid import MemoryGridManager, MemoryGrid, GridCell, MemoryGridRound, GridCellStatus
+from app.memory_grid import MemoryGridManager, MemoryGrid, GridCell, MemoryGridRound, GridCellStatus, SuddenDeathRound
 from app.round2_manager import Round2Manager
 from main_extended import router
 from main_admin import router as admin_router, auth_router as admin_auth_router
@@ -954,16 +954,110 @@ def get_memory_grid_standings(code: str, db: Session = Depends(get_db)):
     if not game:
         raise HTTPException(status_code=404, detail="Game session not found")
 
-    memory_grid = db.query(MemoryGrid).filter(
-        MemoryGrid.game_session_id == game.id
-    ).order_by(MemoryGrid.id.desc()).first()
-    if not memory_grid:
-        raise HTTPException(status_code=404, detail="Aucune grille mémoire pour cette partie")
+    memory_grid = _get_active_memory_grid(db, game)
 
     try:
         return MemoryGridEnhancer(db).calculate_winner(memory_grid.id)
     except LookupError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+def _get_active_memory_grid(db: Session, game: models.GameSession) -> MemoryGrid:
+    memory_grid = db.query(MemoryGrid).filter(
+        MemoryGrid.game_session_id == game.id
+    ).order_by(MemoryGrid.id.desc()).first()
+    if not memory_grid:
+        raise HTTPException(status_code=404, detail="Aucune grille mémoire pour cette partie")
+    return memory_grid
+
+
+@app.post("/games/{code}/memory-grid/sudden-death/start", response_model=schemas.SuddenDeathStateResponse)
+def start_sudden_death(code: str, db: Session = Depends(get_db), _host: models.GameSession = Depends(require_host)):
+    """
+    Story L.001 (BUG-305) : déclenche la mort subite quand la Manche 3 se
+    termine sur une égalité. Idempotent (AD-7) : rejouable sans effet de
+    bord si une mort subite non résolue est déjà en cours.
+    """
+    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Game session not found")
+
+    from app.memory_grid_enhanced import MemoryGridEnhancer
+
+    memory_grid = _get_active_memory_grid(db, game)
+
+    try:
+        round_obj = MemoryGridEnhancer(db).start_sudden_death(memory_grid.id)
+        db.commit()
+    except LookupError as e:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+
+    question = db.query(models.Question).filter(models.Question.id == round_obj.question_id).first()
+    return schemas.SuddenDeathStateResponse(
+        id=round_obj.id,
+        question_text=question.text if question else "",
+        tied_player_ids=round_obj.tied_player_ids or [],
+        eliminated_player_ids=round_obj.eliminated_player_ids or [],
+        is_completed=round_obj.is_completed,
+        winner_player_id=round_obj.winner_player_id,
+    )
+
+
+@app.post("/games/{code}/memory-grid/sudden-death/answer", response_model=schemas.SuddenDeathAnswerResponse)
+def answer_sudden_death(code: str, request: schemas.SuddenDeathAnswerRequest, db: Session = Depends(get_db)):
+    """
+    Story L.001 : soumission de réponse en mort subite. Pas de garde host —
+    la Manche 3 est un écran partagé sans identité par appareil (cf.
+    project-context.md, "Reconnection is server-derived").
+    """
+    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Game session not found")
+
+    from app.memory_grid_enhanced import MemoryGridEnhancer
+
+    try:
+        result = MemoryGridEnhancer(db).answer_sudden_death(
+            request.sudden_death_round_id, request.player_id, request.player_answer
+        )
+        db.commit()
+        return result
+    except LookupError as e:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/games/{code}/memory-grid/sudden-death/state", response_model=Optional[schemas.SuddenDeathStateResponse])
+def get_sudden_death_state(code: str, db: Session = Depends(get_db)):
+    """Story L.001 : état courant de la mort subite (polling), ou null."""
+    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Game session not found")
+
+    memory_grid = _get_active_memory_grid(db, game)
+
+    round_obj = db.query(SuddenDeathRound).filter(
+        SuddenDeathRound.memory_grid_id == memory_grid.id
+    ).order_by(SuddenDeathRound.id.desc()).first()
+    if not round_obj:
+        return None
+
+    question = db.query(models.Question).filter(models.Question.id == round_obj.question_id).first()
+    return schemas.SuddenDeathStateResponse(
+        id=round_obj.id,
+        question_text=question.text if question else "",
+        tied_player_ids=round_obj.tied_player_ids or [],
+        eliminated_player_ids=round_obj.eliminated_player_ids or [],
+        is_completed=round_obj.is_completed,
+        winner_player_id=round_obj.winner_player_id,
+    )
 
 
 @app.get("/memory-grid/{memory_grid_id}/current-player-turn")
