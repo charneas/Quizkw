@@ -7,6 +7,20 @@ import PingPongResults from '../components/PingPongResults'
 import PingPongTeamSelector from '../components/PingPongTeamSelector'
 import TokenPanel from '../components/TokenPanel'
 
+interface DuelState {
+  duel_id: number
+  theme: { id: number; title: string; description: string | null; correct_answers: string[]; min_answers_to_win: number }
+  team1: { id: number; name: string }
+  team2: { id: number; name: string }
+  current_turn_team_id: number
+  current_turn_team_name: string
+  turn_number: number
+  answers_used: string[]
+  is_completed: boolean
+  winner_team_id: number | null
+  is_my_turn_in_duel: boolean
+}
+
 interface TeamStateData {
   team_id: number
   team_name: string
@@ -28,19 +42,10 @@ interface TeamStateData {
     answer_locked: boolean
     current_team_answer: string | null
   } | null
-  active_duel: {
-    duel_id: number
-    theme: { id: number; title: string; description: string | null; correct_answers: string[]; min_answers_to_win: number }
-    team1: { id: number; name: string }
-    team2: { id: number; name: string }
-    current_turn_team_id: number
-    current_turn_team_name: string
-    turn_number: number
-    answers_used: string[]
-    is_completed: boolean
-    winner_team_id: number | null
-    is_my_turn_in_duel: boolean
-  } | null
+  active_duel: DuelState | null
+  // BUG-104 / Story J.001 : duel d'une AUTRE équipe, en lecture seule,
+  // renseigné uniquement quand active_duel est null pour cette équipe.
+  spectator_duel: DuelState | null
   tokens: { id: number; token_type: string; is_used: boolean }[]
   other_teams: { team_id: number; team_name: string; team_score: number; has_answered: boolean }[]
   all_answered: boolean
@@ -610,6 +615,54 @@ function TeamScreen() {
                 onSubmit={handleDuelAnswer}
                 onPass={handleDuelPass}
                 disabled={!state.active_duel.is_my_turn_in_duel || state.active_duel.is_completed}
+              />
+            )}
+          </div>
+        )}
+
+        {/* Duel Ping-Pong d'une autre équipe — vue spectateur en lecture
+            seule (BUG-104 / Story J.001). Ne s'affiche que si cette équipe
+            n'a pas elle-même de duel actif (spectator_duel est alors null
+            côté backend). */}
+        {!state.active_duel && state.spectator_duel && (
+          <div className="card">
+            {state.spectator_duel.is_completed ? (
+              <div className="text-center py-6">
+                <div className="text-4xl mb-3">🏓</div>
+                <h3 className="text-lg font-semibold text-text mb-2">Duel terminé</h3>
+                <p className="text-text-muted">
+                  {state.spectator_duel.winner_team_id === state.spectator_duel.team1.id
+                    ? state.spectator_duel.team1.name
+                    : state.spectator_duel.winner_team_id === state.spectator_duel.team2.id
+                    ? state.spectator_duel.team2.name
+                    : 'Aucune équipe'}{' '}
+                  remporte le duel {state.spectator_duel.team1.name} vs {state.spectator_duel.team2.name}
+                </p>
+              </div>
+            ) : (
+              <PingPongQuestion
+                theme={state.spectator_duel.theme}
+                team1={{
+                  id: state.spectator_duel.team1.id,
+                  name: state.spectator_duel.team1.name,
+                  game_session_id: 0,
+                  score: 0,
+                  players: [],
+                }}
+                team2={{
+                  id: state.spectator_duel.team2.id,
+                  name: state.spectator_duel.team2.name,
+                  game_session_id: 0,
+                  score: 0,
+                  players: [],
+                }}
+                currentTurnTeamId={state.spectator_duel.current_turn_team_id}
+                answersUsed={state.spectator_duel.answers_used || []}
+                turnNumber={state.spectator_duel.turn_number || 1}
+                isCurrentTeam={false}
+                onSubmit={() => {}}
+                onPass={() => {}}
+                disabled={true}
               />
             )}
           </div>

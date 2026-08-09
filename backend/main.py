@@ -1668,6 +1668,40 @@ def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_d
         except Exception:
             pass  # Duel not found or error — leave as None
 
+    # --- Duel Ping-Pong à titre spectateur (BUG-104 / Story J.001) ---
+    # Une équipe n'ayant pas de duel actif (active_duel est None) peut malgré
+    # tout vouloir suivre le duel d'une autre équipe en lecture seule. On
+    # prend le duel le plus récent de la partie auquel cette équipe ne
+    # participe PAS (avant ou après complétion — pas de filtre is_completed,
+    # même convention que last_wheel_event/last_token_event : "dernier
+    # événement", pas "événement encore actif"), pour que le spectateur voie
+    # aussi le résultat une fois le duel terminé.
+    spectator_duel = None
+    if not active_duel_for_team:
+        latest_other_duel = db.query(models.PingPongDuel).filter(
+            models.PingPongDuel.game_session_id == game.id,
+            models.PingPongDuel.team1_id != team_id,
+            models.PingPongDuel.team2_id != team_id,
+        ).order_by(models.PingPongDuel.id.desc()).first()
+        if latest_other_duel:
+            try:
+                duel_state = ping_pong_manager.get_duel_state(latest_other_duel.id)
+                spectator_duel = {
+                    "duel_id": latest_other_duel.id,
+                    "theme": duel_state["theme"],
+                    "team1": duel_state["team1"],
+                    "team2": duel_state["team2"],
+                    "current_turn_team_id": duel_state["current_turn_team_id"],
+                    "current_turn_team_name": duel_state["current_turn_team_name"],
+                    "turn_number": duel_state["turn_number"],
+                    "answers_used": duel_state["answers_used"],
+                    "is_completed": duel_state["is_completed"],
+                    "winner_team_id": duel_state["winner_team_id"],
+                    "is_my_turn_in_duel": False,
+                }
+            except Exception:
+                pass
+
     # --- Jetons ---
     tokens = db.query(models.Token).filter(
         models.Token.team_id == team_id,
@@ -1780,6 +1814,7 @@ def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_d
         "answer_locked": answer_locked,
         "current_question": current_question_data,
         "active_duel": active_duel_for_team,
+        "spectator_duel": spectator_duel,
         "tokens": tokens_data,
         "other_teams": other_teams_status,
         "all_answered": all_teams_answered,

@@ -454,6 +454,26 @@ export async function getRandomPingPongTheme() {
 
 // === Multi-screen Team State ===
 
+interface DuelState {
+  duel_id: number
+  theme: {
+    id: number
+    title: string
+    description: string | null
+    correct_answers: string[]
+    min_answers_to_win: number
+  }
+  team1: { id: number; name: string }
+  team2: { id: number; name: string }
+  current_turn_team_id: number
+  current_turn_team_name: string
+  turn_number: number
+  answers_used: string[]
+  is_completed: boolean
+  winner_team_id: number | null
+  is_my_turn_in_duel: boolean
+}
+
 export async function getTeamState(gameCode: string, teamId: number) {
   return fetchApi<{
     team_id: number
@@ -476,25 +496,10 @@ export async function getTeamState(gameCode: string, teamId: number) {
       answer_locked: boolean
       current_team_answer: string | null
     } | null
-    active_duel: {
-      duel_id: number
-      theme: {
-        id: number
-        title: string
-        description: string | null
-        correct_answers: string[]
-        min_answers_to_win: number
-      }
-      team1: { id: number; name: string }
-      team2: { id: number; name: string }
-      current_turn_team_id: number
-      current_turn_team_name: string
-      turn_number: number
-      answers_used: string[]
-      is_completed: boolean
-      winner_team_id: number | null
-      is_my_turn_in_duel: boolean
-    } | null
+    active_duel: DuelState | null
+    // BUG-104 / Story J.001 : duel d'une AUTRE équipe, exposé en lecture
+    // seule à une équipe qui n'a pas de active_duel (voir TeamScreen.tsx).
+    spectator_duel: DuelState | null
     tokens: { id: number; token_type: string; is_used: boolean }[]
     other_teams: { team_id: number; team_name: string; team_score: number; has_answered: boolean }[]
     all_answered: boolean
