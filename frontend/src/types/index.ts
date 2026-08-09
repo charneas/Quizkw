@@ -60,7 +60,7 @@ export interface AnswerResponse {
 }
 
 export interface WheelSpinResponse {
-  effect_type: 'malus' | 'choice' | 'ping_pong' | 'bonus'
+  effect_type: 'malus' | 'ping_pong' | 'bonus'
   value: number | null
   message: string
 }

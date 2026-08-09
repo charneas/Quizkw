@@ -619,44 +619,91 @@ def get_team_tokens(team_id: int, db: Session = Depends(get_db)):
     ]
 
 
+def _roll_wheel_effect(has_opponent: bool):
+    """Tire un effet de roue selon les probabilités du jeu de plateau
+    (1-5 malus, 6-10 +1 auto-résolu, 11-18 ping-pong ou +2 si pas
+    d'adversaire, 19-20 +3). Fonction pure (aucune mutation, aucun accès
+    DB) : source de vérité UNIQUE des probabilités, partagée par
+    spin_wheel (roue host) et trigger_wheel_effect (roue hostless,
+    rotation déterministe) — voir revue de code de la story J.004 :
+    ces deux règles étaient dupliquées et avaient déjà commencé à
+    diverger. Retourne (spin_result, effect_type, value).
+    """
+    spin_result = random.randint(1, 20)
+    if spin_result <= 5:
+        return spin_result, "malus", -3
+    if spin_result <= 10:
+        return spin_result, "bonus", 1
+    if spin_result <= 18:
+        if has_opponent:
+            return spin_result, "ping_pong", None
+        return spin_result, "bonus", 2
+    return spin_result, "bonus", 3
+
+
 @app.post("/wheel/spin", response_model=schemas.WheelSpinResponse)
 def spin_wheel(wheel_spin: schemas.WheelSpinRequest, db: Session = Depends(get_db)):
     """
-    Tourner la roue de bonus/malus (tous les 5 tours selon les règles)
+    Tourner la roue de bonus/malus (tous les 5 tours selon les règles).
+
+    Story J.004 (BUG-111) : persiste réellement l'effet (WheelEffect + score),
+    comme le fait déjà trigger_wheel_effect pour le flux hostless. Ici
+    l'équipe est celle choisie par le host (wheel_spin.team_id), pas une
+    rotation déterministe — les deux logiques de SÉLECTION D'ÉQUIPE restent
+    volontairement séparées (voir Dev Notes de la story), mais les
+    PROBABILITÉS sont partagées via _roll_wheel_effect (revue de code).
+    La diffusion aux écrans équipe se fait via last_wheel_event
+    (get_team_specific_state), déjà fonctionnel, sans changement
+    supplémentaire.
     """
-    # Simuler un spin de roue avec les probabilités des règles
-    # 1-5: malus de 3 points
-    # 6-10: +1 point ou récupération jeton
-    # 11-18: ping pong (+2 points au vainqueur)
-    # 19-20: +3 points
-    
-    spin_result = random.randint(1, 20)
-    
-    if spin_result <= 5:
-        return {
-            "effect_type": "malus",
-            "value": -3,
-            "message": f"Résultat {spin_result}: Malus de 3 points"
-        }
-    elif spin_result <= 10:
-        # Demander au frontend ce qu'il préfère: +1 point ou récupération jeton
-        return {
-            "effect_type": "choice",
-            "value": 1,
-            "message": f"Résultat {spin_result}: Choisissez +1 point OU récupération d'un jeton"
-        }
-    elif spin_result <= 18:
-        return {
-            "effect_type": "ping_pong",
-            "value": 2,
-            "message": f"Résultat {spin_result}: Mode Ping Pong! Choisissez un adversaire, +2 points au vainqueur"
-        }
-    else:  # 19-20
-        return {
-            "effect_type": "bonus",
-            "value": 3,
-            "message": f"Résultat {spin_result}: Bonus de 3 points!"
-        }
+    # with_for_update() : verrouille la ligne le temps du spin pour éviter
+    # une perte de mise à jour si deux requêtes concurrentes ciblent la même
+    # équipe (double-clic, requêtes qui se chevauchent) — trouvé en revue de
+    # code, cette route n'avait aucune écriture avant cette story donc le
+    # risque n'existait pas encore.
+    team = db.query(models.Team).filter(
+        models.Team.id == wheel_spin.team_id
+    ).with_for_update().first()
+    if not team:
+        raise HTTPException(status_code=404, detail="Équipe introuvable")
+
+    has_opponent = db.query(models.Team.id).filter(
+        models.Team.game_session_id == team.game_session_id,
+        models.Team.id != team.id,
+    ).first() is not None
+
+    spin_result, effect_type, value = _roll_wheel_effect(has_opponent)
+
+    if effect_type == "malus":
+        team.score = max(0, team.score + value)
+        message = f"Résultat {spin_result}: Malus de 3 points"
+    elif effect_type == "bonus" and value == 1:
+        message = f"Résultat {spin_result}: +1 point"
+        team.score += value
+    elif effect_type == "ping_pong":
+        message = f"Résultat {spin_result}: Mode Ping Pong! Choisissez un adversaire"
+    elif effect_type == "bonus" and value == 2:
+        message = f"Résultat {spin_result}: pas d'adversaire disponible, +2 points à la place"
+        team.score += value
+    else:  # bonus +3 (19-20)
+        message = f"Résultat {spin_result}: Bonus de 3 points!"
+        team.score += value
+
+    wheel_effect = models.WheelEffect(
+        game_session_id=team.game_session_id,
+        effect_type=effect_type,
+        value=value,
+        target_team_id=team.id,
+        is_applied=True,
+    )
+    db.add(wheel_effect)
+    db.commit()
+
+    return {
+        "effect_type": effect_type,
+        "value": value,
+        "message": message,
+    }
 
 # Phase 3 - Memory Grid Endpoints
 @app.post("/games/{code}/memory-grid/create", response_model=schemas.MemoryGrid)
@@ -1990,34 +2037,28 @@ def trigger_wheel_effect(db: Session, game: models.GameSession) -> Optional[dict
     wheel_round = game.questions_played // 5
     spinning_team = teams[(wheel_round - 1) % len(teams)]
 
-    spin_result = random.randint(1, 20)
-    if spin_result <= 5:
-        effect_type, value = "malus", -3
+    # Probabilités partagées avec spin_wheel (roue host) via _roll_wheel_effect
+    # — voir revue de code de la story J.004 (duplication déjà divergente).
+    has_opponent = any(t.id != spinning_team.id for t in teams)
+    _spin_result, effect_type, value = _roll_wheel_effect(has_opponent)
+
+    if effect_type == "malus":
         spinning_team.score = max(0, spinning_team.score + value)
         message = f"💀 Malus : {spinning_team.name} perd 3 points"
-    elif spin_result <= 10:
-        # Mode sans hôte : le choix +1 point / récupération de jeton est
-        # auto-résolu en +1 point (pas d'interface pour arbitrer ce choix).
-        effect_type, value = "bonus", 1
+    elif effect_type == "bonus" and value == 1:
         spinning_team.score += value
         message = f"🎉 {spinning_team.name} gagne 1 point"
-    elif spin_result <= 18:
-        effect_type, value = "ping_pong", None
-        message = f"🏓 Duel Ping-Pong pour {spinning_team.name} !"
-    else:
-        effect_type, value = "bonus", 3
-        spinning_team.score += value
-        message = f"🎉 Bonus : {spinning_team.name} gagne 3 points !"
-
-    if effect_type == "ping_pong" and not any(t.id != spinning_team.id for t in teams):
-        # Une seule équipe en jeu : pas d'adversaire possible pour le duel.
-        effect_type, value = "bonus", 2
-        spinning_team.score += value
-        message = f"Pas d'adversaire disponible pour le ping-pong : {spinning_team.name} reçoit +2 points à la place."
     elif effect_type == "ping_pong":
         # L'équipe qui tombe sur le ping-pong choisit elle-même son adversaire
         # (voir TeamScreen.tsx) — pas de duel démarré ici, juste l'annonce.
         message = f"🏓 {spinning_team.name}, choisissez votre adversaire !"
+    elif effect_type == "bonus" and value == 2:
+        # Une seule équipe en jeu : pas d'adversaire possible pour le duel.
+        spinning_team.score += value
+        message = f"Pas d'adversaire disponible pour le ping-pong : {spinning_team.name} reçoit +2 points à la place."
+    else:  # bonus +3 (19-20)
+        spinning_team.score += value
+        message = f"🎉 Bonus : {spinning_team.name} gagne 3 points !"
 
     wheel_effect = models.WheelEffect(
         game_session_id=game.id,
