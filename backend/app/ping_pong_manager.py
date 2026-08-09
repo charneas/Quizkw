@@ -363,7 +363,37 @@ class PingPongManager:
             "answers_used": duel.answers_used or [],
             "is_completed": duel.is_completed,
             "winner_team_id": duel.winner_team_id,
+            "is_cancelled": duel.is_cancelled,
         }
+
+    def cancel_duel(self, duel_id: int) -> models.PingPongDuel:
+        """Annuler un duel bloqué (BUG-101g, story J.002). Action host uniquement.
+
+        Libère les deux équipes (garde anti-double-duel de #54 filtre sur
+        is_completed == False) sans jamais désigner de vainqueur ni toucher
+        au score. Le duel de départage de fin de Manche 1 est hors périmètre :
+        il est déjà couvert par un repli existant (#54).
+        """
+        duel = (
+            self.db.query(models.PingPongDuel)
+            .filter(models.PingPongDuel.id == duel_id)
+            .first()
+        )
+        if not duel:
+            raise ValueError(f"Duel with ID {duel_id} not found")
+
+        if duel.is_completed:
+            raise ValueError("Ce duel est déjà terminé")
+
+        if duel.is_tiebreak:
+            raise ValueError("Le duel de départage ne peut pas être annulé")
+
+        duel.is_completed = True
+        duel.is_cancelled = True
+        self.db.commit()
+        self.db.refresh(duel)
+
+        return duel
 
     def get_duel_results(self, duel_id: int) -> Dict:
         """Récupérer les résultats finaux d'un duel"""
