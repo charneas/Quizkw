@@ -1957,8 +1957,25 @@ def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_d
         "all_answered": all_teams_answered,
         "validation_result": validation_result_data,
         "last_wheel_event": last_wheel_event,
-        "last_token_used": last_token_used  # <-- CHAMP AJOUTÉ POUR SYNCHRO REACT
+         "last_token_used": last_token_used  # <-- CHAMP AJOUTÉ POUR SYNCHRO REACT
     }
+
+@app.post("/games/{code}/register-host")
+def register_host(code: str, db: Session = Depends(get_db)):
+    """
+    Enregistre qu'un hôte est connecté à cette session.
+    Quand un hôte est présent, la validation des réponses est manuelle (par l'hôte).
+    Sans hôte, les réponses sont auto-validées quand toutes les équipes ont répondu.
+    """
+    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
+    
+    game.has_host = True
+    db.commit()
+    
+    return {"message": "Hôte enregistré", "has_host": True}
+
 
 def trigger_wheel_effect(db: Session, game: models.GameSession) -> Optional[dict]:
     """Fait tourner la roue automatiquement pour l'équipe dont c'est le tour
