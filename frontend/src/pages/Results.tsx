@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getGame, getFinalStandings } from '../services/api'
+import { getGame, getFinalStandings, getHostToken, startSuddenDeath, answerSuddenDeath, getSuddenDeathState } from '../services/api'
 import type { GameSession } from '../types'
-import type { MemoryGridStandings } from '../services/api'
+import type { MemoryGridStandings, SuddenDeathState } from '../services/api'
 
 function Results() {
   const { code } = useParams<{ code: string }>()
@@ -11,21 +11,82 @@ function Results() {
   const [standings, setStandings] = useState<MemoryGridStandings | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [suddenDeath, setSuddenDeath] = useState<SuddenDeathState | null>(null)
+  const [suddenDeathAnswers, setSuddenDeathAnswers] = useState<Record<number, string>>({})
+  const isHost = !!getHostToken(code!)
+  // Évite de redéclencher start-sudden-death en boucle pendant qu'un rejeu
+  // (round épuisé sans vainqueur) est déjà en cours de création côté serveur.
+  const restartingRef = useRef(false)
 
   useEffect(() => {
     if (code) loadResults()
   }, [code])
+
+  useEffect(() => {
+    if (!code || !standings?.is_tie) return
+    const poll = async () => {
+      const state = await getSuddenDeathState(code)
+      setSuddenDeath(state)
+      if (state?.is_completed) {
+        if (state.winner_player_id) {
+          // Vainqueur désigné : recharger le classement final (AC #5).
+          await loadResults()
+        } else if (!restartingRef.current) {
+          // Round épuisé sans vainqueur : rejeu automatique (AC #4).
+          restartingRef.current = true
+          try {
+            await startSuddenDeath(code)
+          } catch {
+            // Un autre client a peut-être déjà relancé — pas bloquant.
+          } finally {
+            restartingRef.current = false
+          }
+        }
+      }
+    }
+    poll()
+    const interval = setInterval(poll, 2000)
+    return () => clearInterval(interval)
+  }, [code, standings?.is_tie])
 
   const loadResults = async () => {
     try {
       setGame(await getGame(code!))
       // AD-1 : le vainqueur du tournoi sort de la Manche 3 SEULE. Les manches
       // 1 et 2 sont purement qualificatives et n'entrent pas dans ce classement.
-      setStandings(await getFinalStandings(code!))
+      const result = await getFinalStandings(code!)
+      setStandings(result)
+      if (!result.is_tie) setSuddenDeath(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Résultats indisponibles')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleStartSuddenDeath = async () => {
+    try {
+      const state = await startSuddenDeath(code!)
+      setSuddenDeath(state)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Impossible de lancer la mort subite')
+    }
+  }
+
+  const handleSubmitSuddenDeathAnswer = async (playerId: number) => {
+    if (!suddenDeath) return
+    try {
+      const result = await answerSuddenDeath(code!, suddenDeath.id, playerId, suddenDeathAnswers[playerId] || '')
+      if (result.is_completed) {
+        const state = await getSuddenDeathState(code!)
+        setSuddenDeath(state)
+        if (result.winner_player_id) await loadResults()
+      } else {
+        const state = await getSuddenDeathState(code!)
+        setSuddenDeath(state)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Réponse refusée')
     }
   }
 
@@ -106,9 +167,56 @@ function Results() {
           </div>
         )}
 
-        {standings?.is_tie && (
-          <div className="card text-center border-accent">
+        {standings?.is_tie && !suddenDeath && (
+          <div className="card text-center border-accent space-y-3">
             <p className="text-accent font-bold">Égalité — mort subite nécessaire</p>
+            {isHost && (
+              <button onClick={handleStartSuddenDeath} className="btn-primary">
+                ⚡ Lancer la mort subite
+              </button>
+            )}
+          </div>
+        )}
+
+        {standings?.is_tie && suddenDeath?.is_completed && !suddenDeath.winner_player_id && (
+          <div className="card text-center border-accent space-y-3">
+            <p className="text-accent font-bold">Personne n'a trouvé — nouvelle question en préparation...</p>
+            {isHost && (
+              <button onClick={handleStartSuddenDeath} className="btn-primary">
+                ⚡ Relancer la mort subite
+              </button>
+            )}
+          </div>
+        )}
+
+        {standings?.is_tie && suddenDeath && !suddenDeath.is_completed && (
+          <div className="card space-y-4">
+            <p className="text-accent font-bold text-center">Mort subite</p>
+            <p className="text-center">{suddenDeath.question_text}</p>
+            <div className="space-y-3">
+              {suddenDeath.tied_player_ids
+                .filter((playerId) => !suddenDeath.eliminated_player_ids.includes(playerId))
+                .map((playerId) => {
+                  const player = podium.find((p) => p.player_id === playerId)
+                  return (
+                    <div key={playerId} className="flex gap-2 items-center">
+                      <span className="w-32 truncate">{player?.player_name ?? `Joueur ${playerId}`}</span>
+                      <input
+                        type="text"
+                        value={suddenDeathAnswers[playerId] || ''}
+                        onChange={(e) =>
+                          setSuddenDeathAnswers((prev) => ({ ...prev, [playerId]: e.target.value }))
+                        }
+                        className="input flex-1"
+                        placeholder="Réponse..."
+                      />
+                      <button onClick={() => handleSubmitSuddenDeathAnswer(playerId)} className="btn-primary">
+                        Valider
+                      </button>
+                    </div>
+                  )
+                })}
+            </div>
           </div>
         )}
 

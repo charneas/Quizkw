@@ -365,6 +365,37 @@ export async function getFinalStandings(code: string) {
   return fetchApi<MemoryGridStandings>(`/games/${code}/memory-grid/standings`)
 }
 
+// Mort subite Manche 3 (story L.001, BUG-305)
+export interface SuddenDeathState {
+  id: number
+  question_text: string
+  tied_player_ids: number[]
+  eliminated_player_ids: number[]
+  is_completed: boolean
+  winner_player_id: number | null
+}
+
+export async function startSuddenDeath(code: string) {
+  return fetchApi<SuddenDeathState>(`/games/${code}/memory-grid/sudden-death/start`, {
+    method: 'POST',
+    headers: hostHeaders(code),
+  })
+}
+
+export async function answerSuddenDeath(code: string, roundId: number, playerId: number, answer: string) {
+  return fetchApi<{ is_correct: boolean; is_completed: boolean; winner_player_id: number | null }>(
+    `/games/${code}/memory-grid/sudden-death/answer`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ sudden_death_round_id: roundId, player_id: playerId, player_answer: answer }),
+    }
+  )
+}
+
+export async function getSuddenDeathState(code: string) {
+  return fetchApi<SuddenDeathState | null>(`/games/${code}/memory-grid/sudden-death/state`)
+}
+
 // Classement courant des finalistes (AD-1 : score de Manche 3 uniquement).
 export async function getMemoryGridStandings(memoryGridId: number) {
   return fetchApi<{
