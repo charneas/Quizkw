@@ -28,7 +28,18 @@ def test_start_game_with_wrong_token_is_rejected(test_client, sample_game_sessio
 
 def test_start_game_with_correct_token_is_allowed(test_client, db_session, sample_game_session, sample_team, host_headers):
     from app import models
-    db_session.add(models.Team(name="Team 2", game_session_id=sample_game_session.id))
+    team2 = models.Team(name="Team 2", game_session_id=sample_game_session.id)
+    db_session.add(team2)
+    db_session.commit()
+
+    # BUG-201 : /start n'auto-remplit plus les joueurs manquants — chaque
+    # équipe doit avoir son quota réel (players_per_team=2, cf. conftest).
+    db_session.add_all([
+        models.Player(name="Alice", team_id=sample_team.id),
+        models.Player(name="Bob", team_id=sample_team.id),
+        models.Player(name="Carol", team_id=team2.id),
+        models.Player(name="Dave", team_id=team2.id),
+    ])
     db_session.commit()
 
     resp = test_client.post(f"/games/{sample_game_session.code}/start", headers=host_headers)

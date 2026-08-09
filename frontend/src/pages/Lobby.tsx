@@ -113,6 +113,7 @@ function Lobby() {
   }
 
   const maxTeams = Math.floor(game.total_players / game.players_per_team)
+  const allTeamsFull = game.teams.every((team) => team.players.length >= game.players_per_team)
 
   return (
     <div className="min-h-screen p-4">
@@ -219,12 +220,6 @@ function Lobby() {
                 {creating ? '...' : 'Ajouter'}
               </button>
             </div>
-
-            {import.meta.env.DEV && (
-              <p className="text-xs text-text-muted mt-2">
-                Note: Pour démarrer, utilisez le bouton rouge "DEV: Fast Track" ci-dessus. Il créera automatiquement les joueurs nécessaires pour chaque équipe.
-              </p>
-            )}
           </div>
         )}
 
@@ -255,17 +250,28 @@ function Lobby() {
             </div>
           </div>
         ) : (
-          <div className="flex gap-3">
-            <button onClick={() => navigate('/')} className="btn-secondary flex-1 min-h-[44px]">
-              ← Retour
-            </button>
-            <button
-              onClick={handleStartGame}
-              disabled={game.teams.length < 2}
-              className="btn-success flex-1 text-lg disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px]"
-            >
-              🎯 Démarrer le jeu
-            </button>
+          <div className="space-y-2">
+            {/* BUG-201 : le bouton ne bloquait pas sur les équipes incomplètes,
+                le serveur comblait alors silencieusement avec des joueurs
+                factices ("Player {équipe} {n}") qui remontaient jusqu'en
+                Manche 2 sous ce nom générique. */}
+            {game.teams.length >= 2 && !allTeamsFull && (
+              <p className="text-sm text-text-muted text-center">
+                En attente que toutes les équipes soient complètes ({game.players_per_team} joueurs chacune) pour démarrer.
+              </p>
+            )}
+            <div className="flex gap-3">
+              <button onClick={() => navigate('/')} className="btn-secondary flex-1 min-h-[44px]">
+                ← Retour
+              </button>
+              <button
+                onClick={handleStartGame}
+                disabled={game.teams.length < 2 || !allTeamsFull}
+                className="btn-success flex-1 text-lg disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px]"
+              >
+                🎯 Démarrer le jeu
+              </button>
+            </div>
           </div>
         )}
       </div>

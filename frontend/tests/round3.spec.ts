@@ -108,6 +108,19 @@ test.describe('Manche 3 - Grille mémoire (E2E réel)', () => {
       await expect(page.locator(`text=Équipe ${i}`)).toBeVisible({ timeout: 5_000 });
     }
 
+    // BUG-201 : le bouton "Démarrer" reste désactivé tant que chaque équipe
+    // n'a pas son quota réel de joueurs (l'auto-fill silencieux côté serveur
+    // a été retiré) — il faut donc réellement les faire rejoindre ici.
+    for (let i = 1; i <= TEAM_COUNT; i++) {
+      const teamCard = page.locator('div.bg-surface-raised', { hasText: `Équipe ${i}` });
+      for (let j = 1; j <= PLAYERS_PER_TEAM; j++) {
+        await teamCard.locator('input[placeholder="Votre pseudo"]').fill(`Joueur ${i}-${j}`);
+        await teamCard.locator('button:has-text("Rejoindre cette équipe")').click();
+        await expect(teamCard.locator(`text=Joueur ${i}-${j}`)).toBeVisible({ timeout: 5_000 });
+      }
+    }
+
+    await expect(page.locator('button:has-text("🎯 Démarrer le jeu")')).toBeEnabled({ timeout: 5_000 });
     await page.click('button:has-text("🎯 Démarrer le jeu")');
 
     // Lobby.tsx ne navigue pas automatiquement après le démarrage (gameStarted est un
