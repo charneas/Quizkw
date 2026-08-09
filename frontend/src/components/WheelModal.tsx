@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { WheelSpinResponse } from '../types'
 
 interface WheelModalProps {
-  onSpin: () => void
+  onSpin: () => void | Promise<void>
   result: WheelSpinResponse | null
   onClose: () => void
   teamName?: string
@@ -14,25 +14,31 @@ function WheelModal({ onSpin, result, onClose, teamName, teamProgress, isLastTea
   const [spinning, setSpinning] = useState(false)
 
   const handleSpin = async () => {
+    if (spinning) return
     setSpinning(true)
-    // Simulation d'animation de rotation
-    setTimeout(() => {
-      onSpin()
+    // Revue de code (story J.004) : onSpin persiste désormais réellement le
+    // score côté serveur — le bouton doit rester désactivé jusqu'à la
+    // résolution effective de l'appel réseau, pas seulement pendant
+    // l'animation, sinon un double-clic double le score pour de vrai.
+    try {
+      await Promise.all([
+        new Promise((resolve) => setTimeout(resolve, 2000)), // animation minimale
+        Promise.resolve(onSpin()),
+      ])
+    } finally {
       setSpinning(false)
-    }, 2000)
+    }
   }
 
   const effectColors = {
     malus: 'text-game-danger',
     bonus: 'text-game-success',
-    choice: 'text-game-accent',
     ping_pong: 'text-primary-400',
   }
 
   const effectEmojis = {
     malus: '💀',
     bonus: '🎉',
-    choice: '🤔',
     ping_pong: '🏓',
   }
 
