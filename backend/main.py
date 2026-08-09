@@ -367,7 +367,22 @@ def set_current_question(code: str, request: schemas.SetCurrentQuestionRequest, 
     question = db.query(models.Question).filter(models.Question.id == request.question_id).first()
     if not question:
         raise HTTPException(status_code=404, detail="Question non trouvée")
-    
+
+    # BUG-105 (story J.003) : bloque tout lancement de question tant qu'un
+    # duel ping-pong est actif pour la partie, quelles que soient les
+    # équipes impliquées (contrairement au garde de start_duel, filtré par
+    # équipe) — le duel occupe l'écran host partagé, une question qui se
+    # lance en parallèle cause de la confusion.
+    active_duel = db.query(models.PingPongDuel).filter(
+        models.PingPongDuel.game_session_id == game.id,
+        models.PingPongDuel.is_completed == False,
+    ).first()
+    if active_duel:
+        raise HTTPException(
+            status_code=400,
+            detail="Impossible de lancer une question : un duel ping-pong est en cours",
+        )
+
     game.current_question_id = request.question_id
     db.commit()
     

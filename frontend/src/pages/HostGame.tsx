@@ -100,6 +100,7 @@ function HostGame() {
       setAnswersStatus(status)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Aucune question disponible')
+      throw err
     }
   }
 
@@ -165,9 +166,16 @@ function HostGame() {
       return
     }
 
-    setCurrentTeamIndex((prev) => (prev + 1) % game.teams.length)
-    // Toujours forcer une NOUVELLE question quand l'hôte avance manuellement
-    await forceNewQuestion()
+    // BUG-105 (revue de code J.003) : si forceNewQuestion échoue (ex. un duel
+    // ping-pong actif bloque le lancement, story J.003), ne pas avancer
+    // l'index d'équipe — sinon le tour serait désynchronisé de la question
+    // réellement affichée.
+    try {
+      await forceNewQuestion()
+      setCurrentTeamIndex((prev) => (prev + 1) % game.teams.length)
+    } catch {
+      // forceNewQuestion a déjà affiché l'erreur (setError).
+    }
   }, [game, turnCount])
 
   const handleSpinWheel = async () => {
@@ -474,7 +482,11 @@ function HostGame() {
                     </div>
                   ))}
                 </div>
-                <button onClick={handleNextTurn} className="btn-primary">
+                <button
+                  onClick={handleNextTurn}
+                  disabled={showPingPong || showTeamSelector || showPingPongResults}
+                  className="btn-primary disabled:opacity-40 disabled:cursor-not-allowed"
+                >
                   Tour suivant →
                 </button>
               </div>
@@ -490,10 +502,18 @@ function HostGame() {
               >
                 ✅ Valider les réponses
               </button>
-              <button onClick={handleNextTurn} className="btn-secondary flex-1 text-sm">
+              <button
+                onClick={handleNextTurn}
+                disabled={showPingPong || showTeamSelector || showPingPongResults}
+                className="btn-secondary flex-1 text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+              >
                 Tour suivant →
               </button>
-              <button onClick={forceNewQuestion} className="btn-secondary flex-1 text-sm">
+              <button
+                onClick={forceNewQuestion}
+                disabled={showPingPong || showTeamSelector || showPingPongResults}
+                className="btn-secondary flex-1 text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+              >
                 Nouvelle question
               </button>
             </div>
