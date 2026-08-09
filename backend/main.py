@@ -2346,13 +2346,13 @@ def use_token(data: dict, db: Session = Depends(get_db), x_team_token: Optional[
                         game.current_question_id = new_question.id
 
 # --- AJOUT : Enregistrer l'événement du jeton pour la synchronisation React ---
-        if team:
+        if caller_team:
             # Pour une PÉNALITÉ, la cible est l'équipe victime (target_team_id).
             # Pour un SWAP ou BONUS, la cible enregistrée doit être l'équipe qui joue (team_id).
             actual_target = target_team_id if (token_type == "PENALTY" and target_team_id) else team_id
 
             token_event = models.WheelEffect(
-                game_session_id=team.game_session_id,
+                game_session_id=caller_team.game_session_id,
                 effect_type=f"TOKEN_{token_type}",
                 value=None,
                 target_team_id=actual_target,
