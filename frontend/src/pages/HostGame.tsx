@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getGame, getRandomQuestion, spinWheel, advanceRound2Phase, getCurrentQuestion, setCurrentQuestion as setCurrentQuestionApi, getAnswersStatus, getRandomPingPongTheme, startPingPongDuel, getPingPongDuelState, getPingPongDuelResults, getHostToken } from '../services/api'
+import { getGame, getRandomQuestion, spinWheel, advanceRound2Phase, getCurrentQuestion, setCurrentQuestion as setCurrentQuestionApi, getAnswersStatus, getRandomPingPongTheme, startPingPongDuel, getPingPongDuelState, getPingPongDuelResults, getHostToken, cancelPingPongDuel } from '../services/api'
 import type { GameSession, QuestionResponse, WheelSpinResponse, Team } from '../types'
 import Scoreboard from '../components/Scoreboard'
 import TeamComposition from '../components/TeamComposition'
@@ -37,6 +37,7 @@ function HostGame() {
   const [showPingPongResults, setShowPingPongResults] = useState(false)
   const [pingPongResults, setPingPongResults] = useState<any>(null)
   const [showTeamSelector, setShowTeamSelector] = useState(false)
+  const [cancellingDuel, setCancellingDuel] = useState(false)
 
   useEffect(() => {
     if (code) loadGame()
@@ -288,6 +289,11 @@ function HostGame() {
         if (state.is_completed) {
           clearInterval(pollingIntervalRef.current!)
           pollingIntervalRef.current = null
+          if (state.is_cancelled) {
+            // BUG-101g : un duel annulé n'a pas de vainqueur, pas d'écran de résultats.
+            await handlePingPongContinue()
+            return
+          }
           const results = await getPingPongDuelResults(duelId)
           setPingPongResults(results)
           setShowPingPong(false)
@@ -299,6 +305,28 @@ function HostGame() {
         console.error('Erreur polling duel:', err)
       }
     }, 2000)
+  }
+
+  const handleCancelDuel = async () => {
+    if (!pingPongDuel || cancellingDuel) return
+    const duelId = pingPongDuel.duel_id
+    setCancellingDuel(true)
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current)
+      pollingIntervalRef.current = null
+    }
+    try {
+      await cancelPingPongDuel(code!, duelId)
+      await handlePingPongContinue()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Impossible d'annuler ce duel")
+      // L'annulation a échoué (ex. le duel vient de se terminer normalement
+      // entre-temps) : reprendre le polling au lieu de laisser l'écran figé,
+      // il détectera l'état réel (terminé/annulé) au prochain tick.
+      startDuelPolling(duelId)
+    } finally {
+      setCancellingDuel(false)
+    }
   }
 
   const handlePingPongContinue = async () => {
@@ -514,6 +542,13 @@ function HostGame() {
                 onPass={handlePingPongPass}
                 disabled={pingPongDuel.is_completed}
               />
+              <button
+                onClick={handleCancelDuel}
+                disabled={cancellingDuel}
+                className="btn-secondary w-full mt-3 disabled:opacity-50"
+              >
+                {cancellingDuel ? 'Annulation...' : 'Annuler ce duel (équipe bloquée)'}
+              </button>
             </div>
           </div>
         )}

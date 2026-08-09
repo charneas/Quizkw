@@ -114,6 +114,14 @@ export async function advanceToPhase3(code: string) {
   })
 }
 
+// BUG-101g (story J.002) : annulation host d'un duel ping-pong bloqué.
+export async function cancelPingPongDuel(code: string, duelId: number) {
+  return fetchApi<any>(`/games/${code}/ping-pong/duel/${duelId}/cancel`, {
+    method: 'POST',
+    headers: hostHeaders(code),
+  })
+}
+
 // === Équipes et Joueurs ===
 
 export async function createTeam(gameCode: string, data: any) {
@@ -502,6 +510,7 @@ interface DuelState {
   answers_used: string[]
   is_completed: boolean
   winner_team_id: number | null
+  is_cancelled: boolean
   is_my_turn_in_duel: boolean
 }
 
@@ -616,6 +625,7 @@ export async function getPingPongDuelState(duelId: number) {
     answers_used: string[]
     is_completed: boolean
     winner_team_id: number | null
+    is_cancelled: boolean
   }>(`/ping-pong/duel/${duelId}`)
 }
 

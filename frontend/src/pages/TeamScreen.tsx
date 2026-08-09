@@ -18,6 +18,7 @@ interface DuelState {
   answers_used: string[]
   is_completed: boolean
   winner_team_id: number | null
+  is_cancelled: boolean
   is_my_turn_in_duel: boolean
 }
 
@@ -589,14 +590,19 @@ function TeamScreen() {
             {state.spectator_duel.is_completed ? (
               <div className="text-center py-6">
                 <div className="text-4xl mb-3">🏓</div>
-                <h3 className="text-lg font-semibold text-text mb-2">Duel terminé</h3>
+                <h3 className="text-lg font-semibold text-text mb-2">
+                  {state.spectator_duel.is_cancelled ? 'Duel annulé' : 'Duel terminé'}
+                </h3>
                 <p className="text-text-muted">
-                  {state.spectator_duel.winner_team_id === state.spectator_duel.team1.id
-                    ? state.spectator_duel.team1.name
-                    : state.spectator_duel.winner_team_id === state.spectator_duel.team2.id
-                    ? state.spectator_duel.team2.name
-                    : 'Aucune équipe'}{' '}
-                  remporte le duel {state.spectator_duel.team1.name} vs {state.spectator_duel.team2.name}
+                  {state.spectator_duel.is_cancelled
+                    ? `Le duel ${state.spectator_duel.team1.name} vs ${state.spectator_duel.team2.name} a été annulé par l'hôte`
+                    : `${
+                        state.spectator_duel.winner_team_id === state.spectator_duel.team1.id
+                          ? state.spectator_duel.team1.name
+                          : state.spectator_duel.winner_team_id === state.spectator_duel.team2.id
+                          ? state.spectator_duel.team2.name
+                          : 'Aucune équipe'
+                      } remporte le duel ${state.spectator_duel.team1.name} vs ${state.spectator_duel.team2.name}`}
                 </p>
               </div>
             ) : (

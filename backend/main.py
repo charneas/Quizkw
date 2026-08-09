@@ -1631,6 +1631,31 @@ def get_ping_pong_duel_results(duel_id: int, db: Session = Depends(get_db)):
     
     return results
 
+@app.post("/games/{code}/ping-pong/duel/{duel_id}/cancel")
+def cancel_ping_pong_duel(code: str, duel_id: int, db: Session = Depends(get_db), _host: models.GameSession = Depends(require_host)):
+    """
+    Story J.002 (BUG-101g) : le host force la fin d'un duel ping-pong resté
+    bloqué (déconnexion, abandon). Libère les deux équipes sans désigner de
+    vainqueur ni toucher au score. Le duel de départage de fin de Manche 1
+    est hors périmètre (repli existant, #54).
+    """
+    from app.ping_pong_manager import PingPongManager
+
+    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Game session not found")
+
+    duel = db.query(models.PingPongDuel).filter(models.PingPongDuel.id == duel_id).first()
+    if not duel or duel.game_session_id != game.id:
+        raise HTTPException(status_code=404, detail="Duel introuvable pour cette partie")
+
+    try:
+        PingPongManager(db).cancel_duel(duel_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return PingPongManager(db).get_duel_state(duel_id)
+
 # Team-specific state endpoint (multi-screen architecture)
 @app.get("/game/{code}/team/{team_id}/state")
 def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_db)):
@@ -1757,6 +1782,7 @@ def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_d
                 "answers_used": duel_state["answers_used"],
                 "is_completed": duel_state["is_completed"],
                 "winner_team_id": duel_state["winner_team_id"],
+                "is_cancelled": duel_state["is_cancelled"],
                 "is_my_turn_in_duel": active_duel.current_turn_team_id == team_id,
             }
         except Exception:
@@ -1791,6 +1817,7 @@ def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_d
                     "answers_used": duel_state["answers_used"],
                     "is_completed": duel_state["is_completed"],
                     "winner_team_id": duel_state["winner_team_id"],
+                    "is_cancelled": duel_state["is_cancelled"],
                     "is_my_turn_in_duel": False,
                 }
             except Exception:
