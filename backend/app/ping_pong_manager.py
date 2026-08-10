@@ -5,6 +5,50 @@ from typing import Dict, Optional, List
 from . import models, schemas
 
 
+def _levenshtein_distance(a: str, b: str) -> int:
+    """Distance d'édition classique (DP itérative, O(len(a)*len(b))) —
+    suffisant pour des réponses courtes, pas besoin d'une dépendance."""
+    if a == b:
+        return 0
+    if not a:
+        return len(b)
+    if not b:
+        return len(a)
+
+    previous_row = list(range(len(b) + 1))
+    for i, char_a in enumerate(a, start=1):
+        current_row = [i]
+        for j, char_b in enumerate(b, start=1):
+            insert_cost = current_row[j - 1] + 1
+            delete_cost = previous_row[j] + 1
+            substitute_cost = previous_row[j - 1] + (char_a != char_b)
+            current_row.append(min(insert_cost, delete_cost, substitute_cost))
+        previous_row = current_row
+    return previous_row[-1]
+
+
+def answer_matches_with_tolerance(normalized_answer: str, correct_answers_lower: List[str]) -> bool:
+    """BUG-504 (#36) : tolère une faute de frappe/lettre (distance de
+    Levenshtein == 1) par rapport à une réponse acceptée, en plus de la
+    correspondance exacte.
+
+    Règle produit (pas de PO disponible pour trancher, décision documentée
+    ici) : la tolérance ne s'applique qu'aux réponses de plus de 3
+    caractères — sur un mot très court, une seule lettre d'écart peut
+    changer le sens entier ("roi" → "toi") plutôt que traduire une simple
+    faute de frappe. En dessous de ce seuil, seule la correspondance exacte
+    est acceptée.
+    """
+    if normalized_answer in correct_answers_lower:
+        return True
+    if len(normalized_answer) <= 3:
+        return False
+    return any(
+        len(correct) > 3 and _levenshtein_distance(normalized_answer, correct) == 1
+        for correct in correct_answers_lower
+    )
+
+
 class PingPongManager:
     """Manager pour la logique métier des duels Ping-Pong (format 1v1 tour par tour)"""
 
@@ -160,8 +204,8 @@ class PingPongManager:
             + 1
         )
 
-        # Vérifier si la réponse est correcte
-        if normalized_answer not in correct_answers_lower:
+        # Vérifier si la réponse est correcte (BUG-504 #36 : tolérance à 1 faute de frappe)
+        if not answer_matches_with_tolerance(normalized_answer, correct_answers_lower):
             # Mauvaise réponse → l'équipe perd, l'autre gagne
             loser_team_id = team_id
             winner_team_id = duel.team2_id if team_id == duel.team1_id else duel.team1_id
