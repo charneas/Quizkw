@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getTeamState, submitAnswer, useToken, getPingPongDuelState, getPingPongDuelResults, submitPingPongDuelAnswer, nextQuestion, getRandomPingPongTheme, startPingPongDuel, getWheelHistory } from '../services/api'
+import { getTeamState, submitAnswer, useToken, getPingPongDuelState, getPingPongDuelResults, submitPingPongDuelAnswer, nextQuestion, getRandomPingPongTheme, startPingPongDuel, getWheelHistory, renameTeam } from '../services/api'
 import type { WheelHistoryEntry } from '../services/api'
 import WheelHistory from '../components/WheelHistory'
 import type { TokenType, Team } from '../types'
@@ -85,6 +85,9 @@ function TeamScreen() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'swap' | 'penalty' | 'bonus', text: string } | null>(null)
+  const [editingName, setEditingName] = useState(false)
+  const [nameDraft, setNameDraft] = useState('')
+  const [renameError, setRenameError] = useState('')
   // BUG-106 (#8) : vue consolidée des tours de roue déjà joués.
   const [wheelHistory, setWheelHistory] = useState<WheelHistoryEntry[]>([])
 
@@ -262,6 +265,19 @@ function TeamScreen() {
     lastSyncedAnswerRef.current = teamAnswer
   }, [state?.current_question?.id, state?.current_question?.current_team_answer, state?.current_question?.answer_locked])
 
+  const handleRenameTeam = async () => {
+    const trimmed = nameDraft.trim()
+    if (!trimmed || !code) return
+    setRenameError('')
+    try {
+      await renameTeam(code, teamIdNum, trimmed)
+      setState((prev) => (prev ? { ...prev, team_name: trimmed } : prev))
+      setEditingName(false)
+    } catch (err: any) {
+      setRenameError(err?.message || "Impossible de renommer l'equipe")
+    }
+  }
+
   const loadState = async () => {
     try {
       const data = await getTeamState(code!, teamIdNum)
@@ -426,10 +442,36 @@ function TeamScreen() {
         <div className="card text-center max-w-md">
           <div className="text-5xl mb-4 animate-pulse">⏳</div>
           <h2 className="text-2xl font-bold text-text mb-2">Salle d'attente</h2>
-          <p className="text-text-muted">
-            Vous avez rejoint <span className="text-brand font-semibold">{state.team_name}</span>.
-            En attente que l'hôte lance la partie...
-          </p>
+          {editingName ? (
+            <div className="flex flex-col items-center gap-2 mb-2">
+              <div className="flex items-center gap-2">
+                <input
+                  autoFocus
+                  value={nameDraft}
+                  onChange={(e) => setNameDraft(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleRenameTeam(); if (e.key === 'Escape') setEditingName(false) }}
+                  className="text-lg font-semibold text-text bg-slate-800/50 border border-slate-700 rounded-lg px-3 py-1 text-center"
+                  maxLength={40}
+                />
+                <button onClick={handleRenameTeam} className="btn-primary min-h-[36px] px-3">OK</button>
+                <button onClick={() => { setEditingName(false); setRenameError('') }} className="btn-secondary min-h-[36px] px-3">Annuler</button>
+              </div>
+              {renameError && <p className="text-danger text-sm">{renameError}</p>}
+            </div>
+          ) : (
+            <p className="text-text-muted">
+              Vous avez rejoint{' '}
+              <span
+                className="text-brand font-semibold cursor-pointer"
+                onClick={() => { setNameDraft(state.team_name); setRenameError(''); setEditingName(true) }}
+                title="Renommer l'equipe"
+              >
+                {state.team_name} ✏️
+              </span>
+              .
+              En attente que l'hôte lance la partie...
+            </p>
+          )}
         </div>
       </div>
     )
@@ -439,7 +481,32 @@ function TeamScreen() {
     <div className="min-h-screen p-4">
       <div className="max-w-2xl mx-auto space-y-6">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-text">{state.team_name}</h1>
+          {editingName ? (
+            <div className="flex flex-col items-center gap-2">
+              <div className="flex items-center gap-2">
+                <input
+                  autoFocus
+                  value={nameDraft}
+                  onChange={(e) => setNameDraft(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleRenameTeam(); if (e.key === 'Escape') setEditingName(false) }}
+                  className="text-2xl font-bold text-text bg-slate-800/50 border border-slate-700 rounded-lg px-3 py-1 text-center"
+                  maxLength={40}
+                />
+                <button onClick={handleRenameTeam} className="btn-primary min-h-[36px] px-3">OK</button>
+                <button onClick={() => { setEditingName(false); setRenameError('') }} className="btn-secondary min-h-[36px] px-3">Annuler</button>
+              </div>
+              {renameError && <p className="text-danger text-sm">{renameError}</p>}
+            </div>
+          ) : (
+            <h1
+              className="text-2xl font-bold text-text cursor-pointer inline-flex items-center gap-2"
+              onClick={() => { setNameDraft(state.team_name); setRenameError(''); setEditingName(true) }}
+              title="Renommer l'equipe"
+            >
+              {state.team_name}
+              <span className="text-sm text-text-muted">✏️</span>
+            </h1>
+          )}
           <p className="text-text-muted">
             Score : <span className="text-brand font-bold">{state.team_score} pts</span>
             {' • '}

@@ -229,6 +229,14 @@ export async function useToken(data: { team_id: number; token_type: string; targ
   })
 }
 
+export async function renameTeam(gameCode: string, teamId: number, name: string) {
+  return fetchApi<{ id: number; name: string }>(`/games/${gameCode}/teams/${teamId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ name }),
+    headers: teamHeaders(teamId),
+  })
+}
+
 // === Déroulement du jeu (Manche 1) ===
 
 export async function getRandomQuestion() {

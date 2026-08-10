@@ -234,6 +234,37 @@ def create_team(code: str, team_create: schemas.TeamCreate, db: Session = Depend
 
     return team
 
+@app.patch("/games/{code}/teams/{team_id}", response_model=schemas.Team)
+def rename_team(
+    code: str,
+    team_id: int,
+    team_update: schemas.TeamCreate,
+    db: Session = Depends(get_db),
+    x_team_token: Optional[str] = Header(default=None),
+):
+    """Renommage d'équipe par ses propres membres (X-Team-Token), même garde
+    d'unicité de nom que create_team."""
+    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
+
+    team = require_team_token(db, team_id, x_team_token)
+    if team.game_session_id != game.id:
+        raise HTTPException(status_code=404, detail="Équipe introuvable dans cette partie")
+
+    new_name = team_update.name
+    existing_names = db.query(models.Team.name).filter(
+        models.Team.game_session_id == game.id,
+        models.Team.id != team.id,
+    ).all()
+    if new_name.lower() in {n.lower() for (n,) in existing_names}:
+        raise HTTPException(status_code=400, detail="Ce nom d'équipe est déjà pris dans cette partie")
+
+    team.name = new_name
+    db.commit()
+    db.refresh(team)
+    return team
+
 @app.post("/games/{code}/teams/{team_id}/players/", response_model=schemas.PlayerWithTeamToken)
 def join_team(code: str, team_id: int, player_create: schemas.PlayerCreate, db: Session = Depends(get_db)):
     """
