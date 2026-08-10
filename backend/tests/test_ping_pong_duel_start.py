@@ -110,7 +110,11 @@ def test_swap_targets_most_recent_active_duel_if_several_exist(test_client, db_s
     db_session.commit()
     db_session.refresh(recent_duel)
 
-    resp = test_client.post("/tokens/use", json={"team_id": team1.id, "token_type": "SWAP"})
+    resp = test_client.post(
+        "/tokens/use",
+        json={"team_id": team1.id, "token_type": "SWAP"},
+        headers={"X-Team-Token": team1.team_token},
+    )
     assert resp.status_code == 200
 
     db_session.refresh(old_duel)
