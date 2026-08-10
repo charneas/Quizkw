@@ -495,12 +495,14 @@ class TestRound2Manager:
         ]
         
         player_count = 0
+        names_by_id = {}
         for status, count in statuses:
             for i in range(count):
                 player = Player(name=f"Player{player_count}_{status.value}", team_id=None)
                 round2_manager.db.add(player)
                 round2_manager.db.flush()
-                
+                names_by_id[player.id] = player.name
+
                 stats = PlayerRound2Stats(
                     player_id=player.id,
                     game_session_id=sample_game_session.id,
@@ -512,7 +514,7 @@ class TestRound2Manager:
                 )
                 round2_manager.db.add(stats)
                 player_count += 1
-        
+
         round2_manager.db.commit()
         
         progress = round2_manager.get_tournament_progress(sample_game_session.id)
@@ -523,6 +525,10 @@ class TestRound2Manager:
         assert progress.players_remaining == 10  # PLAYING(3) + QUALIFIED(5) + FINALIST(2)
         assert progress.players_eliminated == 6
         assert len(progress.top_players) == 10
+        # Bug playtest : "Top Players" affichait "Player {id}" faute de nom
+        # renvoyé par le backend — chaque entrée doit porter le vrai pseudo.
+        for entry in progress.top_players:
+            assert entry["player_name"] == names_by_id[entry["player_id"]]
 
     def test_get_tournament_progress_ranks_active_before_eliminated(
         self, round2_manager, sample_game_session

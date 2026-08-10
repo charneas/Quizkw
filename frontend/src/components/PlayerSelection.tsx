@@ -87,35 +87,38 @@ function PlayerSelection({ gameCode, onSelectPlayer, existingPlayers = [] }: Pla
         </div>
       )}
 
-      {/* Secours : joueur non trouvé dans la liste ci-dessus */}
-      <div className={existingPlayers.length > 0 ? 'pt-4 border-t border-gray-700' : ''}>
-        {existingPlayers.length > 0 && (
-          <p className="text-sm text-gray-400 mb-3">Votre nom n'apparaît pas ci-dessus ?</p>
-        )}
-        <label htmlFor="playerName" className="block text-gray-300 mb-2">
-          Votre pseudo
-        </label>
-        <input
-          id="playerName"
-          type="text"
-          value={playerName}
-          onChange={(e) => setPlayerName(e.target.value)}
-          placeholder="Entrez votre pseudo"
-          className="w-full bg-gray-700 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-3"
-          disabled={isJoining}
-        />
-        <button
-          onClick={handleCreatePlayer}
-          disabled={isJoining || !playerName.trim()}
-          className={`w-full py-3 rounded-lg font-medium ${
-            isJoining || !playerName.trim()
-              ? 'bg-gray-600 cursor-not-allowed'
-              : 'bg-blue-600 hover:bg-blue-700'
-          } text-white transition-colors`}
-        >
-          {isJoining ? 'Connexion...' : 'Rejoindre'}
-        </button>
-      </div>
+      {/* Secours : uniquement si on n'a AUCUNE liste de qualifiés à proposer
+          (ex. souci de données côté backend). Dès que existingPlayers est
+          peuplée, la Manche 2 connaît exactement les 8 joueurs éligibles :
+          laisser un champ libre ici permettrait de créer un joueur jamais
+          relié à la qualification (bug utilisateur, cf. Round2.tsx). */}
+      {existingPlayers.length === 0 && (
+        <div>
+          <label htmlFor="playerName" className="block text-gray-300 mb-2">
+            Votre pseudo
+          </label>
+          <input
+            id="playerName"
+            type="text"
+            value={playerName}
+            onChange={(e) => setPlayerName(e.target.value)}
+            placeholder="Entrez votre pseudo"
+            className="w-full bg-gray-700 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-3"
+            disabled={isJoining}
+          />
+          <button
+            onClick={handleCreatePlayer}
+            disabled={isJoining || !playerName.trim()}
+            className={`w-full py-3 rounded-lg font-medium ${
+              isJoining || !playerName.trim()
+                ? 'bg-gray-600 cursor-not-allowed'
+                : 'bg-blue-600 hover:bg-blue-700'
+            } text-white transition-colors`}
+          >
+            {isJoining ? 'Connexion...' : 'Rejoindre'}
+          </button>
+        </div>
+      )}
 
       {/* Game code display */}
       <div className="mt-6 text-center">

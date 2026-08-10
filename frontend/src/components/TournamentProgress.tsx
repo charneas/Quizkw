@@ -112,7 +112,7 @@ function TournamentProgressComponent({ progress, currentPlayerId }: TournamentPr
               <div key={player.player_id} className="flex items-center justify-between bg-surface-raised rounded p-3">
                 <div className="flex items-center">
                   <span className="text-text-muted mr-3">#{index + 1}</span>
-                  <span className="text-text">Player {player.player_id}</span>
+                  <span className="text-text">{player.player_name}</span>
                 </div>
                 <div className="flex items-center">
                   <span className="text-text-muted mr-4">{player.score} pts</span>

@@ -237,6 +237,7 @@ export interface TournamentProgress {
   players_eliminated: number
   top_players: {
     player_id: number
+    player_name: string
     score: number
     status: QualificationStatus
   }[]

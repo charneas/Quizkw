@@ -352,9 +352,15 @@ class Round2Manager:
                 -p.score,
             ),
         )
+        player_ids = [p.player_id for p in ranked_players[:10]]
+        players_by_id = {
+            p.id: p for p in self.db.query(models.Player).filter(models.Player.id.in_(player_ids)).all()
+        }
         for player in ranked_players[:10]:
+            player_record = players_by_id.get(player.player_id)
             top_players.append({
                 "player_id": player.player_id,
+                "player_name": player_record.name if player_record else f"Joueur {player.player_id}",
                 "score": player.score,
                 "status": player.qualification_status.value
             })
