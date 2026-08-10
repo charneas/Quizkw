@@ -351,12 +351,17 @@ function TeamScreen() {
         answer: duelAnswer,
       })
 
-      setDuelResult(result)
-
       if (!result.duel_continues) {
+        // Le duel est terminé (mauvaise réponse ou doublon) : on affiche
+        // l'écran de résultat final (PingPongResults).
         const results = await getPingPongDuelResults(state.active_duel.duel_id)
         setDuelResult({ ...result, final: results })
       } else {
+        // Bonne réponse mais le duel continue : ne PAS monter PingPongResults
+        // (qui affiche "X remporte le duel !") — seul un message de tour est
+        // pertinent ici, la victoire n'est pas encore acquise.
+        setFeedbackMessage({ type: 'bonus', text: result.message })
+        setTimeout(() => setFeedbackMessage(null), 5000)
         const freshDuelState = await getPingPongDuelState(state.active_duel.duel_id)
         setState(prev => prev ? {
           ...prev,
