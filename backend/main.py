@@ -1922,6 +1922,52 @@ def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_d
         all_teams_answered = (
             len(answered_ids) == len(team_ids_in_game) and len(team_ids_in_game) > 0
         )
+    else:
+        # BUG (#50) : validate_answers remet current_question_id à None juste
+        # après validation, donc côté équipe on ne peut plus s'appuyer sur
+        # current_question pour afficher le résultat. On retrouve ici la
+        # dernière question que CETTE équipe a vu validée, puis on reconstruit
+        # le même résumé toutes-équipes que /validate-answers renvoyait à
+        # l'host (shape attendue par TeamScreen.tsx : correct_answer + teams[]).
+        # Dès qu'une nouvelle question démarre, current_question_id est
+        # repeuplé, on retombe dans la branche ci-dessus et validation_result
+        # disparaît naturellement.
+        last_validated_answer = (
+            db.query(models.Answer)
+            .filter(
+                models.Answer.team_id == team_id,
+                models.Answer.validated_at.isnot(None),
+            )
+            .order_by(models.Answer.validated_at.desc())
+            .first()
+        )
+        if last_validated_answer:
+            validated_question = db.query(models.Question).filter(
+                models.Question.id == last_validated_answer.question_id
+            ).first()
+            if validated_question:
+                teams_in_game_for_result = db.query(models.Team).filter(
+                    models.Team.game_session_id == game.id
+                ).all()
+                team_ids_for_result = [t.id for t in teams_in_game_for_result]
+                validated_answers = db.query(models.Answer).filter(
+                    models.Answer.question_id == validated_question.id,
+                    models.Answer.team_id.in_(team_ids_for_result),
+                    models.Answer.validated_at.isnot(None),
+                ).all()
+                answers_by_team = {a.team_id: a for a in validated_answers}
+                validation_result_data = {
+                    "correct_answer": validated_question.correct_answer,
+                    "teams": [
+                        {
+                            "team_name": t.name,
+                            "is_correct": answers_by_team[t.id].is_correct,
+                            "points_earned": answers_by_team[t.id].points_earned,
+                        }
+                        for t in teams_in_game_for_result
+                        if t.id in answers_by_team
+                    ],
+                }
 
     # --- Dernier effet de roue (pour afficher un modal sur tous les écrans,
     # y compris ceux qui n'ont pas cliqué sur "Tour suivant") ---
