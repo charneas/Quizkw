@@ -523,7 +523,40 @@ class TestRound2Manager:
         assert progress.players_remaining == 10  # PLAYING(3) + QUALIFIED(5) + FINALIST(2)
         assert progress.players_eliminated == 6
         assert len(progress.top_players) == 10
-        
+
+    def test_get_tournament_progress_ranks_active_before_eliminated(
+        self, round2_manager, sample_game_session
+    ):
+        """BUG-203 (#19) : un joueur éliminé avec un score plus haut ne doit
+        pas devancer un joueur actif dans top_players — le statut prime sur
+        le score, qui ne sert de tri qu'à égalité de statut."""
+        from app.models import Player, PlayerRound2Stats
+
+        def make_player(name, score, status):
+            player = Player(name=name, team_id=None)
+            round2_manager.db.add(player)
+            round2_manager.db.flush()
+            stats = PlayerRound2Stats(
+                player_id=player.id,
+                game_session_id=sample_game_session.id,
+                score=score,
+                questions_answered=10,
+                correct_answers=5,
+                current_question_index=10,
+                qualification_status=status,
+            )
+            round2_manager.db.add(stats)
+            return player
+
+        eliminated_high_score = make_player("Eliminated", 100, QualificationStatus.ELIMINATED)
+        active_low_score = make_player("Active", 10, QualificationStatus.PLAYING)
+        round2_manager.db.commit()
+
+        progress = round2_manager.get_tournament_progress(sample_game_session.id)
+
+        ranked_ids = [p["player_id"] for p in progress.top_players]
+        assert ranked_ids.index(active_low_score.id) < ranked_ids.index(eliminated_high_score.id)
+
     def test_fallback_question_creation(self, round2_manager, sample_theme):
         """Test création de question de secours."""
         question = round2_manager._create_fallback_question(sample_theme.id, 3)

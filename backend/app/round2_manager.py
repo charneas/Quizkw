@@ -339,8 +339,20 @@ class Round2Manager:
             phase = "16_players"
         
         # Créer la liste des meilleurs joueurs
+        # BUG-203 (#19) : trier uniquement par score mélangeait les joueurs
+        # éliminés (score gelé au moment de leur élimination) avec les
+        # joueurs encore actifs, faisant passer des éliminés devant des
+        # actifs avec un score plus frais mais momentanément plus bas. On
+        # priorise donc le statut actif avant le score, à égalité de statut.
         top_players = []
-        for player in sorted(all_players, key=lambda p: p.score, reverse=True)[:10]:
+        ranked_players = sorted(
+            all_players,
+            key=lambda p: (
+                p.qualification_status == models.QualificationStatus.ELIMINATED,
+                -p.score,
+            ),
+        )
+        for player in ranked_players[:10]:
             top_players.append({
                 "player_id": player.player_id,
                 "score": player.score,
