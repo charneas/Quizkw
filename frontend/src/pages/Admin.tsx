@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { Theme, Question, ThemeCategory, Difficulty, QuestionStatsResponse, ContentSuggestion, ContentFlag, ContentHistoryEntry, CategoryMixResponse } from '../types'
 import {
@@ -51,10 +51,12 @@ export default function Admin() {
   // trouvé en revue de code).
   const [questionCountByTheme, setQuestionCountByTheme] = useState<Record<number, number>>({})
   const [filterThemeId, setFilterThemeId] = useState<number | ''>('')
+  const [questionSearch, setQuestionSearch] = useState('')
   const [themeForm, setThemeForm] = useState(emptyThemeForm())
   const [editingThemeId, setEditingThemeId] = useState<number | null>(null)
   const [questionForm, setQuestionForm] = useState(emptyQuestionForm())
   const [editingQuestionId, setEditingQuestionId] = useState<number | null>(null)
+  const questionFormRef = useRef<HTMLElement>(null)
   const [statsByQuestion, setStatsByQuestion] = useState<Record<number, QuestionStatsResponse>>({})
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -183,6 +185,10 @@ export default function Admin() {
       theme_id: question.theme_id ?? '',
       question_number: question.question_number ?? '',
     })
+    // Le formulaire est au-dessus de la liste des questions : sans ce scroll,
+    // cliquer "Éditer" en bas d'une longue liste ne produit aucun changement
+    // visible à l'écran et donne l'impression que le bouton ne fait rien.
+    questionFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
   async function removeQuestion(questionId: number) {
@@ -367,7 +373,7 @@ export default function Admin() {
         </table>
       </section>
 
-      <section className="space-y-3">
+      <section className="space-y-3" ref={questionFormRef}>
         <h2 className="text-xl font-semibold">Questions</h2>
 
         <div>
@@ -382,6 +388,12 @@ export default function Admin() {
               <option key={t.id} value={t.id}>{t.name}</option>
             ))}
           </select>
+          <input
+            className="input-field w-auto ml-2"
+            placeholder="Rechercher (texte, catégorie, réponse)"
+            value={questionSearch}
+            onChange={(e) => setQuestionSearch(e.target.value)}
+          />
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
@@ -461,7 +473,17 @@ export default function Admin() {
             </tr>
           </thead>
           <tbody>
-            {questions.map((question) => (
+            {questions
+              .filter((question) => {
+                const term = questionSearch.trim().toLowerCase()
+                if (!term) return true
+                return (
+                  question.text.toLowerCase().includes(term) ||
+                  question.category.toLowerCase().includes(term) ||
+                  question.correct_answer.toLowerCase().includes(term)
+                )
+              })
+              .map((question) => (
               <tr key={question.id} className="border-b border-border">
                 <td className="p-2">{question.text}</td>
                 <td className="p-2">{question.difficulty} ({question.points} pts)</td>

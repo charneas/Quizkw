@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { getTeamState, submitAnswer, useToken, getPingPongDuelState, getPingPongDuelResults, submitPingPongDuelAnswer, nextQuestion, getRandomPingPongTheme, startPingPongDuel, getWheelHistory, renameTeam, getHostToken, validateAnswers } from '../services/api'
 import type { WheelHistoryEntry } from '../services/api'
 import WheelHistory from '../components/WheelHistory'
+import WheelResultPopup from '../components/WheelResultPopup'
 import type { TokenType, Team } from '../types'
 import PingPongQuestion from '../components/PingPongQuestion'
 import PingPongResults from '../components/PingPongResults'
@@ -844,19 +845,11 @@ function TeamScreen() {
         )}
 
         {wheelEventToShow && (
-          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-            <div className="card max-w-sm w-full text-center">
-              <div className="text-4xl mb-3">🎡</div>
-              <h3 className="text-lg font-semibold text-text mb-2">Roue de fortune !</h3>
-              <p className="text-sm text-text-muted mb-6">{wheelEventToShow.message}</p>
-              <button
-                onClick={() => setWheelEventToShow(null)}
-                className="btn-primary w-full min-h-[44px]"
-              >
-                Continuer →
-              </button>
-            </div>
-          </div>
+          <WheelResultPopup
+            key={wheelEventToShow.id}
+            result={wheelEventToShow}
+            onClose={() => setWheelEventToShow(null)}
+          />
         )}
       </div>
     </div>
