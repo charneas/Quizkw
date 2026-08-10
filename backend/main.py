@@ -1718,6 +1718,29 @@ def cancel_ping_pong_duel(code: str, duel_id: int, db: Session = Depends(get_db)
 
     return PingPongManager(db).get_duel_state(duel_id)
 
+@app.post("/games/{code}/ping-pong/duel/{duel_id}/turns/{turn_id}/override")
+def override_ping_pong_turn(code: str, duel_id: int, turn_id: int, db: Session = Depends(get_db), _host: models.GameSession = Depends(require_host)):
+    """
+    BUG-505 (#37) : l'host surclasse manuellement une réponse ping-pong jugée
+    incorrecte automatiquement (synonyme, réponse partielle valide...), qui
+    avait mis fin au duel. Retire les points crédités au faux gagnant et fait
+    reprendre le duel comme si la réponse avait été acceptée d'emblée.
+    """
+    from app.ping_pong_manager import PingPongManager
+
+    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Game session not found")
+
+    duel = db.query(models.PingPongDuel).filter(models.PingPongDuel.id == duel_id).first()
+    if not duel or duel.game_session_id != game.id:
+        raise HTTPException(status_code=404, detail="Duel introuvable pour cette partie")
+
+    try:
+        return PingPongManager(db).override_wrong_answer(duel_id, turn_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 # Team-specific state endpoint (multi-screen architecture)
 @app.get("/game/{code}/team/{team_id}/state")
 def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_db)):

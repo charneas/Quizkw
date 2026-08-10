@@ -395,6 +395,86 @@ class PingPongManager:
 
         return duel
 
+    def override_wrong_answer(self, duel_id: int, turn_id: int) -> Dict:
+        """BUG-505 (#37) : l'host surclasse manuellement une réponse jugée
+        incorrecte automatiquement (synonyme, réponse partielle valide, etc.)
+        qui a mis fin au duel. Défait la victoire automatique (retire les
+        points crédités au "faux gagnant") et fait reprendre le duel comme si
+        cette réponse avait été acceptée d'emblée : le tour passe à l'équipe
+        adverse, exactement comme la branche "bonne réponse" de submit_answer.
+
+        Hors périmètre volontairement : le duel de départage (is_tiebreak),
+        dont la fin déclenche déjà resolve_manche1_end (possible transition
+        de Manche) — le rouvrir a posteriori risquerait de désynchroniser un
+        état de partie déjà avancé. Même repli que cancel_duel.
+        """
+        duel = (
+            self.db.query(models.PingPongDuel)
+            .filter(models.PingPongDuel.id == duel_id)
+            .first()
+        )
+        if not duel:
+            raise ValueError(f"Duel with ID {duel_id} not found")
+
+        if duel.is_tiebreak:
+            raise ValueError("Le duel de départage ne peut pas être surclassé manuellement")
+
+        if not duel.is_completed or duel.is_cancelled:
+            raise ValueError("Seul un duel terminé par une mauvaise réponse peut être surclassé")
+
+        turn = (
+            self.db.query(models.PingPongTurn)
+            .filter(models.PingPongTurn.id == turn_id, models.PingPongTurn.duel_id == duel_id)
+            .first()
+        )
+        if not turn:
+            raise ValueError(f"Tentative {turn_id} introuvable pour ce duel")
+
+        if turn.is_correct:
+            raise ValueError("Cette tentative a déjà été acceptée")
+
+        # La tentative surclassée doit être celle qui a mis fin au duel (la
+        # plus récente) — surclasser une mauvaise réponse antérieure n'a pas
+        # de sens, le duel a continué après elle.
+        last_turn = (
+            self.db.query(models.PingPongTurn)
+            .filter(models.PingPongTurn.duel_id == duel_id)
+            .order_by(models.PingPongTurn.turn_number.desc())
+            .first()
+        )
+        if not last_turn or last_turn.id != turn.id:
+            raise ValueError("Seule la dernière tentative du duel peut être surclassée")
+
+        # Retirer les points crédités au "faux gagnant" par la branche
+        # "mauvaise réponse" de submit_answer (winner_points = 2, en dur).
+        if duel.winner_team_id:
+            winner_team = (
+                self.db.query(models.Team)
+                .filter(models.Team.id == duel.winner_team_id)
+                .first()
+            )
+            if winner_team:
+                winner_team.score -= 2
+
+        turn.is_correct = True
+
+        updated_answers = list(duel.answers_used or [])
+        updated_answers.append(turn.answer_given)
+        duel.answers_used = updated_answers
+
+        # Le duel reprend : le tour passe à l'équipe adverse de celle qui
+        # vient d'être validée manuellement (même logique que la branche
+        # "bonne réponse" de submit_answer).
+        other_team_id = duel.team2_id if turn.team_id == duel.team1_id else duel.team1_id
+        duel.current_turn_team_id = other_team_id
+        duel.winner_team_id = None
+        duel.is_completed = False
+
+        self.db.commit()
+        self.db.refresh(duel)
+
+        return self.get_duel_state(duel_id)
+
     def get_duel_results(self, duel_id: int) -> Dict:
         """Récupérer les résultats finaux d'un duel"""
         duel = (
@@ -469,6 +549,20 @@ class PingPongManager:
             "winner_team_name": winner_team.name if winner_team else None,
             "total_turns": len(all_turns),
             "answers_used": duel.answers_used or [],
+            # BUG-505 (#37) : la tentative qui a mis fin au duel, exposée pour
+            # que l'host puisse la surclasser manuellement si elle était en
+            # fait valable (synonyme, réponse partielle...) — absente si le
+            # duel a été annulé (cancel_duel) plutôt que perdu sur une
+            # mauvaise réponse.
+            "losing_turn": (
+                {
+                    "id": all_turns[-1].id,
+                    "team_id": all_turns[-1].team_id,
+                    "answer_given": all_turns[-1].answer_given,
+                }
+                if all_turns and not all_turns[-1].is_correct and not duel.is_cancelled
+                else None
+            ),
         }
 
     def get_random_theme(self) -> Optional[models.PingPongTheme]:

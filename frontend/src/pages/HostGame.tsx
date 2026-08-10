@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getGame, getRandomQuestion, spinWheel, advanceRound2Phase, getCurrentQuestion, setCurrentQuestion as setCurrentQuestionApi, getAnswersStatus, getRandomPingPongTheme, startPingPongDuel, getPingPongDuelState, getPingPongDuelResults, getHostToken, cancelPingPongDuel } from '../services/api'
+import { getGame, getRandomQuestion, spinWheel, advanceRound2Phase, getCurrentQuestion, setCurrentQuestion as setCurrentQuestionApi, getAnswersStatus, getRandomPingPongTheme, startPingPongDuel, getPingPongDuelState, getPingPongDuelResults, getHostToken, cancelPingPongDuel, overridePingPongTurn } from '../services/api'
 import type { GameSession, QuestionResponse, WheelSpinResponse, Team } from '../types'
 import Scoreboard from '../components/Scoreboard'
 import TeamComposition from '../components/TeamComposition'
@@ -38,6 +38,9 @@ function HostGame() {
   const [pingPongResults, setPingPongResults] = useState<any>(null)
   const [showTeamSelector, setShowTeamSelector] = useState(false)
   const [cancellingDuel, setCancellingDuel] = useState(false)
+  // BUG-505 (#37) : surclassement manuel d'une réponse ping-pong jugée
+  // incorrecte automatiquement.
+  const [overridingTurn, setOverridingTurn] = useState(false)
 
   useEffect(() => {
     if (code) loadGame()
@@ -337,6 +340,26 @@ function HostGame() {
     }
   }
 
+  const handleOverrideTurn = async (turnId: number) => {
+    if (!pingPongResults || overridingTurn) return
+    const duelId = pingPongResults.duel_id
+    setOverridingTurn(true)
+    try {
+      const duelState = await overridePingPongTurn(code!, duelId, turnId)
+      // Le duel reprend : on quitte l'écran de résultats et on ré-affiche
+      // le duel en cours avec le tour rendu à l'équipe adverse.
+      setShowPingPongResults(false)
+      setPingPongResults(null)
+      setPingPongDuel(duelState)
+      setShowPingPong(true)
+      startDuelPolling(duelId)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Impossible de surclasser cette réponse')
+    } finally {
+      setOverridingTurn(false)
+    }
+  }
+
   const handlePingPongContinue = async () => {
     setShowPingPongResults(false)
     setPingPongTheme(null)
@@ -623,6 +646,9 @@ function HostGame() {
                 totalTurns={pingPongResults.total_turns}
                 answersUsed={pingPongResults.answers_used}
                 onContinue={handlePingPongContinue}
+                losingTurn={pingPongResults.losing_turn}
+                onOverride={handleOverrideTurn}
+                overriding={overridingTurn}
               />
             </div>
           </div>

@@ -145,6 +145,15 @@ export async function cancelPingPongDuel(code: string, duelId: number) {
   })
 }
 
+// BUG-505 (#37) : l'host surclasse manuellement une réponse ping-pong jugée
+// incorrecte automatiquement (synonyme, réponse partielle valide...).
+export async function overridePingPongTurn(code: string, duelId: number, turnId: number) {
+  return fetchApi<any>(`/games/${code}/ping-pong/duel/${duelId}/turns/${turnId}/override`, {
+    method: 'POST',
+    headers: hostHeaders(code),
+  })
+}
+
 // === Équipes et Joueurs ===
 
 export async function createTeam(gameCode: string, data: any) {

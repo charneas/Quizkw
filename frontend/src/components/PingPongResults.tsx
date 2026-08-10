@@ -23,6 +23,11 @@ interface PingPongDuelResultsProps {
   totalTurns: number
   answersUsed: string[]
   onContinue: () => void
+  // BUG-505 (#37) : tentative qui a mis fin au duel, surclassable par l'host
+  // si elle était en fait valable (synonyme, réponse partielle...).
+  losingTurn?: { id: number; team_id: number; answer_given: string } | null
+  onOverride?: (turnId: number) => void
+  overriding?: boolean
 }
 
 function PingPongResults({
@@ -33,6 +38,9 @@ function PingPongResults({
   totalTurns,
   answersUsed,
   onContinue,
+  losingTurn,
+  onOverride,
+  overriding,
 }: PingPongDuelResultsProps) {
   const winner = winnerTeamId === team1.id ? team1 : team2
   const loser = winnerTeamId === team1.id ? team2 : team1
@@ -129,6 +137,25 @@ function PingPongResults({
           )}
         </div>
       </div>
+
+      {/* BUG-505 (#37) : surclassement manuel host de la réponse qui a
+          scellé le duel — pour les synonymes / réponses partielles valides
+          que la liste de réponses acceptées n'anticipait pas. */}
+      {losingTurn && onOverride && (
+        <div className="bg-slate-700/30 border border-dashed border-slate-600 rounded-lg p-4 mb-6 text-center">
+          <p className="text-sm text-slate-400 mb-3">
+            La réponse "<span className="text-white font-semibold">{losingTurn.answer_given}</span>" de{' '}
+            <span className="font-semibold">{loser.name}</span> était en fait valable ?
+          </p>
+          <button
+            onClick={() => onOverride(losingTurn.id)}
+            disabled={overriding}
+            className="btn-secondary disabled:opacity-50"
+          >
+            {overriding ? 'Validation...' : `Valider quand même et faire continuer ${loser.name}`}
+          </button>
+        </div>
+      )}
 
       {/* Toutes les réponses possibles */}
       <div className="bg-slate-700/30 rounded-lg p-4 mb-6">
