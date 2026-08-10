@@ -18,9 +18,11 @@ import {
   selectPlayerColor,
   selectPlayerThemes,
   createMemoryGridWithThemes,
+  getMemoryGridStateByCode,
 } from '../services/api'
 import type { GameSession, MemoryGridState, GridCell } from '../types'
 import type { AvailableTheme, PlayerSetupStatus } from '../services/api'
+import SpectatorView from '../components/SpectatorView'
 
 // C-003 AC2 : durée de tour, alignée sur le pattern déjà utilisé en Manche 2.
 const TURN_DURATION_SECONDS = 30
@@ -77,6 +79,11 @@ function MemoryGrid() {
   const [loading, setLoading] = useState(true)
   const [initStep, setInitStep] = useState('')
   const [error, setError] = useState('')
+  // BUG-401 (#32) : seul l'écran hôte peut créer/démarrer/avancer la Manche 3
+  // (host-gated côté serveur : create-with-themes, start, advance-to-phase3).
+  // Tout autre appareil (joueur éliminé, ou finaliste sur son propre device)
+  // bascule en spectateur lecture seule au lieu d'échouer sur ces appels.
+  const [isSpectator, setIsSpectator] = useState(false)
 
   // H.011 (BUG-302) : setup thème/couleur par finaliste avant que la grille
   // n'existe. Tant que setupPhase est vrai, aucune grille n'est créée.
@@ -147,7 +154,10 @@ function MemoryGrid() {
   useEffect(() => {
     if (timeRemaining === null) return
     if (timeRemaining <= 0) {
-      if (gridId && currentTurn !== null) {
+      // BUG-401 (#32) : un spectateur ne pilote jamais le tour — laisse les
+      // appareils actifs (host/finalistes) faire converger l'état, qu'il
+      // suivra via le polling en lecture seule.
+      if (!isSpectator && gridId && currentTurn !== null) {
         skipTurn(gridId, currentTurn)
           .then(refreshState)
           .catch(() => {
@@ -189,11 +199,9 @@ function MemoryGrid() {
       const gameData = await getGame(code!)
       setGame(gameData)
 
-      if (gameData.current_round !== 'manche_3') {
-        setInitStep('Manche 2 terminée — les 4 finalistes accèdent à la Manche 3...')
-        await advanceToPhase3(code!)
-      }
-
+      // BUG-401 (#32) : déterminer les finalistes AVANT tout appel host-only
+      // (advanceToPhase3/create-with-themes/start) — get_finalists_from_round2
+      // ne dépend que des stats de Manche 2, jamais de current_round.
       setInitStep('Détermination des 4 finalistes...')
       const { finalists, game_session_id } = await getMemoryGridFinalists(code!)
       setGameSessionId(game_session_id)
@@ -205,6 +213,31 @@ function MemoryGrid() {
         if (finalists.includes(p.id)) names[p.id] = p.name
       }
       setFinalistNames(names)
+
+      // BUG-401 (#32) : identifier CE joueur via la même identité persistée
+      // par joinTeam/Round2.tsx (BUG-501/#33, clé `quizkw_player_${code}`).
+      // S'il est connu et n'est PAS dans les finalistes → spectateur lecture
+      // seule, jamais d'appel aux endpoints host-only. Absence d'identité
+      // sauvegardée (cas de l'écran hôte, qui n'a jamais sélectionné de
+      // joueur) → comportement inchangé, flux finaliste/hôte normal.
+      let savedPlayerId: number | null = null
+      try {
+        const savedPlayerRaw = localStorage.getItem(`quizkw_player_${code}`)
+        if (savedPlayerRaw) savedPlayerId = JSON.parse(savedPlayerRaw)?.id ?? null
+      } catch {
+        // Identité illisible : on retombe sur le flux normal, pas spectateur.
+      }
+      if (savedPlayerId !== null && !finalists.includes(savedPlayerId)) {
+        setIsSpectator(true)
+        await initSpectator()
+        setLoading(false)
+        return
+      }
+
+      if (gameData.current_round !== 'manche_3') {
+        setInitStep('Manche 2 terminée — les 4 finalistes accèdent à la Manche 3...')
+        await advanceToPhase3(code!)
+      }
 
       setInitStep('Vérification du setup des finalistes (couleur + thèmes)...')
       const statuses = await fetchSetupStatuses(finalists, game_session_id)
@@ -223,6 +256,40 @@ function MemoryGrid() {
       setLoading(false)
     }
   }
+
+  // BUG-401 (#32) : tentative de récupération de la grille active en lecture
+  // seule (endpoint public par code, aucun appel host-only). Si aucune grille
+  // n'existe encore (Manche 3 pas démarrée par l'hôte), on échoue simplement
+  // et le polling ci-dessous réessaiera — pas d'erreur affichée à l'utilisateur.
+  const initSpectator = async () => {
+    setInitStep("En attente du démarrage de la Manche 3 par l'hôte...")
+    try {
+      const state = await getMemoryGridStateByCode(code!)
+      setGridId(state.memory_grid.id)
+      setGridState(state)
+      await refreshPlayers(state.memory_grid.id)
+    } catch {
+      // Pas encore de grille active — le polling de spectateur réessaiera.
+    }
+    setInitStep('')
+  }
+
+  // Tant qu'un spectateur n'a pas encore de grille à suivre, on réessaie
+  // périodiquement au lieu d'un polling en erreur silencieuse unique.
+  useEffect(() => {
+    if (!isSpectator || gridId) return
+    const interval = setInterval(async () => {
+      try {
+        const state = await getMemoryGridStateByCode(code!)
+        setGridId(state.memory_grid.id)
+        setGridState(state)
+        await refreshPlayers(state.memory_grid.id)
+      } catch {
+        // Toujours pas de grille active — on réessaiera au prochain tick.
+      }
+    }, POLL_INTERVAL_MS)
+    return () => clearInterval(interval)
+  }, [isSpectator, gridId, code])
 
   const fetchSetupStatuses = async (ids: number[], sessionId: number) => {
     const results = await Promise.all(ids.map((id) => getPlayerSetupStatus(id, sessionId)))
@@ -371,7 +438,9 @@ function MemoryGrid() {
   }
 
   const handleCellClick = async (cell: GridCell) => {
-    if (cell.status !== 'hidden' || !roundId || currentPlayerId === null) return
+    // BUG-401 (#32) : un spectateur (lecture seule) ne déclenche jamais
+    // d'action de jeu.
+    if (isSpectator || cell.status !== 'hidden' || !roundId || currentPlayerId === null) return
 
     try {
       await revealCell({
@@ -391,7 +460,7 @@ function MemoryGrid() {
 
   // AD-3 : on soumet la RÉPONSE du joueur ; le serveur seul juge.
   const handleSubmitAnswer = async () => {
-    if (!selectedCell || !roundId || currentPlayerId === null || submitting) return
+    if (isSpectator || !selectedCell || !roundId || currentPlayerId === null || submitting) return
 
     setSubmitting(true)
     try {
@@ -556,6 +625,22 @@ function MemoryGrid() {
     )
   }
 
+  // BUG-401 (#32) : un spectateur sans grille à suivre (Manche 3 pas encore
+  // démarrée par l'hôte) attend, il ne doit jamais voir l'écran d'erreur
+  // générique ci-dessous — le polling de spectateur (useEffect isSpectator)
+  // réessaiera automatiquement dès que l'hôte aura créé la grille.
+  if (isSpectator && !gridState) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <SpectatorView message="En attente du démarrage de la Manche 3 par l'hôte...">
+          <div className="card text-center py-8">
+            <div className="animate-spin h-8 w-8 border-4 border-text border-t-transparent rounded-full mx-auto"></div>
+          </div>
+        </SpectatorView>
+      </div>
+    )
+  }
+
   if (!game || !gridState) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
@@ -609,6 +694,11 @@ function MemoryGrid() {
   return (
     <div className="min-h-screen p-4">
       <div className="max-w-6xl mx-auto">
+        {isSpectator && (
+          <div className="bg-surface-raised border border-border rounded-lg p-3 mb-4 text-center">
+            <p className="text-sm text-text-muted">👁️ Vous suivez la partie en spectateur — lecture seule.</p>
+          </div>
+        )}
         <div className="flex items-center justify-between mb-4">
           <div>
             <h1 className="text-2xl font-bold font-display">🧠 Manche 3 — Grille Mémoire</h1>
@@ -618,9 +708,11 @@ function MemoryGrid() {
               {' • '}4 finalistes
             </p>
           </div>
-          <button onClick={handleEndGame} className="btn-danger text-sm">
-            Terminer la partie
-          </button>
+          {!isSpectator && (
+            <button onClick={handleEndGame} className="btn-danger text-sm">
+              Terminer la partie
+            </button>
+          )}
         </div>
 
         <div className="w-full bg-border rounded-full h-2 mb-6">

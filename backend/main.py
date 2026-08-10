@@ -1024,6 +1024,31 @@ def get_memory_grid_standings(code: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail=str(e))
 
 
+@app.get("/games/{code}/memory-grid/state")
+def get_memory_grid_state_by_code(code: str, db: Session = Depends(get_db)):
+    """
+    BUG-401 (#32) : decouverte de l'etat de la grille memoire par code de
+    partie, pour un spectateur (joueur elimine en Manche 1/2) qui ne connait
+    jamais le memory_grid_id -- celui-ci n'est obtenu par un finaliste que
+    via son propre flux de setup (initGrid). Reste public au meme niveau que
+    GET /memory-grid/{memory_grid_id}/state (aucune verification
+    d'appartenance) : un spectateur ne voit rien de plus qu'un finaliste au
+    meme instant.
+    """
+    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Game session not found")
+
+    memory_grid = _get_active_memory_grid(db, game)
+
+    manager = MemoryGridManager(db)
+    grid_state = manager.get_grid_state(memory_grid.id)
+    if not grid_state:
+        raise HTTPException(status_code=404, detail="Grille mémoire non trouvée")
+
+    return grid_state
+
+
 def _get_active_memory_grid(db: Session, game: models.GameSession) -> MemoryGrid:
     memory_grid = db.query(MemoryGrid).filter(
         MemoryGrid.game_session_id == game.id

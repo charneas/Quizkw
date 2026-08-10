@@ -356,6 +356,13 @@ export async function getMemoryGridState(memoryGridId: number) {
   return fetchApi<MemoryGridState>(`/memory-grid/${memoryGridId}/state`)
 }
 
+// BUG-401 (#32) : découverte de l'état de la grille par code de partie, pour
+// un spectateur qui n'a jamais reçu de memory_grid_id (réservé au flux
+// finaliste `initGrid`).
+export async function getMemoryGridStateByCode(code: string) {
+  return fetchApi<MemoryGridState>(`/games/${code}/memory-grid/state`)
+}
+
 export async function revealCell(data: SelectCellRequest) {
   return fetchApi<{ status: string; cell: unknown }>('/memory-grid/reveal-cell', {
     method: 'POST',

@@ -12,6 +12,7 @@ import {
   getRound2QualifiedPlayers,
   getHostToken
 } from '../services/api'
+import type { Round2QualifiedPlayer } from '../services/api'
 import type {
   Theme,
   PlayerRound2Stats,
@@ -26,6 +27,7 @@ import PlayerSelection from '../components/PlayerSelection'
 import TournamentProgressComponent from '../components/TournamentProgress'
 import ThemeSelectorComponent from '../components/ThemeSelector'
 import IntermediateLeaderboardComponent from '../components/IntermediateLeaderboard'
+import SpectatorView from '../components/SpectatorView'
 import type { RoundType } from '../types'
 
 function getCurrentRoundPath(code: string, round?: RoundType) {
@@ -60,9 +62,7 @@ function Round2() {
   // Joueurs réellement qualifiés depuis la Manche 1 — permet de se
   // reconnecter sous sa vraie identité plutôt que de créer un joueur libre
   // jamais relié à la qualification (bug utilisateur).
-  const [qualifiedPlayers, setQualifiedPlayers] = useState<
-    { id: number; name: string; team_id: number | null; team_name: string | null }[]
-  >([])
+  const [qualifiedPlayers, setQualifiedPlayers] = useState<Round2QualifiedPlayer[]>([])
 
   useEffect(() => {
     if (code) initializeRound2()
@@ -106,7 +106,12 @@ function Round2() {
             // ait déjà choisi un thème ou non.
             setCurrentPlayer(savedPlayer)
           }
-          if (savedStats?.theme) {
+          // BUG-401 (#32) : un joueur éliminé (coupure 16→8 ou 8→4) ne doit
+          // plus jamais rappeler getRound2Question — l'endpoint renvoie 400
+          // ("le joueur ne participe plus à ce round") et laissait l'écran
+          // figé sur un message d'erreur générique. La bascule spectateur
+          // (rendu JSX, dérivé de `isEliminated`) prend le relai à la place.
+          if (savedStats?.theme && savedStats.qualification_status !== 'eliminated') {
             setSelectedTheme(savedStats.theme)
             const hydratedStats: PlayerRound2Stats = {
               id: 0,
@@ -317,6 +322,14 @@ function Round2() {
     }
   }, [code])
 
+  // BUG-401 (#32) : dérivé de qualifiedPlayers (déjà chargé, aucun appel
+  // réseau supplémentaire) — couvre aussi bien la restauration automatique
+  // que la sélection manuelle via PlayerSelection (handlePlayerSelection).
+  const currentPlayerQualification = qualifiedPlayers.find(
+    (p) => p.id === currentPlayer?.id
+  )?.round2_stats?.qualification_status
+  const isEliminated = currentPlayerQualification === 'eliminated'
+
   return (
     <div className="min-h-screen bg-bg p-4 md:p-8">
       <div className="max-w-6xl mx-auto">
@@ -378,8 +391,38 @@ function Round2() {
           />
         )}
 
+        {/* Spectateur (BUG-401 / #32) : joueur éliminé (coupure 16→8 ou
+            8→4) — prioritaire sur les blocs thème/question ci-dessous, qui
+            ne doivent plus jamais s'afficher ni appeler l'API une fois ce
+            statut atteint. */}
+        {!loading && !error && currentPlayer && isEliminated && tournamentProgress?.phase !== '4_finalists' && (
+          <SpectatorView>
+            {tournamentProgress && (
+              <TournamentProgressComponent progress={tournamentProgress} currentPlayerId={currentPlayer.id} />
+            )}
+            <div className="bg-surface rounded-lg p-6">
+              <h3 className="text-lg font-semibold text-text mb-3">Joueurs en cours</h3>
+              <div className="space-y-2">
+                {qualifiedPlayers
+                  .filter((p) => p.round2_stats && p.round2_stats.qualification_status !== 'eliminated')
+                  .map((p) => (
+                    <div key={p.id} className="flex items-center justify-between text-sm">
+                      <span className="text-text">
+                        {p.name}
+                        {p.round2_stats?.theme && (
+                          <span className="text-text-muted"> — {p.round2_stats.theme.name}</span>
+                        )}
+                      </span>
+                      <span className="text-text-muted">{p.round2_stats?.score ?? 0} pts</span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          </SpectatorView>
+        )}
+
         {/* Theme Selection */}
-        {!loading && !error && currentPlayer && themes.length > 0 && !selectedTheme && (
+        {!loading && !error && currentPlayer && !isEliminated && themes.length > 0 && !selectedTheme && (
           <ThemeSelectorComponent
             themes={themes}
             onSelectTheme={handleThemeSelection}
@@ -388,7 +431,7 @@ function Round2() {
         )}
 
         {/* Question Flow */}
-        {selectedTheme && currentQuestion && !answerResult && (
+        {!isEliminated && selectedTheme && currentQuestion && !answerResult && (
           <div className="bg-surface rounded-lg p-6 mb-6">
             <div className="mb-4">
               <h2 className="text-2xl font-display font-semibold text-text mb-2">
