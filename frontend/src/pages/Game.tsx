@@ -476,7 +476,7 @@ function Game() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-1">
-            <Scoreboard teams={game.teams} currentTeamIndex={currentTeamIndex} />
+            <Scoreboard teams={game.teams} />
           </div>
 
           <div className="lg:col-span-2 space-y-4">

@@ -477,7 +477,7 @@ function HostGame() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Scoreboard */}
           <div className="lg:col-span-1 space-y-6">
-            <Scoreboard teams={game.teams} currentTeamIndex={currentTeamIndex} />
+            <Scoreboard teams={game.teams} />
             <TeamComposition teams={game.teams} />
             <WheelHistory history={wheelHistory} />
           </div>
