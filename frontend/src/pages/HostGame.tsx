@@ -406,6 +406,17 @@ function HostGame() {
   // pas seulement une fois qu'elles ont toutes fini — waitingForTeams ne doit
   // pas masquer la question, les deux blocs sont complémentaires.
   const showQuestion = !!currentQuestion
+  // BUG-109 (#11) : en Manche 1, toutes les équipes répondent simultanément
+  // (pas de tour à tour) — currentTeamIndex ne sert qu'à désigner une équipe
+  // par défaut pour la roue, ce n'est PAS l'équipe "dont c'est le tour de
+  // répondre". Le statut par équipe (répondu / en attente), déjà exposé par
+  // answers-status, remplace l'ancien affichage "C'est au tour de X" qui
+  // laissait croire à un ordre de passage inexistant.
+  const answeredTeamIds: number[] = answersStatus?.answered_teams ?? []
+  const teamsAnswerStatus = game.teams.map((t) => ({
+    ...t,
+    has_answered: answeredTeamIds.includes(t.id),
+  }))
 
   return (
     <div className="min-h-screen p-4">
@@ -437,11 +448,6 @@ function HostGame() {
 
           {/* Zone de contrôle */}
           <div className="lg:col-span-2 space-y-4">
-            <div className="card text-center">
-              <p className="text-sm text-text-muted">C'est au tour de</p>
-              <p className="text-2xl font-bold text-brand">{currentTeam.name}</p>
-            </div>
-
             {/* Question affichée pour référence (les équipes répondent via leur écran) */}
             {showQuestion && currentQuestion && (
               <div className="card">
@@ -452,6 +458,27 @@ function HostGame() {
                 <p className="text-sm text-text-muted italic">
                   Les équipes répondent sur leur propre écran...
                 </p>
+              </div>
+            )}
+
+            {/* Progression par équipe (#11) : qui a répondu, qui est attendu —
+                toutes les équipes répondent en parallèle, il n'y a pas d'ordre
+                de passage à afficher. */}
+            {showQuestion && (
+              <div className="card">
+                <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">
+                  Progression des équipes
+                </h3>
+                <div className="space-y-2">
+                  {teamsAnswerStatus.map((team) => (
+                    <div key={team.id} className="flex items-center justify-between">
+                      <span className="text-sm">{team.name}</span>
+                      <span className={team.has_answered ? 'text-success' : 'text-text-muted'}>
+                        {team.has_answered ? '✓ Répondu' : '⏳ En attente'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
