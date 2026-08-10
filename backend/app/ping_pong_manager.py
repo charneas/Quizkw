@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, select, literal, exists
 from datetime import datetime
 from typing import Dict, Optional, List
 from . import models, schemas
@@ -104,38 +104,64 @@ class PingPongManager:
         # de désambiguïsation — s'il en existait plusieurs, l'un d'eux serait
         # choisi arbitrairement et pourrait recevoir l'effet d'un jeton ou
         # un état affiché destiné à l'autre.
-        existing_active_duel = (
-            self.db.query(models.PingPongDuel)
-            .filter(
-                models.PingPongDuel.game_session_id == game_session_id,
-                models.PingPongDuel.is_completed == False,
+        #
+        # BUG-101h : l'ancienne version faisait SELECT puis, si rien trouvé,
+        # INSERT dans deux requêtes séparées — deux appels concurrents
+        # pouvaient tous les deux passer le SELECT avant qu'aucun ne commite,
+        # et créer 2 duels actifs malgré la garde. INSERT ... SELECT ... WHERE
+        # NOT EXISTS ci-dessous exécute la vérification et l'écriture en une
+        # seule instruction atomique (le paradigme est le même que l'UPDATE
+        # conditionnel utilisé pour les jetons dans #3/#53 : pas de fenêtre
+        # entre lecture et écriture, juste transposé à un INSERT).
+        PPD = models.PingPongDuel.__table__
+        no_active_duel_for_either_team = ~exists(
+            select(PPD.c.id).where(
+                PPD.c.game_session_id == game_session_id,
+                PPD.c.is_completed == False,
                 or_(
-                    models.PingPongDuel.team1_id.in_([team1_id, team2_id]),
-                    models.PingPongDuel.team2_id.in_([team1_id, team2_id]),
+                    PPD.c.team1_id.in_([team1_id, team2_id]),
+                    PPD.c.team2_id.in_([team1_id, team2_id]),
                 ),
             )
-            .first()
         )
-        if existing_active_duel:
+        insert_stmt = PPD.insert().from_select(
+            ["game_session_id", "theme_id", "team1_id", "team2_id", "current_turn_team_id",
+             "is_completed", "answers_used", "is_tiebreak", "is_cancelled"],
+            select(
+                literal(game_session_id),
+                literal(theme_id),
+                literal(team1_id),
+                literal(team2_id),
+                literal(team1_id),  # current_turn_team_id : l'équipe qui a choisi commence
+                literal(False),
+                literal([], type_=PPD.c.answers_used.type),
+                literal(False),
+                literal(False),
+            ).where(no_active_duel_for_either_team),
+        )
+        result = self.db.execute(insert_stmt)
+        if result.rowcount == 0:
+            # Rien n'a été écrit (la clause WHERE NOT EXISTS a empêché
+            # l'INSERT) : pas de rollback nécessaire, et surtout pas
+            # souhaitable — la session est partagée avec l'appelant (host
+            # HTTP) et un rollback ici annulerait aussi ses écritures
+            # antérieures non encore commitées dans la même requête/session.
             raise ValueError(
                 "One of the teams already has an active ping-pong duel"
             )
-
-        # Créer le duel
-        duel = models.PingPongDuel(
-            game_session_id=game_session_id,
-            theme_id=theme_id,
-            team1_id=team1_id,
-            team2_id=team2_id,
-            current_turn_team_id=team1_id,  # L'équipe qui a choisi commence
-            is_completed=False,
-            answers_used=[],
-        )
-
-        self.db.add(duel)
         self.db.commit()
-        self.db.refresh(duel)
 
+        duel = (
+            self.db.query(models.PingPongDuel)
+            .filter(
+                models.PingPongDuel.game_session_id == game_session_id,
+                models.PingPongDuel.team1_id == team1_id,
+                models.PingPongDuel.team2_id == team2_id,
+                models.PingPongDuel.is_completed == False,
+            )
+            .order_by(models.PingPongDuel.id.desc())
+            .first()
+        )
         return duel
 
     def submit_answer(
