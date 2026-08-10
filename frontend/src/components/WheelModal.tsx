@@ -12,20 +12,42 @@ interface WheelModalProps {
 
 type EffectType = WheelSpinResponse['effect_type']
 type Phase = 'idle' | 'spinning' | 'landing'
+// Distinction purement visuelle : le backend renvoie effect_type: 'bonus'
+// pour +1 (6-10) ET +3 (19-20), mais ce dernier est un tirage bien plus rare
+// et généreux — segmentKeyForResult() ci-dessous route vers 'bonus_big'
+// selon result.value pour que la roue ne les confonde pas visuellement.
+type SegmentKey = EffectType | 'bonus_big'
 
-// Roue purement décorative (item misc playtest 2026-07-31, "ajouter une
-// animation pour la roue") : la vraie décision (effect_type/value) vient du
-// serveur dans handleSpin ; ces secteurs ne servent qu'à donner à la roue un
-// segment visuel sur lequel atterrir une fois le résultat connu.
-const SEGMENTS: EffectType[] = ['bonus', 'malus', 'ping_pong', 'bonus', 'malus', 'ping_pong']
-const SEGMENT_ANGLE = 360 / SEGMENTS.length
+// La vraie décision (effect_type/value) vient du serveur dans handleSpin —
+// voir _roll_wheel_effect (main.py) pour la source de vérité des règles de
+// plateau. Ces secteurs ne servent qu'à donner à la roue un segment visuel
+// sur lequel atterrir, mais leur TAILLE reflète les vraies probabilités sur
+// d20 : 1-5 malus, 6-10 bonus, 11-18 ping-pong, 19-20 bonus (le gros lot).
+const SEGMENTS: { key: SegmentKey; span: number }[] = [
+  { key: 'malus', span: 90 }, // 5/20
+  { key: 'ping_pong', span: 144 }, // 8/20
+  { key: 'bonus', span: 90 }, // 5/20 (6-10, +1)
+  { key: 'bonus_big', span: 36 }, // 2/20 (19-20, +3)
+]
+const SEGMENT_STARTS = SEGMENTS.reduce<number[]>((acc, _seg, i) => {
+  acc.push(i === 0 ? 0 : acc[i - 1] + SEGMENTS[i - 1].span)
+  return acc
+}, [])
 const SPIN_SPEED_DEG_PER_MS = 0.6
 const LANDING_DURATION_MS = 2200
 
-const SEGMENT_COLORS: Record<EffectType, string> = {
+const SEGMENT_COLORS: Record<SegmentKey, string> = {
   bonus: '#16a34a',
+  bonus_big: '#f59e0b',
   malus: '#dc2626',
   ping_pong: '#7c3aed',
+}
+
+const SEGMENT_EMOJIS: Record<SegmentKey, string> = {
+  malus: '💀',
+  bonus: '🎉',
+  bonus_big: '⭐',
+  ping_pong: '🏓',
 }
 
 const effectColors: Record<EffectType, string> = {
@@ -34,14 +56,15 @@ const effectColors: Record<EffectType, string> = {
   ping_pong: 'text-primary-400',
 }
 
-const effectEmojis: Record<EffectType, string> = {
-  malus: '💀',
-  bonus: '🎉',
-  ping_pong: '🏓',
+// Le résultat réel du serveur ne connaît que 3 effect_type ; on affine vers
+// 'bonus_big' seulement pour choisir/afficher le bon secteur de la roue.
+function segmentKeyForResult(result: WheelSpinResponse): SegmentKey {
+  if (result.effect_type === 'bonus' && (result.value ?? 0) >= 3) return 'bonus_big'
+  return result.effect_type
 }
 
 const wheelBackground = `conic-gradient(${SEGMENTS.map(
-  (seg, i) => `${SEGMENT_COLORS[seg]} ${i * SEGMENT_ANGLE}deg ${(i + 1) * SEGMENT_ANGLE}deg`
+  (seg, i) => `${SEGMENT_COLORS[seg.key]} ${SEGMENT_STARTS[i]}deg ${SEGMENT_STARTS[i] + seg.span}deg`
 ).join(', ')})`
 
 // easeOutCubic : décélération franche façon roue qui s'arrête.
@@ -56,9 +79,13 @@ function WheelModal({ onSpin, result, onClose, teamName, teamProgress, isLastTea
   const rotationRef = useRef(0)
   const rafRef = useRef<number | null>(null)
   const landedForResultRef = useRef<WheelSpinResponse | null>(null)
-  // Identifie chaque appel à handleSpin (une par équipe dans la queue) pour
-  // que le filet de sécurité d'un spin déjà terminé ne puisse pas annuler
-  // le spin suivant, démarré entre-temps.
+  // Génération du spin en cours (une par appel à handleSpin, une par équipe
+  // dans la queue). Non-null tant qu'on attend activement un résultat pour
+  // CETTE génération : permet de détecter l'atterrissage même si le filet
+  // de sécurité a déjà remis `phase` à 'idle' avant qu'un résultat lent
+  // n'arrive (sinon ce résultat serait perdu en silence), et empêche un
+  // filet expiré d'annuler le spin suivant.
+  const awaitingGenerationRef = useRef<number | null>(null)
   const spinGenerationRef = useRef(0)
 
   useEffect(() => {
@@ -85,9 +112,13 @@ function WheelModal({ onSpin, result, onClose, teamName, teamProgress, isLastTea
       }
     }
     if (phase === 'landing' && result) {
-      const matchingIndices = SEGMENTS.map((seg, i) => (seg === result.effect_type ? i : -1)).filter((i) => i >= 0)
-      const targetIndex = matchingIndices[Math.floor(Math.random() * matchingIndices.length)]
-      const segmentCenter = targetIndex * SEGMENT_ANGLE + SEGMENT_ANGLE / 2
+      const key = segmentKeyForResult(result)
+      const foundIndex = SEGMENTS.findIndex((seg) => seg.key === key)
+      const targetIndex = foundIndex >= 0 ? foundIndex : 0
+      if (foundIndex < 0) {
+        console.error('[WheelModal] segment introuvable pour', key, '— repli sur le premier secteur')
+      }
+      const segmentCenter = SEGMENT_STARTS[targetIndex] + SEGMENTS[targetIndex].span / 2
       const startRotation = rotationRef.current
       // Toujours vers l'avant (jamais de retour en arrière visuel) : le
       // prochain multiple de 360 au-delà de la rotation actuelle, plus
@@ -112,27 +143,29 @@ function WheelModal({ onSpin, result, onClose, teamName, teamProgress, isLastTea
     }
   }, [phase, result])
 
-  // Dès que le résultat arrive pendant qu'on tourne, on bascule sur la
-  // phase d'atterrissage (gérée par l'effet ci-dessus).
+  // Dès que le résultat arrive pour la génération activement attendue —
+  // qu'on soit encore en 'spinning' ou que le filet de sécurité ait déjà
+  // remis la phase à 'idle' entre-temps — on bascule sur l'atterrissage.
   useEffect(() => {
-    if (result && phase === 'spinning' && landedForResultRef.current !== result) {
+    if (result && awaitingGenerationRef.current !== null && landedForResultRef.current !== result) {
       landedForResultRef.current = result
+      awaitingGenerationRef.current = null
       setPhase('landing')
     }
     if (!result) {
       landedForResultRef.current = null
       setShowResultPanel(false)
       // Le parent renvoie `result` à null en changeant d'équipe dans la
-      // queue ou à la fermeture du modal — jamais pendant qu'on attend la
-      // réponse réseau d'un spin en cours (phase 'spinning'), qu'il ne faut
-      // donc pas annuler ici.
-      if (phase !== 'spinning') setPhase('idle')
+      // queue ou à la fermeture du modal — jamais pendant qu'on attend
+      // activement un résultat, qu'il ne faut donc pas annuler ici.
+      if (awaitingGenerationRef.current === null) setPhase('idle')
     }
-  }, [result, phase])
+  }, [result])
 
   const handleSpin = async () => {
     if (phase !== 'idle') return
     const generation = ++spinGenerationRef.current
+    awaitingGenerationRef.current = generation
     setPhase('spinning')
     setShowResultPanel(false)
     try {
@@ -145,6 +178,7 @@ function WheelModal({ onSpin, result, onClose, teamName, teamProgress, isLastTea
       // son propre setError affiché ailleurs dans l'écran ; ce catch ne
       // couvre que le cas imprévu d'un throw synchrone, d'où le log dédié.
       console.error('[WheelModal] échec du spin', err)
+      awaitingGenerationRef.current = null
       setPhase('idle')
       return
     }
@@ -155,7 +189,8 @@ function WheelModal({ onSpin, result, onClose, teamName, teamProgress, isLastTea
     // Le contrôle de génération évite qu'un filet expiré (spin déjà atterri)
     // n'annule le spin suivant de la queue par équipe.
     setTimeout(() => {
-      if (spinGenerationRef.current === generation) {
+      if (awaitingGenerationRef.current === generation) {
+        awaitingGenerationRef.current = null
         setPhase((p) => (p === 'spinning' ? 'idle' : p))
       }
     }, 4000)
@@ -189,14 +224,14 @@ function WheelModal({ onSpin, result, onClose, teamName, teamProgress, isLastTea
             style={{ background: wheelBackground, transform: `rotate(${rotation}deg)` }}
           >
             {SEGMENTS.map((seg, i) => {
-              const angle = i * SEGMENT_ANGLE + SEGMENT_ANGLE / 2
+              const angle = SEGMENT_STARTS[i] + seg.span / 2
               return (
                 <div
-                  key={i}
+                  key={seg.key}
                   className="absolute inset-0 flex justify-center"
                   style={{ transform: `rotate(${angle}deg)` }}
                 >
-                  <span className="text-2xl mt-2">{effectEmojis[seg]}</span>
+                  <span className="text-2xl mt-2">{SEGMENT_EMOJIS[seg.key]}</span>
                 </div>
               )
             })}
@@ -209,7 +244,7 @@ function WheelModal({ onSpin, result, onClose, teamName, teamProgress, isLastTea
         {result && showResultPanel ? (
           <div className="space-y-4">
             <div className={`text-xl font-bold ${effectColors[result.effect_type]}`}>
-              {effectEmojis[result.effect_type]} {result.effect_type.toUpperCase()}
+              {SEGMENT_EMOJIS[segmentKeyForResult(result)]} {result.effect_type.toUpperCase()}
             </div>
             <p className="text-slate-300">
               {result.message}
