@@ -44,6 +44,23 @@ def award_points_with_bonus(team: models.Team, base_points: int) -> int:
     team.bonus_active = False
     return points
 
+
+def wheel_effect_message(effect_type: str, target_name: str, value: int | None) -> str:
+    """Message d'affichage d'un effet de roue classique (hors jetons
+    TOKEN_*, déjà messagés séparément). Partagé entre get_team_specific_state
+    (dernier effet) et /games/{code}/wheel-history (#8) pour ne pas dupliquer
+    ce formatage à deux endroits.
+    """
+    if effect_type == "malus":
+        return f"💀 Malus : {target_name} perd {abs(value or 0)} points"
+    if effect_type == "bonus":
+        return f"🎉 Bonus : {target_name} gagne {value or 0} points"
+    if effect_type == "ping_pong":
+        return f"🏓 Duel Ping-Pong déclenché pour {target_name} !"
+    if effect_type == "tiebreak":
+        return f"⚖️ Égalité en fin de Manche 1 : duel de départage pour {target_name} !"
+    return "Effet de roue appliqué"
+
 # Create database tables
 Base.metadata.create_all(bind=engine)
 
@@ -424,6 +441,48 @@ def get_current_question(code: str, db: Session = Depends(get_db)):
         "options": options,
         "question_id": question.id
     }
+
+@app.get("/games/{code}/wheel-history")
+def get_wheel_history(code: str, db: Session = Depends(get_db)):
+    """
+    BUG-106 (#8) : vue consolidée des tours de roue déjà joués pour cette
+    partie, dans l'ordre chronologique — pour l'host et/ou les équipes.
+    Exclut les jetons (TOKEN_*), qui sont des actions joueur et non des
+    tours de roue, et n'ont pas de sens dans ce suivi.
+    """
+    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
+
+    effects = (
+        db.query(models.WheelEffect)
+        .filter(
+            models.WheelEffect.game_session_id == game.id,
+            ~models.WheelEffect.effect_type.startswith("TOKEN_"),
+        )
+        .order_by(models.WheelEffect.id.asc())
+        .all()
+    )
+
+    teams_by_id = {
+        t.id: t
+        for t in db.query(models.Team).filter(models.Team.game_session_id == game.id).all()
+    }
+
+    history = []
+    for effect in effects:
+        target = teams_by_id.get(effect.target_team_id)
+        target_name = target.name if target else "?"
+        history.append({
+            "id": effect.id,
+            "effect_type": effect.effect_type,
+            "value": effect.value,
+            "target_team_id": effect.target_team_id,
+            "target_team_name": target_name,
+            "message": wheel_effect_message(effect.effect_type, target_name, effect.value),
+        })
+
+    return {"history": history}
 
 @app.get("/games/{code}/answers-status")
 def get_answers_status(code: str, question_id: int = None, db: Session = Depends(get_db)):
@@ -2060,16 +2119,7 @@ def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_d
             }
         else:
             # Effet classique de la roue
-            if latest_effect.effect_type == "malus":
-                message = f"💀 Malus : {target_name} perd {abs(latest_effect.value or 0)} points"
-            elif latest_effect.effect_type == "bonus":
-                message = f"🎉 Bonus : {target_name} gagne {latest_effect.value or 0} points"
-            elif latest_effect.effect_type == "ping_pong":
-                message = f"🏓 Duel Ping-Pong déclenché pour {target_name} !"
-            elif latest_effect.effect_type == "tiebreak":
-                message = f"⚖️ Égalité en fin de Manche 1 : duel de départage pour {target_name} !"
-            else:
-                message = "Effet de roue appliqué"
+            message = wheel_effect_message(latest_effect.effect_type, target_name, latest_effect.value)
 
             last_wheel_event = {
                 "id": latest_effect.id,

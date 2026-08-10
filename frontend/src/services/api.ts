@@ -251,6 +251,21 @@ export async function getAnswersStatus(gameCode: string) {
   return fetchApi<any>(`/games/${gameCode}/answers-status`)
 }
 
+// BUG-106 (#8) : vue consolidée des tours de roue déjà joués, par équipe,
+// dans l'ordre chronologique.
+export interface WheelHistoryEntry {
+  id: number
+  effect_type: string
+  value: number | null
+  target_team_id: number | null
+  target_team_name: string
+  message: string
+}
+
+export async function getWheelHistory(gameCode: string) {
+  return fetchApi<{ history: WheelHistoryEntry[] }>(`/games/${gameCode}/wheel-history`)
+}
+
 export async function submitAnswer(data: any) {
   return fetchApi<any>('/answers/', {
     method: 'POST',

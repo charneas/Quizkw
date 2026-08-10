@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getTeamState, submitAnswer, useToken, getPingPongDuelState, getPingPongDuelResults, submitPingPongDuelAnswer, nextQuestion, getRandomPingPongTheme, startPingPongDuel } from '../services/api'
+import { getTeamState, submitAnswer, useToken, getPingPongDuelState, getPingPongDuelResults, submitPingPongDuelAnswer, nextQuestion, getRandomPingPongTheme, startPingPongDuel, getWheelHistory } from '../services/api'
+import type { WheelHistoryEntry } from '../services/api'
+import WheelHistory from '../components/WheelHistory'
 import type { TokenType, Team } from '../types'
 import PingPongQuestion from '../components/PingPongQuestion'
 import PingPongResults from '../components/PingPongResults'
@@ -83,6 +85,8 @@ function TeamScreen() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'swap' | 'penalty' | 'bonus', text: string } | null>(null)
+  // BUG-106 (#8) : vue consolidée des tours de roue déjà joués.
+  const [wheelHistory, setWheelHistory] = useState<WheelHistoryEntry[]>([])
 
   const [advancingToPhase, setAdvancingToPhase] = useState<string | null>(null)
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -100,6 +104,23 @@ function TeamScreen() {
       if (pollingRef.current) clearInterval(pollingRef.current)
     }
   }, [code, teamIdNum])
+
+  // BUG-106 (#8) : historique de la roue, poll léger indépendant du poll
+  // d'état d'équipe (2s) — pas besoin de la même fréquence.
+  useEffect(() => {
+    if (!code) return
+    const fetchHistory = async () => {
+      try {
+        const { history } = await getWheelHistory(code)
+        setWheelHistory(history)
+      } catch {
+        // Ignoré : un prochain tick réessaiera.
+      }
+    }
+    fetchHistory()
+    const interval = setInterval(fetchHistory, 5000)
+    return () => clearInterval(interval)
+  }, [code])
 
   useEffect(() => {
     if (!state || state.game_phase === 'manche_1' || hasStartedAdvanceRef.current) return
@@ -481,6 +502,8 @@ function TeamScreen() {
             </div>
           </div>
         )}
+
+        <WheelHistory history={wheelHistory} />
 
         {/* Question courante — le formulaire reste modifiable par n'importe quel
             coéquipier tant que l'host n'a pas validé (BUG-110) */}

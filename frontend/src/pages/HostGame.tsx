@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getGame, getRandomQuestion, spinWheel, advanceRound2Phase, getCurrentQuestion, setCurrentQuestion as setCurrentQuestionApi, getAnswersStatus, getRandomPingPongTheme, startPingPongDuel, getPingPongDuelState, getPingPongDuelResults, getHostToken, cancelPingPongDuel, overridePingPongTurn } from '../services/api'
+import { getGame, getRandomQuestion, spinWheel, advanceRound2Phase, getCurrentQuestion, setCurrentQuestion as setCurrentQuestionApi, getAnswersStatus, getRandomPingPongTheme, startPingPongDuel, getPingPongDuelState, getPingPongDuelResults, getHostToken, cancelPingPongDuel, overridePingPongTurn, getWheelHistory } from '../services/api'
 import type { GameSession, QuestionResponse, WheelSpinResponse, Team } from '../types'
+import type { WheelHistoryEntry } from '../services/api'
+import WheelHistory from '../components/WheelHistory'
 import Scoreboard from '../components/Scoreboard'
 import TeamComposition from '../components/TeamComposition'
 import WheelModal from '../components/WheelModal'
@@ -41,6 +43,8 @@ function HostGame() {
   // BUG-505 (#37) : surclassement manuel d'une réponse ping-pong jugée
   // incorrecte automatiquement.
   const [overridingTurn, setOverridingTurn] = useState(false)
+  // BUG-106 (#8) : vue consolidée des tours de roue déjà joués.
+  const [wheelHistory, setWheelHistory] = useState<WheelHistoryEntry[]>([])
 
   useEffect(() => {
     if (code) loadGame()
@@ -54,12 +58,20 @@ function HostGame() {
 
   // BUG-114 : rafraîchit la composition des équipes (join tardif) sans
   // attendre une action de jeu qui recharge déjà `game` par ailleurs.
+  // BUG-106 (#8) : même intervalle réutilisé pour l'historique de la roue
+  // ("se met à jour en temps réel", AC #2) — pas de nouveau polling dédié.
   useEffect(() => {
     if (!code) return
     const interval = setInterval(async () => {
       try {
         const freshGame = await getGame(code)
         setGame(freshGame)
+      } catch {
+        // Ignoré : un prochain tick réessaiera.
+      }
+      try {
+        const { history } = await getWheelHistory(code)
+        setWheelHistory(history)
       } catch {
         // Ignoré : un prochain tick réessaiera.
       }
@@ -467,6 +479,7 @@ function HostGame() {
           <div className="lg:col-span-1 space-y-6">
             <Scoreboard teams={game.teams} currentTeamIndex={currentTeamIndex} />
             <TeamComposition teams={game.teams} />
+            <WheelHistory history={wheelHistory} />
           </div>
 
           {/* Zone de contrôle */}
