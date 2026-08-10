@@ -701,6 +701,13 @@ export async function nextQuestion(gameCode: string) {
   })
 }
 
+export async function validateAnswers(gameCode: string) {
+  return fetchApi<any>(`/games/${gameCode}/validate-answers`, {
+    method: 'POST',
+    headers: hostHeaders(gameCode),
+  })
+}
+
 // === Admin content (Epic F, story F.1) ===
 
 import type {

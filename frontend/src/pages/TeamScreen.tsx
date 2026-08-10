@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getTeamState, submitAnswer, useToken, getPingPongDuelState, getPingPongDuelResults, submitPingPongDuelAnswer, nextQuestion, getRandomPingPongTheme, startPingPongDuel, getWheelHistory, renameTeam } from '../services/api'
+import { getTeamState, submitAnswer, useToken, getPingPongDuelState, getPingPongDuelResults, submitPingPongDuelAnswer, nextQuestion, getRandomPingPongTheme, startPingPongDuel, getWheelHistory, renameTeam, getHostToken, validateAnswers } from '../services/api'
 import type { WheelHistoryEntry } from '../services/api'
 import WheelHistory from '../components/WheelHistory'
 import type { TokenType, Team } from '../types'
@@ -87,6 +87,8 @@ function TeamScreen() {
   const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'swap' | 'penalty' | 'bonus', text: string } | null>(null)
   const [editingName, setEditingName] = useState(false)
   const [nameDraft, setNameDraft] = useState('')
+  const [validating, setValidating] = useState(false)
+  const isHost = !!code && !!getHostToken(code)
   const [renameError, setRenameError] = useState('')
   // BUG-106 (#8) : vue consolidée des tours de roue déjà joués.
   const [wheelHistory, setWheelHistory] = useState<WheelHistoryEntry[]>([])
@@ -320,6 +322,20 @@ function TeamScreen() {
       await loadState()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur lors de la réponse')
+    }
+  }
+
+  const handleValidateAnswers = async () => {
+    if (!code) return
+    if (!window.confirm('Valider définitivement les réponses de toutes les équipes ? Cette action est irréversible.')) return
+    setValidating(true)
+    try {
+      await validateAnswers(code)
+      await loadState()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur validation')
+    } finally {
+      setValidating(false)
     }
   }
 
@@ -621,6 +637,21 @@ function TeamScreen() {
                 Valider
               </button>
             </div>
+
+            {isHost && (
+              <div className="mt-4 pt-4 border-t border-border">
+                <p className="text-xs text-text-muted mb-2">
+                  Vous êtes l'hôte de cette partie — cette action verrouille définitivement les réponses de toutes les équipes et distribue les points.
+                </p>
+                <button
+                  onClick={handleValidateAnswers}
+                  disabled={validating}
+                  className="btn-primary w-full disabled:opacity-50"
+                >
+                  {validating ? 'Validation...' : "Valider définitivement (hôte)"}
+                </button>
+              </div>
+            )}
           </div>
         )}
 
