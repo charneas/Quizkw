@@ -86,6 +86,10 @@ function Round2() {
       const qualified = await getRound2QualifiedPlayers(code!)
       setQualifiedPlayers(qualified)
 
+      // BUG-501 (#33) : ré-identifier automatiquement le joueur depuis le
+      // pseudo saisi une seule fois en Manche 1 (stocké par joinTeam via
+      // storePlayerIdentity), au lieu de le renvoyer sur l'écran "qui
+      // êtes-vous ?" à chaque entrée en Manche 2.
       // BUG-207 : restaurer l'état d'un joueur ayant déjà choisi un thème
       // (refresh/reconnect en pleine manche) plutôt que de le laisser sur
       // ThemeSelector, qui échoue en backend avec "already selected a theme"
@@ -96,8 +100,13 @@ function Round2() {
           const savedPlayer = JSON.parse(savedPlayerRaw)
           const existing = qualified.find(p => p.id === savedPlayer.id)
           const savedStats = existing?.round2_stats
-          if (savedStats?.theme) {
+          if (existing) {
+            // Le joueur est bien parmi les qualifiés de cette partie : on
+            // peut le réidentifier sans repasser par PlayerSelection, qu'il
+            // ait déjà choisi un thème ou non.
             setCurrentPlayer(savedPlayer)
+          }
+          if (savedStats?.theme) {
             setSelectedTheme(savedStats.theme)
             const hydratedStats: PlayerRound2Stats = {
               id: 0,

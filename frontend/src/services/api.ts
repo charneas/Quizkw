@@ -52,6 +52,29 @@ function teamHeaders(teamId: number): Record<string, string> {
   return token ? { 'X-Team-Token': token } : {}
 }
 
+// BUG-501 (#33) : identité du joueur (id + nom), saisie une seule fois en
+// Manche 1 (joinTeam) et réutilisée en Manche 2/3 au lieu de la redemander.
+// Même clé que celle déjà utilisée par Round2.tsx pour restaurer sa propre
+// session (BUG-207), pour que les deux écritures convergent vers la même
+// source de vérité.
+function playerIdentityStorageKey(gameCode: string) {
+  return `quizkw_player_${gameCode}`
+}
+
+export function storePlayerIdentity(gameCode: string, player: { id: number; name: string; team_id: number | null }) {
+  localStorage.setItem(playerIdentityStorageKey(gameCode), JSON.stringify(player))
+}
+
+export function getPlayerIdentity(gameCode: string): { id: number; name: string; team_id: number | null } | null {
+  const raw = localStorage.getItem(playerIdentityStorageKey(gameCode))
+  if (!raw) return null
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
 async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
   // ...options DOIT venir avant `headers`, sinon un appelant qui passe ses
   // propres `headers` (ex. useToken avec X-Team-Token) écrase entièrement
@@ -149,6 +172,9 @@ export async function joinTeam(gameCode: string, teamId: number, data: { name: s
   })
   if (player?.team_token) {
     storeTeamToken(teamId, player.team_token)
+  }
+  if (player?.id && player?.name) {
+    storePlayerIdentity(gameCode, { id: player.id, name: player.name, team_id: player.team_id })
   }
   return player
 }
