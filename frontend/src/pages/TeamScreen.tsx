@@ -54,7 +54,7 @@ interface TeamStateData {
   all_answered: boolean
   validation_result: {
     correct_answer: string
-    teams: { team_name: string; is_correct: boolean; points_earned: number }[]
+    teams: { team_name: string; is_correct: boolean; points_earned: number; player_answer?: string }[]
   } | null
   last_wheel_event: {
     id: number
@@ -632,8 +632,13 @@ function TeamScreen() {
             </p>
             <div className="space-y-1 mb-4">
               {state.validation_result.teams.map((t, idx) => (
-                <div key={idx} className="flex justify-between text-sm">
-                  <span>{t.team_name}</span>
+                <div key={idx} className="flex justify-between items-baseline text-sm gap-2">
+                  <span className="flex-1">
+                    {t.team_name}
+                    {t.player_answer && (
+                      <span className="text-text-muted italic"> — « {t.player_answer} »</span>
+                    )}
+                  </span>
                   <span className={t.is_correct ? 'text-success' : 'text-danger'}>
                     {t.is_correct ? `+${t.points_earned} pts` : '✗'}
                   </span>

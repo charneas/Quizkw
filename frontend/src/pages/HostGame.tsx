@@ -537,8 +537,13 @@ function HostGame() {
                 </p>
                 <div className="space-y-1 mb-4">
                 {answerResult.teams_updated.map((t: any, idx: number) => (
-                    <div key={`${t.team_id}_${idx}`} className="flex justify-between text-sm">
-                      <span>{t.team_name}</span>
+                    <div key={`${t.team_id}_${idx}`} className="flex justify-between items-baseline text-sm gap-2">
+                      <span className="flex-1">
+                        {t.team_name}
+                        {t.player_answer && (
+                          <span className="text-text-muted italic"> — « {t.player_answer} »</span>
+                        )}
+                      </span>
                       <span className={t.is_correct ? 'text-success' : 'text-danger'}>
                         {t.is_correct ? `+${t.points_earned} pts` : '✗'}
                       </span>

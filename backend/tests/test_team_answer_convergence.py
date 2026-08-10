@@ -64,6 +64,31 @@ def test_last_answer_before_validation_wins(test_client, db_session, sample_game
     assert sample_team.score == sample_question.points
 
 
+def test_validate_answers_exposes_player_answer_text(test_client, db_session, sample_game_session, sample_team, sample_question):
+    """Item misc playtest 2026-07-31 : voir les réponses des autres équipes au
+    reveal, pas juste correct/incorrect."""
+    sample_game_session.current_question_id = sample_question.id
+    db_session.commit()
+
+    _submit(test_client, sample_question.id, sample_team.id, "Une réponse loufoque")
+
+    validate_resp = test_client.post(
+        f"/games/{sample_game_session.code}/validate-answers",
+        headers={"X-Host-Token": sample_game_session.host_token},
+    )
+    assert validate_resp.status_code == 200
+    team_result = next(t for t in validate_resp.json()["teams_updated"] if t["team_id"] == sample_team.id)
+    assert team_result["player_answer"] == "Une réponse loufoque"
+
+    # Côté équipe (TeamScreen), le même texte doit ressortir via l'état d'équipe
+    # une fois la question courante effacée par validate-answers (BUG #50).
+    state_resp = test_client.get(f"/game/{sample_game_session.code}/team/{sample_team.id}/state")
+    assert state_resp.status_code == 200
+    validation_result = state_resp.json()["validation_result"]
+    team_entry = next(t for t in validation_result["teams"] if t["team_name"] == sample_team.name)
+    assert team_entry["player_answer"] == "Une réponse loufoque"
+
+
 def test_empty_or_blank_answer_rejected(test_client, sample_game_session, sample_team, sample_question):
     sample_game_session.current_question_id = sample_question.id
     assert _submit(test_client, sample_question.id, sample_team.id, "").status_code == 422

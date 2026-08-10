@@ -654,6 +654,7 @@ def validate_answers(code: str, db: Session = Depends(get_db), _host: models.Gam
                 "is_correct": True,
                 "points_earned": points,
                 "new_score": team.score,
+                "player_answer": answer.player_answer,
             })
         elif team and answer.is_correct:
             # Already validated — return existing data without double-counting
@@ -663,6 +664,7 @@ def validate_answers(code: str, db: Session = Depends(get_db), _host: models.Gam
                 "is_correct": True,
                 "points_earned": answer.points_earned,
                 "new_score": team.score,
+                "player_answer": answer.player_answer,
             })
         elif team:
             # Réponse fausse : pas de points, mais le bonus visait cette
@@ -674,6 +676,7 @@ def validate_answers(code: str, db: Session = Depends(get_db), _host: models.Gam
                 "is_correct": False,
                 "points_earned": 0,
                 "new_score": team.score,
+                "player_answer": answer.player_answer,
             })
     
     db.commit()
@@ -2101,6 +2104,7 @@ def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_d
                             "team_name": t.name,
                             "is_correct": answers_by_team[t.id].is_correct,
                             "points_earned": answers_by_team[t.id].points_earned,
+                            "player_answer": answers_by_team[t.id].player_answer,
                         }
                         for t in teams_in_game_for_result
                         if t.id in answers_by_team
