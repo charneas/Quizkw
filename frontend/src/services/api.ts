@@ -600,6 +600,7 @@ export async function getTeamState(gameCode: string, teamId: number) {
       options: string[]
       answer_locked: boolean
       current_team_answer: string | null
+      image_url: string | null
     } | null
     active_duel: DuelState | null
     // BUG-104 / Story J.001 : duel d'une AUTRE équipe, exposé en lecture

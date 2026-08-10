@@ -44,6 +44,7 @@ export interface Question {
   wrong_answers: string[]
   theme_id: number | null
   question_number: number | null
+  image_url: string | null
   created_at: string
 }
 

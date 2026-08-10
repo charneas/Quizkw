@@ -45,6 +45,7 @@ interface TeamStateData {
     options: string[]
     answer_locked: boolean
     current_team_answer: string | null
+    image_url: string | null
   } | null
   active_duel: DuelState | null
   // BUG-104 / Story J.001 : duel d'une AUTRE équipe, en lecture seule,
@@ -593,6 +594,13 @@ function TeamScreen() {
             coéquipier tant que l'host n'a pas validé (BUG-110) */}
         {state.current_question && !state.current_question.answer_locked && (
           <div className="card">
+            {state.current_question.image_url && (
+              <img
+                src={state.current_question.image_url}
+                alt="Illustration de la question"
+                className="max-h-64 mx-auto rounded-lg mb-3 object-contain"
+              />
+            )}
             <h3 className="text-lg font-semibold mb-3">
               {state.current_question.text}
             </h3>

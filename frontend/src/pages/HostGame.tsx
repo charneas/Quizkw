@@ -487,6 +487,13 @@ function HostGame() {
             {/* Question affichée pour référence (les équipes répondent via leur écran) */}
             {showQuestion && currentQuestion && (
               <div className="card">
+                {currentQuestion.question.image_url && (
+                  <img
+                    src={currentQuestion.question.image_url}
+                    alt="Illustration de la question"
+                    className="max-h-64 mx-auto rounded-lg mb-3 object-contain"
+                  />
+                )}
                 <h3 className="text-lg font-semibold mb-2">{currentQuestion.question.text}</h3>
                 <p className="text-xs text-text-muted mb-3">
                   {currentQuestion.question.category} • {currentQuestion.question.points} pts

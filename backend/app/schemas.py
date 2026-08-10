@@ -35,6 +35,7 @@ class QuestionBase(BaseModel):
     wrong_answers: List[str]
     theme_id: Optional[int] = None
     question_number: Optional[int] = None
+    image_url: Optional[str] = None
 
 class QuestionCreate(QuestionBase):
     pass

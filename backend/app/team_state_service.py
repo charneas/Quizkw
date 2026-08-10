@@ -79,6 +79,7 @@ def get_team_specific_state(db: Session, code: str, team_id: int) -> dict:
                 "options": options,
                 "answer_locked": answer_locked,
                 "current_team_answer": current_team_answer,
+                "image_url": question.image_url,
             }
 
     # Vérifier le statut des réponses pour déterminer si c'est le tour

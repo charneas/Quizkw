@@ -40,6 +40,7 @@ function emptyQuestionForm() {
     wrong_answers: '',
     theme_id: '' as number | '',
     question_number: '' as number | '',
+    image_url: '',
   }
 }
 
@@ -157,6 +158,7 @@ export default function Admin() {
         wrong_answers: questionForm.wrong_answers.split(',').map((s) => s.trim()).filter(Boolean),
         theme_id: questionForm.theme_id === '' ? null : questionForm.theme_id,
         question_number: questionForm.question_number === '' ? null : questionForm.question_number,
+        image_url: questionForm.image_url.trim() === '' ? null : questionForm.image_url.trim(),
       }
       if (editingQuestionId) {
         await adminUpdateQuestion(editingQuestionId, payload)
@@ -184,6 +186,7 @@ export default function Admin() {
       wrong_answers: question.wrong_answers.join(', '),
       theme_id: question.theme_id ?? '',
       question_number: question.question_number ?? '',
+      image_url: question.image_url ?? '',
     })
     // Le formulaire est au-dessus de la liste des questions : sans ce scroll,
     // cliquer "Éditer" en bas d'une longue liste ne produit aucun changement
@@ -448,6 +451,12 @@ export default function Admin() {
             placeholder="N° question (Round 2)"
             value={questionForm.question_number}
             onChange={(e) => setQuestionForm({ ...questionForm, question_number: e.target.value === '' ? '' : Number(e.target.value) })}
+          />
+          <input
+            className="input-field col-span-2"
+            placeholder="URL de l'image (optionnel)"
+            value={questionForm.image_url}
+            onChange={(e) => setQuestionForm({ ...questionForm, image_url: e.target.value })}
           />
         </div>
         <button className="btn-primary" onClick={submitQuestion}>

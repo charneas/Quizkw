@@ -38,6 +38,7 @@ class QuestionUpdate(BaseModel):
     wrong_answers: Optional[List[str]] = None
     theme_id: Optional[int] = None
     question_number: Optional[int] = Field(None, ge=1, le=10)
+    image_url: Optional[str] = None
 
 
 class ThemeDeleteWarning(BaseModel):

@@ -38,6 +38,7 @@ class Question(Base):
     wrong_answers = Column(String)  # Stocker les mauvaises réponses en JSON
     theme_id = Column(Integer, ForeignKey("themes.id"), nullable=True)
     question_number = Column(Integer)  # 1-10 pour Round 2 (difficulty progressive)
+    image_url = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relations
