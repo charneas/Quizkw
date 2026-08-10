@@ -5,6 +5,7 @@ import random
 from datetime import datetime
 from typing import List, Dict, Optional
 from . import models, schemas
+from .score_utils import apply_score_delta
 
 
 class Round2Manager:
@@ -232,7 +233,7 @@ class Round2Manager:
             points_awarded = 0
         
         # Mettre à jour les stats
-        stats.score += points_awarded
+        stats = apply_score_delta(self.db, models.PlayerRound2Stats, stats.id, points_awarded)
         stats.questions_answered += 1
         stats.current_question_index += 1
         

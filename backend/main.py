@@ -15,6 +15,7 @@ from app import models, schemas
 from app.models import Base
 from app.memory_grid import MemoryGridManager, MemoryGrid, GridCell, MemoryGridRound, GridCellStatus, SuddenDeathRound
 from app.round2_manager import Round2Manager
+from app.score_utils import apply_team_score_delta
 from main_extended import router
 from main_admin import router as admin_router, auth_router as admin_auth_router
 from main_content_gen import router as content_gen_router, player_router as content_flag_router
@@ -43,6 +44,8 @@ def award_points_with_bonus(team: models.Team, base_points: int) -> int:
     points = base_points * 2 if team.bonus_active else base_points
     team.bonus_active = False
     return points
+
+
 
 
 def wheel_effect_message(effect_type: str, target_name: str, value: int | None) -> str:
@@ -646,7 +649,7 @@ def validate_answers(code: str, db: Session = Depends(get_db), _host: models.Gam
         team = db.query(models.Team).filter(models.Team.id == answer.team_id).first()
         if team and answer.is_correct and answer.points_earned == 0:
             points = award_points_with_bonus(team, question.points)
-            team.score += points
+            team = apply_team_score_delta(db, team.id, points)
             answer.points_earned = points
             teams_updated.append({
                 "team_id": team.id,
@@ -749,14 +752,14 @@ def spin_wheel(wheel_spin: schemas.WheelSpinRequest, db: Session = Depends(get_d
     (get_team_specific_state), déjà fonctionnel, sans changement
     supplémentaire.
     """
-    # with_for_update() : verrouille la ligne le temps du spin pour éviter
-    # une perte de mise à jour si deux requêtes concurrentes ciblent la même
-    # équipe (double-clic, requêtes qui se chevauchent) — trouvé en revue de
-    # code, cette route n'avait aucune écriture avant cette story donc le
-    # risque n'existait pas encore.
+    # BUG-101e : with_for_update() ne protège rien en pratique sur SQLite (le
+    # moteur utilisé ici), qui l'ignore silencieusement (déjà constaté sur
+    # BUG-101 pour les jetons) — la vraie protection contre une perte de mise
+    # à jour vient de apply_team_score_delta() plus bas (UPDATE atomique),
+    # pas d'un verrou de ligne qui n'existe pas réellement.
     team = db.query(models.Team).filter(
         models.Team.id == wheel_spin.team_id
-    ).with_for_update().first()
+    ).first()
     if not team:
         raise HTTPException(status_code=404, detail="Équipe introuvable")
 
@@ -768,19 +771,19 @@ def spin_wheel(wheel_spin: schemas.WheelSpinRequest, db: Session = Depends(get_d
     spin_result, effect_type, value = _roll_wheel_effect(has_opponent)
 
     if effect_type == "malus":
-        team.score = max(0, team.score + value)
+        team = apply_team_score_delta(db, team.id, value, floor_zero=True)
         message = f"Résultat {spin_result}: Malus de 3 points"
     elif effect_type == "bonus" and value == 1:
         message = f"Résultat {spin_result}: +1 point"
-        team.score += value
+        team = apply_team_score_delta(db, team.id, value)
     elif effect_type == "ping_pong":
         message = f"Résultat {spin_result}: Mode Ping Pong! Choisissez un adversaire"
     elif effect_type == "bonus" and value == 2:
         message = f"Résultat {spin_result}: pas d'adversaire disponible, +2 points à la place"
-        team.score += value
+        team = apply_team_score_delta(db, team.id, value)
     else:  # bonus +3 (19-20)
         message = f"Résultat {spin_result}: Bonus de 3 points!"
-        team.score += value
+        team = apply_team_score_delta(db, team.id, value)
 
     wheel_effect = models.WheelEffect(
         game_session_id=team.game_session_id,
@@ -2222,10 +2225,10 @@ def trigger_wheel_effect(db: Session, game: models.GameSession) -> Optional[dict
     _spin_result, effect_type, value = _roll_wheel_effect(has_opponent)
 
     if effect_type == "malus":
-        spinning_team.score = max(0, spinning_team.score + value)
+        spinning_team = apply_team_score_delta(db, spinning_team.id, value, floor_zero=True)
         message = f"💀 Malus : {spinning_team.name} perd 3 points"
     elif effect_type == "bonus" and value == 1:
-        spinning_team.score += value
+        spinning_team = apply_team_score_delta(db, spinning_team.id, value)
         message = f"🎉 {spinning_team.name} gagne 1 point"
     elif effect_type == "ping_pong":
         # L'équipe qui tombe sur le ping-pong choisit elle-même son adversaire
@@ -2233,10 +2236,10 @@ def trigger_wheel_effect(db: Session, game: models.GameSession) -> Optional[dict
         message = f"🏓 {spinning_team.name}, choisissez votre adversaire !"
     elif effect_type == "bonus" and value == 2:
         # Une seule équipe en jeu : pas d'adversaire possible pour le duel.
-        spinning_team.score += value
+        spinning_team = apply_team_score_delta(db, spinning_team.id, value)
         message = f"Pas d'adversaire disponible pour le ping-pong : {spinning_team.name} reçoit +2 points à la place."
     else:  # bonus +3 (19-20)
-        spinning_team.score += value
+        spinning_team = apply_team_score_delta(db, spinning_team.id, value)
         message = f"🎉 Bonus : {spinning_team.name} gagne 3 points !"
 
     wheel_effect = models.WheelEffect(

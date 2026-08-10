@@ -259,7 +259,9 @@ class MemoryGridManager:
         if points > 0:
             cell.points_awarded = points  # arme la sentinelle
             stats = self._get_or_create_round3_stats(round_obj.game_session_id, player_id)
-            stats.score += points
+            from app.models import PlayerRound3Stats
+            from app.score_utils import apply_score_delta
+            stats = apply_score_delta(self.db, PlayerRound3Stats, stats.id, points)
             stats.cells_claimed += 1
 
         self.db.flush()

@@ -3,6 +3,7 @@ from sqlalchemy import func, or_, select, literal, exists
 from datetime import datetime
 from typing import Dict, Optional, List
 from . import models, schemas
+from .score_utils import apply_team_score_delta
 
 
 def _levenshtein_distance(a: str, b: str) -> int:
@@ -261,7 +262,7 @@ class PingPongManager:
                 .first()
             )
             if winner_team:
-                winner_team.score += winner_points
+                winner_team = apply_team_score_delta(self.db, winner_team.id, winner_points)
 
             self.db.commit()
             self.db.refresh(duel)
@@ -310,7 +311,7 @@ class PingPongManager:
                 .first()
             )
             if winner_team:
-                winner_team.score += winner_points
+                winner_team = apply_team_score_delta(self.db, winner_team.id, winner_points)
 
             self.db.commit()
             self.db.refresh(duel)
@@ -524,7 +525,7 @@ class PingPongManager:
                 .first()
             )
             if winner_team:
-                winner_team.score -= 2
+                apply_team_score_delta(self.db, winner_team.id, -2)
 
         turn.is_correct = True
 
