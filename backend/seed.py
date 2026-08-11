@@ -750,8 +750,150 @@ def seed_ping_pong_themes(db: Session):
             ],
             "min_answers_to_win": 3,
         },
+        {
+            "title": "Chanteurs et groupes de variété française",
+            "description": "Citez des chanteurs ou groupes de variété française",
+            "correct_answers": [
+                "Johnny Hallyday", "Jean-Jacques Goldman", "Mylène Farmer",
+                "Francis Cabrel", "Vanessa Paradis", "Patrick Bruel",
+                "Renaud", "Charles Aznavour", "Edith Piaf", "Christophe Maé",
+                "Zaz", "Stromae", "Angèle", "Indochine", "Téléphone",
+                "Louane", "Julien Doré", "Vianney", "Kendji Girac",
+                "Amir", "Slimane", "M Pokora", "Christophe Willem",
+                "Grand Corps Malade", "Aya Nakamura"
+            ],
+            "min_answers_to_win": 4,
+        },
+        {
+            "title": "Personnages de Disney",
+            "description": "Citez des personnages issus des films Disney",
+            "correct_answers": [
+                "Mickey", "Minnie", "Donald", "Dingo", "Simba", "Mufasa",
+                "Elsa", "Anna", "Olaf", "Ariel", "Belle", "Cendrillon",
+                "Blanche-Neige", "Aladdin", "Jasmine", "Jafar", "Peter Pan",
+                "Wendy", "Capitaine Crochet", "Pinocchio", "Bambi",
+                "Dumbo", "Raiponce", "Flynn Rider", "Mulan", "Pocahontas",
+                "Hercule", "Winnie l'ourson", "Tigrou", "Woody", "Buzz l'Éclair"
+            ],
+            "min_answers_to_win": 5,
+        },
+        {
+            "title": "Fleuves et rivières de France",
+            "description": "Citez des fleuves ou rivières français",
+            "correct_answers": [
+                "Seine", "Loire", "Rhône", "Garonne", "Rhin", "Meuse",
+                "Moselle", "Marne", "Dordogne", "Somme", "Adour",
+                "Charente", "Vienne", "Yonne", "Isère", "Durance",
+                "Saône", "Oise", "Aisne", "Var", "Ain", "Lot", "Tarn"
+            ],
+            "min_answers_to_win": 3,
+        },
+        {
+            "title": "Championnats du monde de football",
+            "description": "Citez des pays vainqueurs de la Coupe du Monde de football",
+            "correct_answers": [
+                "Brésil", "Allemagne", "Italie", "Argentine", "France",
+                "Uruguay", "Angleterre", "Espagne"
+            ],
+            "min_answers_to_win": 3,
+        },
+        {
+            "title": "Animaux de la savane",
+            "description": "Citez des animaux que l'on trouve dans la savane africaine",
+            "correct_answers": [
+                "Lion", "Éléphant", "Girafe", "Zèbre", "Guépard",
+                "Hyène", "Rhinocéros", "Hippopotame", "Buffle",
+                "Gnou", "Antilope", "Gazelle", "Léopard", "Autruche",
+                "Chacal", "Phacochère", "Babouin", "Vautour", "Suricate"
+            ],
+            "min_answers_to_win": 4,
+        },
+        {
+            "title": "Films d'animation Pixar",
+            "description": "Citez des films d'animation produits par Pixar",
+            "correct_answers": [
+                "Toy Story", "1001 Pattes", "Monstres et Cie", "Némo",
+                "Les Indestructibles", "Cars", "Ratatouille", "Wall-E",
+                "Là-Haut", "Rebelle", "Vice-Versa", "Le Voyage d'Arlo",
+                "Coco", "Les Indestructibles 2", "Toy Story 4", "En Avant",
+                "Soul", "Luca", "Alerte Rouge", "Elemental"
+            ],
+            "min_answers_to_win": 4,
+        },
+        {
+            "title": "Sports olympiques d'été",
+            "description": "Citez des sports au programme des Jeux Olympiques d'été",
+            "correct_answers": [
+                "Athlétisme", "Natation", "Gymnastique", "Judo", "Escrime",
+                "Cyclisme", "Aviron", "Voile", "Tir à l'arc", "Basketball",
+                "Football", "Handball", "Volleyball", "Boxe", "Lutte",
+                "Haltérophilie", "Tennis", "Tennis de table", "Badminton",
+                "Rugby", "Skateboard", "Surf", "Escalade", "Équitation",
+                "Water-polo", "Triathlon", "Pentathlon moderne"
+            ],
+            "min_answers_to_win": 5,
+        },
+        {
+            "title": "Peintres célèbres",
+            "description": "Citez des peintres célèbres",
+            "correct_answers": [
+                "Picasso", "Van Gogh", "Monet", "Renoir", "Léonard de Vinci",
+                "Michel-Ange", "Rembrandt", "Dalí", "Matisse", "Cézanne",
+                "Degas", "Gauguin", "Vermeer", "Rubens", "Klimt",
+                "Munch", "Botticelli", "Caravage", "Delacroix", "Manet",
+                "Toulouse-Lautrec", "Magritte", "Kandinsky", "Chagall"
+            ],
+            "min_answers_to_win": 4,
+        },
+        {
+            "title": "Régions de France",
+            "description": "Citez des régions administratives françaises",
+            "correct_answers": [
+                "Île-de-France", "Auvergne-Rhône-Alpes", "Bretagne",
+                "Normandie", "Occitanie", "Nouvelle-Aquitaine",
+                "Hauts-de-France", "Grand Est", "Provence-Alpes-Côte d'Azur",
+                "Pays de la Loire", "Centre-Val de Loire", "Bourgogne-Franche-Comté",
+                "Corse"
+            ],
+            "min_answers_to_win": 3,
+        },
+        {
+            "title": "Instruments de musique",
+            "description": "Citez des instruments de musique",
+            "correct_answers": [
+                "Guitare", "Piano", "Violon", "Batterie", "Trompette",
+                "Saxophone", "Flûte", "Clarinette", "Violoncelle",
+                "Contrebasse", "Harpe", "Accordéon", "Trombone", "Tuba",
+                "Orgue", "Xylophone", "Banjo", "Ukulélé", "Cor",
+                "Hautbois", "Basson", "Djembé", "Harmonica"
+            ],
+            "min_answers_to_win": 4,
+        },
+        {
+            "title": "Super-héros DC Comics",
+            "description": "Citez des super-héros de l'univers DC Comics",
+            "correct_answers": [
+                "Batman", "Superman", "Wonder Woman", "The Flash",
+                "Aquaman", "Green Lantern", "Cyborg", "Green Arrow",
+                "Shazam", "Robin", "Batgirl", "Nightwing", "Supergirl",
+                "Martian Manhunter", "Hawkman", "Zatanna", "Black Canary"
+            ],
+            "min_answers_to_win": 4,
+        },
+        {
+            "title": "Villes de plus d'un million d'habitants dans le monde",
+            "description": "Citez des villes du monde comptant plus d'un million d'habitants",
+            "correct_answers": [
+                "Paris", "Londres", "New York", "Tokyo", "Pékin", "Shanghai",
+                "Moscou", "Le Caire", "Mumbai", "Delhi", "São Paulo",
+                "Mexico", "Los Angeles", "Istanbul", "Séoul", "Bangkok",
+                "Berlin", "Madrid", "Rome", "Buenos Aires", "Lagos",
+                "Karachi", "Jakarta", "Manille", "Rio de Janeiro"
+            ],
+            "min_answers_to_win": 4,
+        },
     ]
-    
+
     count = 0
     for theme_data in themes_data:
         theme = PingPongTheme(
