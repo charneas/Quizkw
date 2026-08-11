@@ -503,8 +503,8 @@ function TeamScreen() {
 
   return (
     <div className="min-h-screen p-4">
-      <div className="max-w-2xl mx-auto space-y-6">
-        <div className="text-center">
+      <div className="max-w-6xl mx-auto">
+        <div className="text-center mb-6">
           {editingName ? (
             <div className="flex flex-col items-center gap-2">
               <div className="flex items-center gap-2">
@@ -555,6 +555,48 @@ function TeamScreen() {
           </div>
         )}
 
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-1 space-y-6">
+            {/* Classement affiché uniquement pendant les tours de roue (pas
+                de question/duel/validation en cours) -- pendant une question,
+                l'attention doit rester sur celle-ci, pas sur le classement. */}
+            {state.other_teams.length > 0 && !state.current_question && !state.active_duel && !state.spectator_duel && !state.validation_result && (
+              <div className="card">
+                <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">
+                  📊 Classement
+                </h3>
+                <div className="space-y-2">
+                  {[
+                    { team_id: state.team_id, team_name: state.team_name, team_score: state.team_score, has_answered: state.has_answered, isSelf: true },
+                    ...state.other_teams.map((t) => ({ ...t, isSelf: false })),
+                  ]
+                    .sort((a, b) => b.team_score - a.team_score)
+                    .map((team, rank) => (
+                      <div
+                        key={team.team_id}
+                        className={`flex items-center justify-between p-2 rounded-lg ${team.isSelf ? 'bg-brand-muted/20 border border-brand' : 'bg-surface-raised'}`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold text-text-muted w-5">{rank + 1}.</span>
+                          <span className="text-sm font-medium">
+                            {team.team_name}{team.isSelf ? ' (vous)' : ''}
+                          </span>
+                          <span className={`text-xs ${team.has_answered ? 'text-success' : 'text-text-muted'}`}>
+                            {team.has_answered ? '✓' : '⏳'}
+                          </span>
+                        </div>
+                        <span className="font-bold text-brand">{team.team_score} pts</span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            <WheelHistory history={wheelHistory} />
+          </div>
+
+          <div className="lg:col-span-2 space-y-6">
+
         {choosingPingPongOpponent && !state.active_duel && (
           <PingPongTeamSelector
             currentTeam={{
@@ -575,40 +617,6 @@ function TeamScreen() {
             onCancel={() => setChoosingPingPongOpponent(false)}
           />
         )}
-
-        {state.other_teams.length > 0 && (
-          <div className="card">
-            <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">
-              📊 Classement
-            </h3>
-            <div className="space-y-2">
-              {[
-                { team_id: state.team_id, team_name: state.team_name, team_score: state.team_score, has_answered: state.has_answered, isSelf: true },
-                ...state.other_teams.map((t) => ({ ...t, isSelf: false })),
-              ]
-                .sort((a, b) => b.team_score - a.team_score)
-                .map((team, rank) => (
-                  <div
-                    key={team.team_id}
-                    className={`flex items-center justify-between p-2 rounded-lg ${team.isSelf ? 'bg-brand-muted/20 border border-brand' : 'bg-surface-raised'}`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-text-muted w-5">{rank + 1}.</span>
-                      <span className="text-sm font-medium">
-                        {team.team_name}{team.isSelf ? ' (vous)' : ''}
-                      </span>
-                      <span className={`text-xs ${team.has_answered ? 'text-success' : 'text-text-muted'}`}>
-                        {team.has_answered ? '✓' : '⏳'}
-                      </span>
-                    </div>
-                    <span className="font-bold text-brand">{team.team_score} pts</span>
-                  </div>
-                ))}
-            </div>
-          </div>
-        )}
-
-        <WheelHistory history={wheelHistory} />
 
         {/* Question courante — le formulaire reste modifiable par n'importe quel
             coéquipier tant que l'host n'a pas validé (BUG-110) */}
@@ -856,14 +864,16 @@ function TeamScreen() {
           </div>
         )}
 
-        {/* Jetons */}
-        {state.tokens.length > 0 && (
-          <TokenPanel
-            tokens={state.tokens}
-            otherTeams={state.other_teams.map((t) => ({ team_id: t.team_id, team_name: t.team_name }))}
-            onUseToken={handleUseToken}
-          />
-        )}
+            {/* Jetons */}
+            {state.tokens.length > 0 && (
+              <TokenPanel
+                tokens={state.tokens}
+                otherTeams={state.other_teams.map((t) => ({ team_id: t.team_id, team_name: t.team_name }))}
+                onUseToken={handleUseToken}
+              />
+            )}
+          </div>
+        </div>
 
         {error && (
           <div className="fixed bottom-4 right-4 z-[60] bg-danger/90 text-text px-4 py-2 rounded-lg text-sm">
