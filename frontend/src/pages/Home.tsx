@@ -4,7 +4,7 @@ import { createGame, storeHostToken } from '../services/api'
 import { pluralJoueurs } from '../utils/pluralize'
 
 const PLAYERS_PER_TEAM_OPTIONS = [
-  { value: 1, label: '1 joueur (solo)' },
+  { value: 1, label: '1 joueur' },
   { value: 2, label: '2 joueurs' },
   { value: 3, label: '3 joueurs' },
 ]
