@@ -9,11 +9,17 @@ const PLAYERS_PER_TEAM_OPTIONS = [
   { value: 3, label: '3 joueurs' },
 ]
 
+const QUESTION_COUNT_OPTIONS = [20, 25, 30, 35, 40, 45, 50]
+
+const WHEEL_FREQUENCY_OPTIONS = [5, 10]
+
 function Home() {
   const navigate = useNavigate()
   const [joinCode, setJoinCode] = useState('')
   const [totalPlayers, setTotalPlayers] = useState(6)
   const [playersPerTeam, setPlayersPerTeam] = useState(2)
+  const [questionCount, setQuestionCount] = useState(20)
+  const [wheelFrequency, setWheelFrequency] = useState(5)
   const [isCreating, setIsCreating] = useState(false)
   const [error, setError] = useState('')
   const [showCreate, setShowCreate] = useState(false)
@@ -25,6 +31,8 @@ function Home() {
       const result = await createGame({
         total_players: totalPlayers,
         players_per_team: playersPerTeam,
+        manche1_question_count: questionCount,
+        wheel_frequency: wheelFrequency,
       })
       storeHostToken(result.game.code, result.host_token)
       navigate(`/lobby/${result.game.code}`)
@@ -128,6 +136,42 @@ function Home() {
 
               <div className="text-sm text-text-muted text-center">
                 {Math.floor(totalPlayers / playersPerTeam)} équipes de {playersPerTeam} {pluralJoueurs(playersPerTeam)}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-text-muted mb-1">
+                    Questions (Manche 1)
+                  </label>
+                  <select
+                    value={questionCount}
+                    onChange={(e) => setQuestionCount(Number(e.target.value))}
+                    className="input-field text-sm py-1.5"
+                  >
+                    {QUESTION_COUNT_OPTIONS.map((count) => (
+                      <option key={count} value={count}>
+                        {count} questions
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-text-muted mb-1">
+                    Tours entre chaque roue
+                  </label>
+                  <select
+                    value={wheelFrequency}
+                    onChange={(e) => setWheelFrequency(Number(e.target.value))}
+                    className="input-field text-sm py-1.5"
+                  >
+                    {WHEEL_FREQUENCY_OPTIONS.map((value) => (
+                      <option key={value} value={value}>
+                        {value}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               {error && (

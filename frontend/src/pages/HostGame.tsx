@@ -171,8 +171,8 @@ function HostGame() {
     const newTurnCount = turnCount + 1
     setTurnCount(newTurnCount)
 
-    // Roue tous les 5 tours — chaque équipe tourne une fois
-    if (newTurnCount % 5 === 0) {
+    // Roue tous les `game.wheel_frequency` tours — chaque équipe tourne une fois
+    if (newTurnCount % game.wheel_frequency === 0) {
       const teamIndices = game.teams.map((_, i) => i)
       setWheelTeamQueue(teamIndices)
       setWheelTeamIdx(0)

@@ -199,8 +199,8 @@ function Game() {
     const newTurnCount = turnCount + 1
     setTurnCount(newTurnCount)
     
-    // Roue tous les 5 tours
-    if (newTurnCount % 5 === 0) {
+    // Roue tous les `game.wheel_frequency` tours
+    if (newTurnCount % game.wheel_frequency === 0) {
       setShowWheel(true)
       return
     }

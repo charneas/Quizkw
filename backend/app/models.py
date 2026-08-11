@@ -53,6 +53,8 @@ class GameSession(Base):
     current_question_id = Column(Integer, ForeignKey("questions.id"))
     total_players = Column(Integer, nullable=False)
     players_per_team = Column(Integer, nullable=False)  # 2 ou 3 selon règles
+    manche1_question_count = Column(Integer, nullable=False, default=20)  # multiple de 5, 20-50
+    wheel_frequency = Column(Integer, nullable=False, default=5)  # 5 ou 10 -- cadence de la roue
     is_active = Column(Boolean, default=True)
     host_token = Column(String, nullable=False, default=lambda: secrets.token_urlsafe(24))
     started = Column(Boolean, default=False, nullable=False)

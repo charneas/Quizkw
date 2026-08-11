@@ -26,6 +26,8 @@ export interface GameSession {
   code: string
   total_players: number
   players_per_team: number
+  manche1_question_count: number
+  wheel_frequency: number
   current_round: RoundType
   current_question_id: number | null
   is_active: boolean
@@ -134,6 +136,8 @@ export type GridCellStatus = 'hidden' | 'revealed' | 'matched'
 export interface CreateGameRequest {
   total_players: number
   players_per_team: number
+  manche1_question_count: number
+  wheel_frequency: number
 }
 
 export interface CreateTeamRequest {

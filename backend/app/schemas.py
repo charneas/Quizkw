@@ -140,6 +140,22 @@ class Token(TokenBase):
 class GameSessionBase(BaseModel):
     total_players: int = Field(..., ge=1, le=16)
     players_per_team: int = Field(..., ge=1, le=3)
+    manche1_question_count: int = Field(default=20, ge=20, le=50)
+    wheel_frequency: int = Field(default=5, ge=5, le=10)
+
+    @field_validator('manche1_question_count')
+    @classmethod
+    def question_count_multiple_of_five(cls, v: int) -> int:
+        if v % 5 != 0:
+            raise ValueError('Le nombre de questions doit être un multiple de 5')
+        return v
+
+    @field_validator('wheel_frequency')
+    @classmethod
+    def wheel_frequency_allowed_values(cls, v: int) -> int:
+        if v not in (5, 10):
+            raise ValueError('La fréquence de la roue doit être 5 ou 10')
+        return v
 
 class GameSessionCreate(GameSessionBase):
     pass

@@ -34,15 +34,15 @@ def _roll_wheel_effect(has_opponent: bool):
 
 def trigger_wheel_effect(db: Session, game: models.GameSession) -> Optional[dict]:
     """Fait tourner la roue automatiquement pour l'équipe dont c'est le tour
-    (rotation déterministe sur `questions_played // 5`), applique l'effet en
-    base et le journalise dans WheelEffect. Reprend les probabilités du jeu
-    de plateau (1-5 malus, 6-10 +1, 11-18 ping-pong, 19-20 +3).
+    (rotation déterministe sur `questions_played // game.wheel_frequency`),
+    applique l'effet en base et le journalise dans WheelEffect. Reprend les
+    probabilités du jeu de plateau (1-5 malus, 6-10 +1, 11-18 ping-pong, 19-20 +3).
     """
     teams = db.query(models.Team).filter(models.Team.game_session_id == game.id).order_by(models.Team.id).all()
     if not teams:
         return None
 
-    wheel_round = game.questions_played // 5
+    wheel_round = game.questions_played // game.wheel_frequency
     spinning_team = teams[(wheel_round - 1) % len(teams)]
 
     # Probabilités partagées avec spin_wheel (roue host) via _roll_wheel_effect

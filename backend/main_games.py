@@ -15,8 +15,6 @@ from app.game_helpers import generate_session_code, require_host
 
 router = APIRouter()
 
-MANCHE_1_MAX_QUESTIONS = 20
-
 
 @router.get("/")
 def read_root():
@@ -41,6 +39,8 @@ def create_game(game_create: schemas.GameSessionCreate, db: Session = Depends(ge
         code=code,
         total_players=game_create.total_players,
         players_per_team=game_create.players_per_team,
+        manche1_question_count=game_create.manche1_question_count,
+        wheel_frequency=game_create.wheel_frequency,
         current_round=models.RoundType.MANCHE_1,
         is_active=True,
         started=False,
@@ -130,8 +130,8 @@ def next_question(code: str, db: Session = Depends(get_db), _host: models.GameSe
     """
     Passer à la question suivante (utilisable sans hôte).
     Choisit une question aléatoire et la définit comme question courante —
-    sauf tous les 5 tours (roue de fortune), ou au-delà de
-    MANCHE_1_MAX_QUESTIONS où la Manche 1 se termine à la place.
+    sauf tous les `game.wheel_frequency` tours (roue de fortune), ou au-delà de
+    `game.manche1_question_count` où la Manche 1 se termine à la place.
     """
     game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
     if not game:
@@ -148,7 +148,7 @@ def next_question(code: str, db: Session = Depends(get_db), _host: models.GameSe
     game.questions_played = (game.questions_played or 0) + 1
     db.commit()
 
-    if game.current_round == models.RoundType.MANCHE_1 and game.questions_played >= MANCHE_1_MAX_QUESTIONS:
+    if game.current_round == models.RoundType.MANCHE_1 and game.questions_played >= game.manche1_question_count:
         outcome = manche1_orchestration.resolve_manche1_end(db, game)
         return {
             "message": "Manche 1 terminée !",
@@ -156,7 +156,7 @@ def next_question(code: str, db: Session = Depends(get_db), _host: models.GameSe
             "manche1_end": outcome,
         }
 
-    if game.questions_played % 5 == 0:
+    if game.questions_played % game.wheel_frequency == 0:
         wheel_event = manche1_orchestration.trigger_wheel_effect(db, game)
         game.current_question_id = None
         db.commit()
