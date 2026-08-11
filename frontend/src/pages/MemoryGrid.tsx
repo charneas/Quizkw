@@ -559,7 +559,7 @@ function MemoryGrid() {
                       key={color}
                       onClick={() => setPickerSelectedColor(color)}
                       className={`px-3 py-1 rounded border-2 text-sm capitalize ${
-                        pickerSelectedColor === color ? 'border-accent' : 'border-border'
+                        pickerSelectedColor === color ? 'border-brand' : 'border-border'
                       }`}
                     >
                       {color}
@@ -581,7 +581,7 @@ function MemoryGrid() {
                         key={theme.id}
                         onClick={() => toggleThemeSelection(theme.id)}
                         className={`text-left px-3 py-2 rounded border-2 text-sm ${
-                          selected ? 'border-accent' : 'border-border'
+                          selected ? 'border-brand' : 'border-border'
                         }`}
                       >
                         <span className="font-semibold">{theme.name}</span>
@@ -703,7 +703,7 @@ function MemoryGrid() {
           <div>
             <h1 className="text-2xl font-bold font-display">🧠 Manche 3 — Grille Mémoire</h1>
             <p className="text-text-muted text-sm">
-              Code: <span className="font-mono font-bold text-accent">{game.code}</span>
+              Code: <span className="font-mono font-bold text-brand">{game.code}</span>
               {' • '}Progression: {matchedCells}/{totalCells} ({progress}%)
               {' • '}4 finalistes
             </p>
@@ -717,7 +717,7 @@ function MemoryGrid() {
 
         <div className="w-full bg-border rounded-full h-2 mb-6">
           <div
-            className="bg-accent h-2 rounded-full transition-all duration-500"
+            className="bg-brand h-2 rounded-full transition-all duration-500"
             style={{ width: `${progress}%` }}
           />
         </div>

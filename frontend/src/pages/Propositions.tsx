@@ -140,7 +140,7 @@ function Propositions() {
                   onClick={() => setForm((prev) => ({ ...prev, difficulty: value }))}
                   className={`flex-1 min-h-[44px] py-2 px-4 rounded-lg border transition-colors ${
                     form.difficulty === value
-                      ? 'bg-brand-600 border-brand text-text'
+                      ? 'bg-brand-600 border-brand text-white'
                       : 'bg-surface border-border text-text-muted hover:border-brand'
                   }`}
                 >

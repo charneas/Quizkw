@@ -1,4 +1,20 @@
 /** @type {import('tailwindcss').Config} */
+
+// Permet aux tokens `brand.*`/`surface`/etc. de rester pilotables par variables
+// CSS (donc thématisables clair/sombre via [data-theme] sur <html>, cf. index.css)
+// tout en conservant les modificateurs d'opacité Tailwind (bg-danger/10,
+// border-brand/50...) déjà utilisés dans des dizaines de fichiers — la
+// fonction renvoie `rgb(var(--x) / <opacityValue>)` uniquement quand un
+// modifieur est présent, sinon `rgb(var(--x))`.
+function withOpacity(variableName) {
+  return ({ opacityValue }) => {
+    if (opacityValue !== undefined) {
+      return `rgb(var(${variableName}) / ${opacityValue})`
+    }
+    return `rgb(var(${variableName}))`
+  }
+}
+
 export default {
   content: [
     "./index.html",
@@ -38,29 +54,31 @@ export default {
         // collision avec l'échelle `primary` ci-dessus le temps de la migration écran par écran
         // (I-002 à I-006). Une story de clôture renommera `brand` → `primary` une fois plus
         // aucun fichier ne référencera l'ancienne échelle 50-900.
-        bg: '#08060c',
+        // Valeurs réelles définies en variables CSS RGB dans index.css (thème sombre
+        // par défaut, thème clair sous [data-theme="light"]) — voir `withOpacity` ci-dessus.
+        bg: withOpacity('--color-bg'),
         surface: {
-          DEFAULT: '#150f24',
-          raised: '#1D1533',
+          DEFAULT: withOpacity('--color-surface'),
+          raised: withOpacity('--color-surface-raised'),
         },
-        border: '#2a2145',
+        border: withOpacity('--color-border'),
         brand: {
-          DEFAULT: '#8B5CF6',
+          DEFAULT: withOpacity('--color-brand'),
           // brand-600 : nuance dédiée aux FONDS PLEINS DE BOUTON uniquement (pas une
           // échelle générique). Corrige un contraste WCAG insuffisant : texte clair sur
           // `brand` seul ne tenait que 3.57:1 (sous l'AA texte normal 4.5:1) ; sur
-          // brand-600, le ratio monte à 5.06:1. `brand` (DEFAULT) reste utilisé tel
-          // quel comme couleur de texte/accent (4.76:1, déjà conforme).
-          600: '#7442D6',
-          hover: '#7C3AED',
-          muted: '#4C3A82',
+          // brand-600, le ratio monte à 5.06:1 en sombre (7.1:1 en clair). `brand`
+          // (DEFAULT) reste utilisé tel quel comme couleur de texte/accent.
+          600: withOpacity('--color-brand-600'),
+          hover: withOpacity('--color-brand-hover'),
+          muted: withOpacity('--color-brand-muted'),
         },
-        accent: '#FF6EC7',
-        success: '#22D3A6',
-        danger: '#FF4D6D',
+        accent: withOpacity('--color-accent'),
+        success: withOpacity('--color-success'),
+        danger: withOpacity('--color-danger'),
         text: {
-          DEFAULT: '#EDE9FE',
-          muted: '#B9AEDD',
+          DEFAULT: withOpacity('--color-text'),
+          muted: withOpacity('--color-text-muted'),
         },
         // Couleurs fixes des 4 finalistes Manche 3 : identifiants fonctionnels, PAS des
         // tokens de marque. Ne pas renommer/retoucher. Restent en classes Tailwind

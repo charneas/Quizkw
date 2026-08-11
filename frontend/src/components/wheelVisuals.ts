@@ -29,6 +29,14 @@ export const SEGMENT_STARTS = SEGMENTS.reduce<number[]>((acc, _seg, i) => {
 }, [])
 export const SPIN_SPEED_DEG_PER_MS = 0.6
 export const LANDING_DURATION_MS = 2200
+// Durée d'atterrissage repliée pour prefers-reduced-motion : la roue va
+// directement au bon secteur au lieu de tourner plusieurs tours, sans pour
+// autant sauter instantanément (garde un minimum de perception du changement).
+export const LANDING_DURATION_MS_REDUCED = 150
+
+export function prefersReducedMotion(): boolean {
+  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+}
 
 export const SEGMENT_COLORS: Record<SegmentKey, string> = {
   bonus: '#16a34a',
@@ -45,9 +53,9 @@ export const SEGMENT_EMOJIS: Record<SegmentKey, string> = {
 }
 
 export const effectColors: Record<EffectType, string> = {
-  malus: 'text-game-danger',
-  bonus: 'text-game-success',
-  ping_pong: 'text-primary-400',
+  malus: 'text-danger',
+  bonus: 'text-success',
+  ping_pong: 'text-brand',
 }
 
 // Distinction purement visuelle : le backend renvoie effect_type: 'bonus'

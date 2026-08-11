@@ -82,7 +82,7 @@ function TokenPanel({ tokens = [], otherTeams = [], onUseToken }: TokenPanelProp
       </h3>
 
       {safeTokens.length === 0 ? (
-        <p className="text-slate-400 text-sm italic py-2">
+        <p className="text-text-muted text-sm italic py-2">
           Aucun jeton disponible pour cette équipe (ils doivent être générés par le backend).
         </p>
       ) : (
@@ -92,23 +92,32 @@ function TokenPanel({ tokens = [], otherTeams = [], onUseToken }: TokenPanelProp
             const cleanedType = token.token_type.toLowerCase().trim();
             const config = tokenLabels[cleanedType] || { label: token.token_type, desc: '', icon: '🎫', apiType: cleanedType as TokenType };
 
+            const isFiring = firingTokenIds.has(token.id)
+
             return (
               <button
                 key={token.id}
-                disabled={token.is_used || firingTokenIds.has(token.id)}
+                disabled={token.is_used || isFiring}
                 onClick={() => handleTokenClick(config.apiType, token.id)}
                 className={`flex flex-col items-center justify-center p-4 rounded-xl border text-center transition-all ${
                   token.is_used
-                    ? 'bg-slate-900/40 border-slate-800 text-slate-600 cursor-not-allowed opacity-50'
-                    : 'bg-slate-800/50 border-slate-700 hover:border-game-accent text-white hover:scale-[1.02]'
+                    ? 'bg-surface/40 border-border text-text-muted cursor-not-allowed opacity-50'
+                    : isFiring
+                      ? 'bg-surface-raised border-brand text-text cursor-wait'
+                      : 'bg-surface-raised border-border hover:border-brand text-text hover:scale-[1.02]'
                 }`}
               >
-                <span className="text-2xl mb-1">{config.icon}</span>
+                <span className={`text-2xl mb-1 ${isFiring ? 'animate-pulse' : ''}`}>{config.icon}</span>
                 <span className="font-bold text-sm">{config.label}</span>
-                <span className="text-xs text-slate-400 mt-1">{config.desc}</span>
+                <span className="text-xs text-text-muted mt-1">{config.desc}</span>
                 {token.is_used && (
-                  <span className="text-[10px] uppercase tracking-wider font-semibold text-red-400 mt-2 bg-red-950/50 px-2 py-0.5 rounded">
+                  <span className="text-[10px] uppercase tracking-wider font-semibold text-danger mt-2 bg-danger/10 px-2 py-0.5 rounded">
                     Utilisé
+                  </span>
+                )}
+                {isFiring && (
+                  <span className="text-[10px] uppercase tracking-wider font-semibold text-brand mt-2 bg-brand-muted/20 px-2 py-0.5 rounded">
+                    Envoi...
                   </span>
                 )}
               </button>
@@ -135,8 +144,8 @@ function TokenPanel({ tokens = [], otherTeams = [], onUseToken }: TokenPanelProp
                     onClick={() => setSelectedTargetId(t.team_id)}
                     className={`min-h-[44px] rounded-lg border px-3 text-sm font-medium transition-all ${
                       selectedTargetId === t.team_id
-                        ? 'border-game-accent bg-game-accent/20 text-white'
-                        : 'border-slate-700 bg-slate-800/50 text-slate-300 hover:border-game-accent'
+                        ? 'border-brand bg-brand-muted/20 text-text'
+                        : 'border-border bg-surface-raised text-text-muted hover:border-brand'
                     }`}
                   >
                     {t.team_name}

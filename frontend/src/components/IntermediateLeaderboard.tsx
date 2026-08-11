@@ -66,7 +66,7 @@ function IntermediateLeaderboardComponent({ leaderboard, tournamentProgress, onA
                     </div>
                   </div>
                   <div className="text-right">
-                    <span className="bg-danger text-text px-3 py-1 rounded-full text-sm">
+                    <span className="bg-danger text-bg px-3 py-1 rounded-full text-sm">
                       Eliminated
                     </span>
                   </div>

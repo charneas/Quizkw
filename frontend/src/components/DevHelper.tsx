@@ -21,11 +21,18 @@ export default function DevHelper({ code }: DevHelperProps) {
   };
 
   return (
-    <button 
-      onClick={handleFastTrack}
-      className="fixed top-4 left-4 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg z-50 text-sm font-bold"
-    >
-      DEV: Fast Track Setup
-    </button>
+    // En flux normal (pas `fixed`) : les deux pages qui l'utilisent (Lobby,
+    // Game) ont déjà du contenu dans tous les coins de l'écran selon la
+    // largeur, donc n'importe quelle position fixe finissait par chevaucher
+    // un titre ou un bouton sur petit écran. Outil dev-only (import.meta.env.DEV),
+    // pousser le contenu de quelques pixels en dev n'a pas d'impact réel.
+    <div className="mb-3 text-center">
+      <button
+        onClick={handleFastTrack}
+        className="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-lg text-xs font-bold"
+      >
+        DEV: Fast Track Setup
+      </button>
+    </div>
   );
 }

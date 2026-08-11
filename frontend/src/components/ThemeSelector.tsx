@@ -20,6 +20,14 @@ function ThemeSelectorComponent({ themes, onSelectTheme, gameCode: _gameCode }: 
     }
   }
 
+  // brand-600 est volontairement "pas trop clair" dans les deux thèmes (fond
+  // plein de bouton) : texte blanc fixe, comme .btn-primary. brand-muted/
+  // surface-raised suivent `text` normalement (déjà pairés correctement dans
+  // les deux thèmes).
+  const getCategoryTextColor = (category: string) => {
+    return category === 'serious' || category === 'pop_culture' ? 'text-white' : 'text-text'
+  }
+
   const getCategoryText = (category: string) => {
     switch (category) {
       case 'serious':
@@ -54,7 +62,7 @@ function ThemeSelectorComponent({ themes, onSelectTheme, gameCode: _gameCode }: 
             <div className={`h-2 ${getCategoryColor(theme.category)}`} />
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
-                <span className={`px-3 py-1 rounded-full text-text text-sm ${getCategoryColor(theme.category)}`}>
+                <span className={`px-3 py-1 rounded-full text-sm ${getCategoryColor(theme.category)} ${getCategoryTextColor(theme.category)}`}>
                   {getCategoryText(theme.category)}
                 </span>
                 <span className="text-text-muted text-sm">Difficulty: {theme.difficulty_level}/10</span>

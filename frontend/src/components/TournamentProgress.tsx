@@ -22,8 +22,16 @@ function TournamentProgressComponent({ progress, currentPlayerId }: TournamentPr
     }
   }
 
-  const getPhaseTextColor = (phase: string) => (phase === '4_finalists' ? 'text-bg' : 'text-text')
-  // '16_players' (bg-brand-600) et '8_qualified' (brand-600 aussi) restent en text-text (5.06:1, cf. tailwind.config.js) ; seule '4_finalists' (bg-success) bascule en text-bg pour le même motif de contraste.
+  // brand-600/danger sont volontairement "pas trop clairs" dans les deux thèmes
+  // (fonds pleins) : texte blanc fixe. success (comme .btn-success) bascule en
+  // text-bg car sa propre luminosité s'inverse selon le thème — même logique
+  // que .btn-primary/.btn-danger dans index.css (bug de contraste trouvé lors
+  // de l'ajout du thème clair : text-text y tombait sous l'AA en clair).
+  const getPhaseTextColor = (phase: string) => {
+    if (phase === '4_finalists') return 'text-bg'
+    if (phase === '16_players' || phase === '8_qualified') return 'text-white'
+    return 'text-text' // repli bg-surface-raised (valeur de phase inattendue)
+  }
 
   const getPhaseText = (phase: string) => {
     const total = progress.players_total
@@ -119,8 +127,8 @@ function TournamentProgressComponent({ progress, currentPlayerId }: TournamentPr
                   <span className={`px-2 py-1 rounded text-xs ${
                     player.status === 'qualified' ? 'bg-success text-bg' :
                     player.status === 'finalist' ? 'bg-brand-muted text-text' :
-                    player.status === 'eliminated' ? 'bg-danger text-text' :
-                    'bg-brand-600 text-text'
+                    player.status === 'eliminated' ? 'bg-danger text-bg' :
+                    'bg-brand-600 text-white'
                   }`}>
                     {player.status}
                   </span>

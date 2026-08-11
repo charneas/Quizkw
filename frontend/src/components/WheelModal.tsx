@@ -5,11 +5,13 @@ import {
   SEGMENT_STARTS,
   SPIN_SPEED_DEG_PER_MS,
   LANDING_DURATION_MS,
+  LANDING_DURATION_MS_REDUCED,
   SEGMENT_EMOJIS,
   effectColors,
   segmentKeyForResult,
   wheelBackground,
   easeOutCubic,
+  prefersReducedMotion,
 } from './wheelVisuals'
 
 interface WheelModalProps {
@@ -49,7 +51,12 @@ function WheelModal({ onSpin, result, onClose, teamName, teamProgress, isLastTea
   // au lieu de décélérer, cf. revue manuelle) — un seul mécanisme d'un bout
   // à l'autre du spin évite ce piège.
   useEffect(() => {
+    const reducedMotion = prefersReducedMotion()
+
     if (phase === 'spinning') {
+      // prefers-reduced-motion : pas de rotation continue pendant l'attente
+      // du résultat serveur, seul l'atterrissage ci-dessous bougera la roue.
+      if (reducedMotion) return
       let last = performance.now()
       const tick = (now: number) => {
         const delta = now - last
@@ -74,11 +81,13 @@ function WheelModal({ onSpin, result, onClose, teamName, teamProgress, isLastTea
       // Toujours vers l'avant (jamais de retour en arrière visuel) : le
       // prochain multiple de 360 au-delà de la rotation actuelle, plus
       // quelques tours pleins pour l'effet, moins l'offset du secteur visé.
+      // En reduced-motion, un seul tour suffit (pas d'effet à vendre).
       const nextFullTurn = Math.ceil((startRotation + 1) / 360) * 360
-      const endRotation = nextFullTurn + 3 * 360 - segmentCenter
+      const endRotation = nextFullTurn + (reducedMotion ? 1 : 3) * 360 - segmentCenter
+      const duration = reducedMotion ? LANDING_DURATION_MS_REDUCED : LANDING_DURATION_MS
       const startTime = performance.now()
       const tick = (now: number) => {
-        const t = Math.min(1, (now - startTime) / LANDING_DURATION_MS)
+        const t = Math.min(1, (now - startTime) / duration)
         setRotation(startRotation + (endRotation - startRotation) * easeOutCubic(t))
         if (t < 1) {
           rafRef.current = requestAnimationFrame(tick)
@@ -154,9 +163,9 @@ function WheelModal({ onSpin, result, onClose, teamName, teamProgress, isLastTea
 
         {teamName && (
           <div className="mb-4">
-            <p className="text-lg font-semibold text-game-accent">{teamName}</p>
+            <p className="text-lg font-semibold text-brand">{teamName}</p>
             {teamProgress && (
-              <p className="text-xs text-slate-500">Équipe {teamProgress}</p>
+              <p className="text-xs text-text-muted">Équipe {teamProgress}</p>
             )}
           </div>
         )}
@@ -168,10 +177,10 @@ function WheelModal({ onSpin, result, onClose, teamName, teamProgress, isLastTea
             className="absolute -top-2 left-1/2 -translate-x-1/2 z-10 w-0 h-0
                        border-l-[10px] border-l-transparent
                        border-r-[10px] border-r-transparent
-                       border-t-[16px] border-t-game-accent drop-shadow"
+                       border-t-[16px] border-t-brand drop-shadow"
           />
           <div
-            className="w-full h-full rounded-full border-4 border-game-accent shadow-xl"
+            className="w-full h-full rounded-full border-4 border-brand shadow-xl"
             style={{ background: wheelBackground, transform: `rotate(${rotation}deg)` }}
           >
             {SEGMENTS.map((seg, i) => {
@@ -188,7 +197,7 @@ function WheelModal({ onSpin, result, onClose, teamName, teamProgress, isLastTea
             })}
           </div>
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="w-8 h-8 rounded-full bg-game-accent border-2 border-white/70 shadow" />
+            <div className="w-8 h-8 rounded-full bg-brand border-2 border-text/70 shadow" />
           </div>
         </div>
 
@@ -197,11 +206,11 @@ function WheelModal({ onSpin, result, onClose, teamName, teamProgress, isLastTea
             <div className={`text-xl font-bold ${effectColors[result.effect_type]}`}>
               {SEGMENT_EMOJIS[segmentKeyForResult(result)]} {result.effect_type.toUpperCase()}
             </div>
-            <p className="text-slate-300">
+            <p className="text-text-muted">
               {result.message}
             </p>
             {result.value !== null && (
-              <p className="text-2xl font-bold text-game-accent">
+              <p className="text-2xl font-bold text-brand">
                 {result.value > 0 ? '+' : ''}{result.value} points
               </p>
             )}
@@ -211,7 +220,7 @@ function WheelModal({ onSpin, result, onClose, teamName, teamProgress, isLastTea
           </div>
         ) : (
           <div>
-            <p className="text-slate-400 mb-4">
+            <p className="text-text-muted mb-4">
               {phase === 'idle' ? "C'est l'heure de la roue ! 5 tours joués." : '🎡 La roue tourne...'}
             </p>
             <button

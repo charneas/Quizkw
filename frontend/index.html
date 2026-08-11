@@ -11,8 +11,25 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@600&display=swap" rel="stylesheet" />
+    <script>
+      // Appliqué avant le premier paint (pas dans un composant React) pour
+      // éviter un flash sombre->clair au chargement. Préférence utilisateur
+      // explicite (bascule) prioritaire sur le réglage clair/sombre du système,
+      // lui-même utilisé uniquement en l'absence de choix déjà mémorisé.
+      (function () {
+        try {
+          var stored = localStorage.getItem('quizkw_theme')
+          var theme = stored === 'light' || stored === 'dark'
+            ? stored
+            : (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+          document.documentElement.setAttribute('data-theme', theme)
+        } catch (e) {
+          document.documentElement.setAttribute('data-theme', 'dark')
+        }
+      })()
+    </script>
   </head>
-  <body class="bg-game-bg min-h-screen">
+  <body class="bg-bg min-h-screen">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

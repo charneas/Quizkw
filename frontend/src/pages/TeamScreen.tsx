@@ -475,7 +475,7 @@ function TeamScreen() {
                   value={nameDraft}
                   onChange={(e) => setNameDraft(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') handleRenameTeam(); if (e.key === 'Escape') setEditingName(false) }}
-                  className="text-lg font-semibold text-text bg-slate-800/50 border border-slate-700 rounded-lg px-3 py-1 text-center"
+                  className="text-lg font-semibold text-text bg-surface-raised border border-border rounded-lg px-3 py-1 text-center"
                   maxLength={40}
                 />
                 <button onClick={handleRenameTeam} className="btn-primary min-h-[36px] px-3">OK</button>
@@ -502,6 +502,9 @@ function TeamScreen() {
     )
   }
 
+  const showRanking = state.other_teams.length > 0 && !state.current_question && !state.active_duel && !state.spectator_duel && !state.validation_result
+  const showLeftColumn = showRanking || wheelHistory.length > 0
+
   return (
     <div className="min-h-screen p-4">
       <div className="max-w-6xl mx-auto">
@@ -514,7 +517,7 @@ function TeamScreen() {
                   value={nameDraft}
                   onChange={(e) => setNameDraft(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') handleRenameTeam(); if (e.key === 'Escape') setEditingName(false) }}
-                  className="text-2xl font-bold text-text bg-slate-800/50 border border-slate-700 rounded-lg px-3 py-1 text-center"
+                  className="text-2xl font-bold text-text bg-surface-raised border border-border rounded-lg px-3 py-1 text-center"
                   maxLength={40}
                 />
                 <button onClick={handleRenameTeam} className="btn-primary min-h-[36px] px-3">OK</button>
@@ -542,7 +545,7 @@ function TeamScreen() {
         {feedbackMessage && (
           <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-[70] w-[calc(100%-2rem)] max-w-xl p-4 rounded-xl text-white font-bold text-center shadow-2xl transition-all border-2 ${
             feedbackMessage.type === 'swap' ? 'bg-blue-600 border-blue-400' :
-            feedbackMessage.type === 'penalty' ? 'bg-red-600 border-red-400' : 'bg-amber-500 border-amber-300 text-slate-900'
+            feedbackMessage.type === 'penalty' ? 'bg-red-600 border-red-400' : 'bg-amber-500 border-amber-300 text-bg'
           }`}>
             <div className="flex items-center justify-between">
               <span className="flex-1 text-base">{feedbackMessage.text}</span>
@@ -556,12 +559,13 @@ function TeamScreen() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className={showLeftColumn ? 'grid grid-cols-1 lg:grid-cols-3 gap-6' : 'max-w-3xl mx-auto space-y-6'}>
+          {showLeftColumn && (
           <div className="lg:col-span-1 space-y-6">
             {/* Classement affiché uniquement pendant les tours de roue (pas
                 de question/duel/validation en cours) -- pendant une question,
                 l'attention doit rester sur celle-ci, pas sur le classement. */}
-            {state.other_teams.length > 0 && !state.current_question && !state.active_duel && !state.spectator_duel && !state.validation_result && (
+            {showRanking && (
               <div className="card">
                 <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">
                   📊 Classement
@@ -595,8 +599,9 @@ function TeamScreen() {
 
             <WheelHistory history={wheelHistory} />
           </div>
+          )}
 
-          <div className="lg:col-span-2 space-y-6">
+          <div className={showLeftColumn ? 'lg:col-span-2 space-y-6' : 'space-y-6'}>
 
         {choosingPingPongOpponent && !state.active_duel && (
           <PingPongTeamSelector

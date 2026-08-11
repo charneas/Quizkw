@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import ConfirmModal from '../components/ConfirmModal'
 import type { Theme, Question, ThemeCategory, Difficulty, QuestionStatsResponse, ContentSuggestion, ContentFlag, ContentHistoryEntry, CategoryMixResponse } from '../types'
 import {
   adminListThemes,
@@ -61,6 +62,10 @@ export default function Admin() {
   const [statsByQuestion, setStatsByQuestion] = useState<Record<number, QuestionStatsResponse>>({})
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [confirmDeleteTheme, setConfirmDeleteTheme] = useState<{ id: number; name: string } | null>(null)
+  const [confirmDeleteQuestionId, setConfirmDeleteQuestionId] = useState<number | null>(null)
+  const [questionPage, setQuestionPage] = useState(0)
+  const QUESTIONS_PER_PAGE = 20
 
   async function refreshThemes() {
     setThemes(await adminListThemes())
@@ -87,6 +92,10 @@ export default function Admin() {
   useEffect(() => {
     refreshQuestions(filterThemeId === '' ? undefined : filterThemeId).catch((e) => setError(String(e)))
   }, [filterThemeId])
+
+  useEffect(() => {
+    setQuestionPage(0)
+  }, [filterThemeId, questionSearch])
 
   function showMessage(text: string) {
     setMessage(text)
@@ -128,12 +137,10 @@ export default function Admin() {
     })
   }
 
-  async function removeTheme(themeId: number, themeName: string) {
-    const questionCount = questionCountByTheme[themeId] ?? 0
-    const confirmMessage = questionCount > 0
-      ? `Supprimer le thème "${themeName}" ? Ses ${questionCount} question(s) associée(s) deviendront orphelines (aucun thème).`
-      : `Supprimer le thème "${themeName}" ?`
-    if (!window.confirm(confirmMessage)) return
+  async function confirmRemoveTheme() {
+    if (!confirmDeleteTheme) return
+    const { id: themeId } = confirmDeleteTheme
+    setConfirmDeleteTheme(null)
     try {
       const result = await adminDeleteTheme(themeId)
       showMessage(result.message)
@@ -194,8 +201,10 @@ export default function Admin() {
     questionFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
-  async function removeQuestion(questionId: number) {
-    if (!window.confirm('Supprimer cette question ?')) return
+  async function confirmRemoveQuestion() {
+    if (confirmDeleteQuestionId === null) return
+    const questionId = confirmDeleteQuestionId
+    setConfirmDeleteQuestionId(null)
     try {
       const result = await adminDeleteQuestion(questionId)
       showMessage(result.warning ? result.warning.message : result.message)
@@ -298,39 +307,52 @@ export default function Admin() {
         </label>
       </div>
 
-      <section className="space-y-3">
+      <section className="card space-y-3">
         <h2 className="text-xl font-semibold">Thèmes</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-          <input
-            className="input-field"
-            placeholder="Nom"
-            value={themeForm.name}
-            onChange={(e) => setThemeForm({ ...themeForm, name: e.target.value })}
-          />
-          <select
-            className="input-field"
-            value={themeForm.category}
-            onChange={(e) => setThemeForm({ ...themeForm, category: e.target.value as ThemeCategory })}
-          >
-            {THEME_CATEGORIES.map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
-          <input
-            className="input-field"
-            type="number"
-            min={1}
-            max={10}
-            placeholder="Difficulté (1-10)"
-            value={themeForm.difficulty_level}
-            onChange={(e) => setThemeForm({ ...themeForm, difficulty_level: Number(e.target.value) })}
-          />
-          <input
-            className="input-field"
-            placeholder="Description"
-            value={themeForm.description}
-            onChange={(e) => setThemeForm({ ...themeForm, description: e.target.value })}
-          />
+          <div>
+            <label htmlFor="theme-name" className="block text-xs text-text-muted mb-1">Nom</label>
+            <input
+              id="theme-name"
+              className="input-field"
+              value={themeForm.name}
+              onChange={(e) => setThemeForm({ ...themeForm, name: e.target.value })}
+            />
+          </div>
+          <div>
+            <label htmlFor="theme-category" className="block text-xs text-text-muted mb-1">Catégorie</label>
+            <select
+              id="theme-category"
+              className="input-field"
+              value={themeForm.category}
+              onChange={(e) => setThemeForm({ ...themeForm, category: e.target.value as ThemeCategory })}
+            >
+              {THEME_CATEGORIES.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="theme-difficulty" className="block text-xs text-text-muted mb-1">Difficulté (1-10)</label>
+            <input
+              id="theme-difficulty"
+              className="input-field"
+              type="number"
+              min={1}
+              max={10}
+              value={themeForm.difficulty_level}
+              onChange={(e) => setThemeForm({ ...themeForm, difficulty_level: Number(e.target.value) })}
+            />
+          </div>
+          <div>
+            <label htmlFor="theme-description" className="block text-xs text-text-muted mb-1">Description</label>
+            <input
+              id="theme-description"
+              className="input-field"
+              value={themeForm.description}
+              onChange={(e) => setThemeForm({ ...themeForm, description: e.target.value })}
+            />
+          </div>
         </div>
         <button className="btn-primary" onClick={submitTheme}>
           {editingThemeId ? 'Mettre à jour le thème' : 'Créer le thème'}
@@ -363,12 +385,12 @@ export default function Admin() {
                 <td className="p-2">
                   {questionCountByTheme[theme.id] ?? 0}
                   {(questionCountByTheme[theme.id] ?? 0) < 10 && (
-                    <span className="ml-1 text-amber-600" title="Sous le seuil de 10 questions requis pour être utilisable en jeu">⚠</span>
+                    <span className="ml-1 text-danger" title="Sous le seuil de 10 questions requis pour être utilisable en jeu">⚠</span>
                   )}
                 </td>
                 <td className="p-2 space-x-2">
-                  <button className="text-brand" onClick={() => editTheme(theme)}>Éditer</button>
-                  <button className="text-danger" onClick={() => removeTheme(theme.id, theme.name)}>Supprimer</button>
+                  <button className="btn-secondary text-xs px-2 py-1 min-h-0" onClick={() => editTheme(theme)}>Éditer</button>
+                  <button className="btn-danger text-xs px-2 py-1 min-h-0" onClick={() => setConfirmDeleteTheme({ id: theme.id, name: theme.name })}>Supprimer</button>
                 </td>
               </tr>
             ))}
@@ -376,88 +398,121 @@ export default function Admin() {
         </table>
       </section>
 
-      <section className="space-y-3" ref={questionFormRef}>
+      <section className="card space-y-3" ref={questionFormRef}>
         <h2 className="text-xl font-semibold">Questions</h2>
 
-        <div>
-          <label className="mr-2">Filtrer par thème :</label>
-          <select
-            className="input-field inline-block w-auto"
-            value={filterThemeId}
-            onChange={(e) => setFilterThemeId(e.target.value === '' ? '' : Number(e.target.value))}
-          >
-            <option value="">Tous les thèmes</option>
-            {themes.map((t) => (
-              <option key={t.id} value={t.id}>{t.name}</option>
-            ))}
-          </select>
-          <input
-            className="input-field w-auto ml-2"
-            placeholder="Rechercher (texte, catégorie, réponse)"
-            value={questionSearch}
-            onChange={(e) => setQuestionSearch(e.target.value)}
-          />
+        <div className="flex flex-wrap items-end gap-2">
+          <div>
+            <label htmlFor="question-filter-theme" className="block text-xs text-text-muted mb-1">Filtrer par thème</label>
+            <select
+              id="question-filter-theme"
+              className="input-field inline-block w-auto"
+              value={filterThemeId}
+              onChange={(e) => setFilterThemeId(e.target.value === '' ? '' : Number(e.target.value))}
+            >
+              <option value="">Tous les thèmes</option>
+              {themes.map((t) => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="question-search" className="block text-xs text-text-muted mb-1">Rechercher</label>
+            <input
+              id="question-search"
+              className="input-field w-auto"
+              placeholder="Texte, catégorie, réponse"
+              value={questionSearch}
+              onChange={(e) => setQuestionSearch(e.target.value)}
+            />
+          </div>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-          <input
-            className="input-field col-span-2"
-            placeholder="Texte de la question"
-            value={questionForm.text}
-            onChange={(e) => setQuestionForm({ ...questionForm, text: e.target.value })}
-          />
-          <input
-            className="input-field"
-            placeholder="Catégorie"
-            value={questionForm.category}
-            onChange={(e) => setQuestionForm({ ...questionForm, category: e.target.value })}
-          />
-          <select
-            className="input-field"
-            value={questionForm.difficulty}
-            onChange={(e) => setQuestionForm({ ...questionForm, difficulty: e.target.value as Difficulty })}
-          >
-            {DIFFICULTIES.map((d) => (
-              <option key={d} value={d}>{d} ({DIFFICULTY_POINTS[d]} pts)</option>
-            ))}
-          </select>
-          <input
-            className="input-field"
-            placeholder="Réponse correcte"
-            value={questionForm.correct_answer}
-            onChange={(e) => setQuestionForm({ ...questionForm, correct_answer: e.target.value })}
-          />
-          <input
-            className="input-field col-span-2"
-            placeholder="Mauvaises réponses (séparées par des virgules)"
-            value={questionForm.wrong_answers}
-            onChange={(e) => setQuestionForm({ ...questionForm, wrong_answers: e.target.value })}
-          />
-          <select
-            className="input-field"
-            value={questionForm.theme_id}
-            onChange={(e) => setQuestionForm({ ...questionForm, theme_id: e.target.value === '' ? '' : Number(e.target.value) })}
-          >
-            <option value="">Sans thème</option>
-            {themes.map((t) => (
-              <option key={t.id} value={t.id}>{t.name}</option>
-            ))}
-          </select>
-          <input
-            className="input-field"
-            type="number"
-            min={1}
-            max={10}
-            placeholder="N° question (Round 2)"
-            value={questionForm.question_number}
-            onChange={(e) => setQuestionForm({ ...questionForm, question_number: e.target.value === '' ? '' : Number(e.target.value) })}
-          />
-          <input
-            className="input-field col-span-2"
-            placeholder="URL de l'image (optionnel)"
-            value={questionForm.image_url}
-            onChange={(e) => setQuestionForm({ ...questionForm, image_url: e.target.value })}
-          />
+          <div className="col-span-2">
+            <label htmlFor="question-text" className="block text-xs text-text-muted mb-1">Texte de la question</label>
+            <input
+              id="question-text"
+              className="input-field w-full"
+              value={questionForm.text}
+              onChange={(e) => setQuestionForm({ ...questionForm, text: e.target.value })}
+            />
+          </div>
+          <div>
+            <label htmlFor="question-category" className="block text-xs text-text-muted mb-1">Catégorie</label>
+            <input
+              id="question-category"
+              className="input-field w-full"
+              value={questionForm.category}
+              onChange={(e) => setQuestionForm({ ...questionForm, category: e.target.value })}
+            />
+          </div>
+          <div>
+            <label htmlFor="question-difficulty" className="block text-xs text-text-muted mb-1">Difficulté</label>
+            <select
+              id="question-difficulty"
+              className="input-field w-full"
+              value={questionForm.difficulty}
+              onChange={(e) => setQuestionForm({ ...questionForm, difficulty: e.target.value as Difficulty })}
+            >
+              {DIFFICULTIES.map((d) => (
+                <option key={d} value={d}>{d} ({DIFFICULTY_POINTS[d]} pts)</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="question-correct-answer" className="block text-xs text-text-muted mb-1">Réponse correcte</label>
+            <input
+              id="question-correct-answer"
+              className="input-field w-full"
+              value={questionForm.correct_answer}
+              onChange={(e) => setQuestionForm({ ...questionForm, correct_answer: e.target.value })}
+            />
+          </div>
+          <div className="col-span-2">
+            <label htmlFor="question-wrong-answers" className="block text-xs text-text-muted mb-1">Mauvaises réponses (séparées par des virgules)</label>
+            <input
+              id="question-wrong-answers"
+              className="input-field w-full"
+              value={questionForm.wrong_answers}
+              onChange={(e) => setQuestionForm({ ...questionForm, wrong_answers: e.target.value })}
+            />
+          </div>
+          <div>
+            <label htmlFor="question-theme" className="block text-xs text-text-muted mb-1">Thème</label>
+            <select
+              id="question-theme"
+              className="input-field w-full"
+              value={questionForm.theme_id}
+              onChange={(e) => setQuestionForm({ ...questionForm, theme_id: e.target.value === '' ? '' : Number(e.target.value) })}
+            >
+              <option value="">Sans thème</option>
+              {themes.map((t) => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="question-number" className="block text-xs text-text-muted mb-1">N° question (Round 2)</label>
+            <input
+              id="question-number"
+              className="input-field w-full"
+              type="number"
+              min={1}
+              max={10}
+              value={questionForm.question_number}
+              onChange={(e) => setQuestionForm({ ...questionForm, question_number: e.target.value === '' ? '' : Number(e.target.value) })}
+            />
+          </div>
+          <div className="col-span-2">
+            <label htmlFor="question-image-url" className="block text-xs text-text-muted mb-1">URL de l'image (optionnel)</label>
+            <input
+              id="question-image-url"
+              className="input-field w-full"
+              value={questionForm.image_url}
+              onChange={(e) => setQuestionForm({ ...questionForm, image_url: e.target.value })}
+            />
+          </div>
         </div>
         <button className="btn-primary" onClick={submitQuestion}>
           {editingQuestionId ? 'Mettre à jour la question' : 'Créer la question'}
@@ -471,53 +526,111 @@ export default function Admin() {
           </button>
         )}
 
-        <table className="w-full mt-3 text-sm">
-          <thead>
-            <tr className="text-left border-b border-border">
-              <th className="p-2">Texte</th>
-              <th className="p-2">Difficulté</th>
-              <th className="p-2">Réponse</th>
-              <th className="p-2">Stats</th>
-              <th className="p-2">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {questions
-              .filter((question) => {
-                const term = questionSearch.trim().toLowerCase()
-                if (!term) return true
-                return (
-                  question.text.toLowerCase().includes(term) ||
-                  question.category.toLowerCase().includes(term) ||
-                  question.correct_answer.toLowerCase().includes(term)
-                )
-              })
-              .map((question) => (
-              <tr key={question.id} className="border-b border-border">
-                <td className="p-2">{question.text}</td>
-                <td className="p-2">{question.difficulty} ({question.points} pts)</td>
-                <td className="p-2">{question.correct_answer}</td>
-                <td className="p-2">
-                  {statsByQuestion[question.id] ? (
-                    <span>
-                      {statsByQuestion[question.id].times_answered} réponses,{' '}
-                      {Math.round(statsByQuestion[question.id].success_rate * 100)}% réussite
-                    </span>
-                  ) : (
-                    <button className="text-brand" onClick={() => loadStats(question.id)}>Charger</button>
-                  )}
-                </td>
-                <td className="p-2 space-x-2">
-                  <button className="text-brand" onClick={() => editQuestion(question)}>Éditer</button>
-                  <button className="text-danger" onClick={() => removeQuestion(question.id)}>Supprimer</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {(() => {
+          const filtered = questions.filter((question) => {
+            const term = questionSearch.trim().toLowerCase()
+            if (!term) return true
+            return (
+              question.text.toLowerCase().includes(term) ||
+              question.category.toLowerCase().includes(term) ||
+              question.correct_answer.toLowerCase().includes(term)
+            )
+          })
+          const pageCount = Math.max(1, Math.ceil(filtered.length / QUESTIONS_PER_PAGE))
+          const page = Math.min(questionPage, pageCount - 1)
+          const pageItems = filtered.slice(page * QUESTIONS_PER_PAGE, (page + 1) * QUESTIONS_PER_PAGE)
+
+          return (
+            <>
+              <table className="w-full mt-3 text-sm">
+                <thead>
+                  <tr className="text-left border-b border-border">
+                    <th className="p-2">Texte</th>
+                    <th className="p-2">Difficulté</th>
+                    <th className="p-2">Réponse</th>
+                    <th className="p-2">Stats</th>
+                    <th className="p-2">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pageItems.map((question) => (
+                    <tr key={question.id} className="border-b border-border">
+                      <td className="p-2">{question.text}</td>
+                      <td className="p-2">{question.difficulty} ({question.points} pts)</td>
+                      <td className="p-2">{question.correct_answer}</td>
+                      <td className="p-2">
+                        {statsByQuestion[question.id] ? (
+                          <span>
+                            {statsByQuestion[question.id].times_answered} réponses,{' '}
+                            {Math.round(statsByQuestion[question.id].success_rate * 100)}% réussite
+                          </span>
+                        ) : (
+                          <button className="btn-secondary text-xs px-2 py-1 min-h-0" onClick={() => loadStats(question.id)}>Charger</button>
+                        )}
+                      </td>
+                      <td className="p-2 space-x-2">
+                        <button className="btn-secondary text-xs px-2 py-1 min-h-0" onClick={() => editQuestion(question)}>Éditer</button>
+                        <button className="btn-danger text-xs px-2 py-1 min-h-0" onClick={() => setConfirmDeleteQuestionId(question.id)}>Supprimer</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              <div className="flex items-center justify-between mt-2 text-sm text-text-muted">
+                <span>
+                  {filtered.length === 0
+                    ? 'Aucune question'
+                    : `${page * QUESTIONS_PER_PAGE + 1}–${Math.min((page + 1) * QUESTIONS_PER_PAGE, filtered.length)} sur ${filtered.length}`}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    className="btn-secondary text-xs px-3 py-1 min-h-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                    disabled={page <= 0}
+                    onClick={() => setQuestionPage((p) => Math.max(0, p - 1))}
+                  >
+                    ← Précédent
+                  </button>
+                  <span>Page {page + 1} / {pageCount}</span>
+                  <button
+                    className="btn-secondary text-xs px-3 py-1 min-h-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                    disabled={page >= pageCount - 1}
+                    onClick={() => setQuestionPage((p) => Math.min(pageCount - 1, p + 1))}
+                  >
+                    Suivant →
+                  </button>
+                </div>
+              </div>
+            </>
+          )
+        })()}
       </section>
 
       <ContentGenerationSection onContentApproved={() => { refreshThemes(); refreshQuestionCounts() }} />
+
+      {confirmDeleteTheme && (
+        <ConfirmModal
+          title="Supprimer le thème"
+          message={
+            (questionCountByTheme[confirmDeleteTheme.id] ?? 0) > 0
+              ? `Supprimer le thème "${confirmDeleteTheme.name}" ? Ses ${questionCountByTheme[confirmDeleteTheme.id]} question(s) associée(s) deviendront orphelines (aucun thème).`
+              : `Supprimer le thème "${confirmDeleteTheme.name}" ?`
+          }
+          confirmLabel="Supprimer"
+          onConfirm={confirmRemoveTheme}
+          onCancel={() => setConfirmDeleteTheme(null)}
+        />
+      )}
+
+      {confirmDeleteQuestionId !== null && (
+        <ConfirmModal
+          title="Supprimer la question"
+          message="Supprimer cette question ?"
+          confirmLabel="Supprimer"
+          onConfirm={confirmRemoveQuestion}
+          onCancel={() => setConfirmDeleteQuestionId(null)}
+        />
+      )}
     </div>
   )
 }
@@ -534,6 +647,10 @@ function ContentGenerationSection({ onContentApproved }: { onContentApproved: ()
   const [generating, setGenerating] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [rejectingId, setRejectingId] = useState<number | null>(null)
+  const [rejectReason, setRejectReason] = useState('')
+  const [resolvingId, setResolvingId] = useState<number | null>(null)
+  const [resolveNote, setResolveNote] = useState('')
 
   async function refreshMix() {
     setMix(await adminGetCategoryMix())
@@ -598,9 +715,12 @@ function ContentGenerationSection({ onContentApproved }: { onContentApproved: ()
     }
   }
 
-  async function reject(suggestionId: number) {
-    const reason = window.prompt('Raison du rejet ?')
-    if (!reason) return
+  async function confirmReject() {
+    if (rejectingId === null || !rejectReason.trim()) return
+    const suggestionId = rejectingId
+    const reason = rejectReason.trim()
+    setRejectingId(null)
+    setRejectReason('')
     try {
       await adminRejectSuggestion(suggestionId, reason)
       showMessage('Suggestion rejetée.')
@@ -611,8 +731,12 @@ function ContentGenerationSection({ onContentApproved }: { onContentApproved: ()
     }
   }
 
-  async function resolve(flagId: number) {
-    const note = window.prompt('Note de résolution (optionnel) ?') ?? undefined
+  async function confirmResolve() {
+    if (resolvingId === null) return
+    const flagId = resolvingId
+    const note = resolveNote.trim() || undefined
+    setResolvingId(null)
+    setResolveNote('')
     try {
       await adminResolveFlag(flagId, note)
       showMessage('Signalement résolu.')
@@ -624,7 +748,7 @@ function ContentGenerationSection({ onContentApproved }: { onContentApproved: ()
   }
 
   return (
-    <section className="space-y-3">
+    <section className="card space-y-3">
       <h2 className="text-xl font-semibold">Génération de contenu</h2>
 
       {message && <div className="bg-surface-raised text-success p-3 rounded-lg border border-success">{message}</div>}
@@ -638,23 +762,31 @@ function ContentGenerationSection({ onContentApproved }: { onContentApproved: ()
         </div>
       )}
 
-      <div className="flex gap-2">
-        <input
-          className="input-field flex-1 min-w-0"
-          placeholder="Sujet (ex: Napoléon)"
-          value={topic}
-          onChange={(e) => setTopic(e.target.value)}
-        />
-        <select
-          className="input-field"
-          value={category}
-          onChange={(e) => setCategory(e.target.value as ThemeCategory | '')}
-        >
-          <option value="">Catégorie recommandée</option>
-          {THEME_CATEGORIES.map((c) => (
-            <option key={c} value={c}>{c}</option>
-          ))}
-        </select>
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="flex-1 min-w-[200px]">
+          <label htmlFor="gen-topic" className="block text-xs text-text-muted mb-1">Sujet</label>
+          <input
+            id="gen-topic"
+            className="input-field w-full"
+            placeholder="ex: Napoléon"
+            value={topic}
+            onChange={(e) => setTopic(e.target.value)}
+          />
+        </div>
+        <div>
+          <label htmlFor="gen-category" className="block text-xs text-text-muted mb-1">Catégorie</label>
+          <select
+            id="gen-category"
+            className="input-field"
+            value={category}
+            onChange={(e) => setCategory(e.target.value as ThemeCategory | '')}
+          >
+            <option value="">Recommandée</option>
+            {THEME_CATEGORIES.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        </div>
         <button className="btn-primary disabled:opacity-50" onClick={generate} disabled={generating}>
           {generating ? 'Génération...' : 'Générer'}
         </button>
@@ -669,10 +801,33 @@ function ContentGenerationSection({ onContentApproved }: { onContentApproved: ()
               <li key={i}>{q.text} — <em>{q.correct_answer}</em> ({q.difficulty})</li>
             ))}
           </ul>
-          <div className="space-x-2">
-            <button className="text-success" onClick={() => approve(s.id)}>Approuver</button>
-            <button className="text-danger" onClick={() => reject(s.id)}>Rejeter</button>
+          <div className="flex gap-2">
+            <button className="btn-success text-xs px-2 py-1 min-h-0" onClick={() => approve(s.id)}>Approuver</button>
+            <button
+              className="btn-danger text-xs px-2 py-1 min-h-0"
+              onClick={() => { setRejectingId(s.id); setRejectReason('') }}
+            >
+              Rejeter
+            </button>
           </div>
+          {rejectingId === s.id && (
+            <div className="flex gap-2 items-center pt-1">
+              <input
+                autoFocus
+                className="input-field flex-1 text-sm py-1.5"
+                placeholder="Raison du rejet"
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && confirmReject()}
+              />
+              <button className="btn-danger text-xs px-2 py-1 min-h-0 disabled:opacity-50" disabled={!rejectReason.trim()} onClick={confirmReject}>
+                Confirmer
+              </button>
+              <button className="btn-secondary text-xs px-2 py-1 min-h-0" onClick={() => setRejectingId(null)}>
+                Annuler
+              </button>
+            </div>
+          )}
         </div>
       ))}
 
@@ -680,11 +835,42 @@ function ContentGenerationSection({ onContentApproved }: { onContentApproved: ()
       <table className="w-full text-sm">
         <tbody>
           {flags.map((f) => (
-            <tr key={f.id} className="border-b border-border">
-              <td className="p-2">Question #{f.question_id}</td>
-              <td className="p-2">{f.reason}</td>
-              <td className="p-2"><button className="text-brand" onClick={() => resolve(f.id)}>Résoudre</button></td>
-            </tr>
+            <Fragment key={f.id}>
+              <tr className="border-b border-border">
+                <td className="p-2">Question #{f.question_id}</td>
+                <td className="p-2">{f.reason}</td>
+                <td className="p-2">
+                  <button
+                    className="btn-secondary text-xs px-2 py-1 min-h-0"
+                    onClick={() => { setResolvingId(f.id); setResolveNote('') }}
+                  >
+                    Résoudre
+                  </button>
+                </td>
+              </tr>
+              {resolvingId === f.id && (
+                <tr className="border-b border-border">
+                  <td colSpan={3} className="p-2">
+                    <div className="flex gap-2 items-center">
+                      <input
+                        autoFocus
+                        className="input-field flex-1 text-sm py-1.5"
+                        placeholder="Note de résolution (optionnel)"
+                        value={resolveNote}
+                        onChange={(e) => setResolveNote(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && confirmResolve()}
+                      />
+                      <button className="btn-primary text-xs px-2 py-1 min-h-0" onClick={confirmResolve}>
+                        Confirmer
+                      </button>
+                      <button className="btn-secondary text-xs px-2 py-1 min-h-0" onClick={() => setResolvingId(null)}>
+                        Annuler
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </Fragment>
           ))}
         </tbody>
       </table>

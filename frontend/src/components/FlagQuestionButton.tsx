@@ -25,7 +25,7 @@ function FlagQuestionButton({ questionId }: FlagQuestionButtonProps) {
   }
 
   if (sent) {
-    return <span className="text-xs text-slate-500">Signalement envoyé, merci.</span>
+    return <span className="text-xs text-text-muted">Signalement envoyé, merci.</span>
   }
 
   if (!open) {
@@ -33,7 +33,7 @@ function FlagQuestionButton({ questionId }: FlagQuestionButtonProps) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="text-xs text-slate-500 hover:text-red-400 underline"
+        className="text-xs text-text-muted hover:text-danger underline"
       >
         Signaler cette question
       </button>
@@ -47,15 +47,15 @@ function FlagQuestionButton({ questionId }: FlagQuestionButtonProps) {
         value={reason}
         onChange={(e) => setReason(e.target.value)}
         placeholder="Pourquoi ? (réponse fausse, faute...)"
-        className="border p-1 rounded flex-1 text-slate-900"
+        className="input-field flex-1 text-xs py-1"
       />
-      <button type="button" onClick={submit} className="text-red-400 underline">
+      <button type="button" onClick={submit} className="text-danger underline">
         Envoyer
       </button>
-      <button type="button" onClick={() => setOpen(false)} className="text-slate-500 underline">
+      <button type="button" onClick={() => setOpen(false)} className="text-text-muted underline">
         Annuler
       </button>
-      {error && <span className="text-red-500">{error}</span>}
+      {error && <span className="text-danger">{error}</span>}
     </div>
   )
 }

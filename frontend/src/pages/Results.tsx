@@ -167,7 +167,7 @@ function Results() {
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="text-2xl font-display font-semibold text-accent">{player.total_score}</p>
+                  <p className="text-2xl font-display font-semibold text-brand">{player.total_score}</p>
                   <p className="text-xs text-text-muted">points</p>
                 </div>
               </div>
@@ -217,7 +217,7 @@ function Results() {
                           setSuddenDeathAnswers((prev) => ({ ...prev, [playerId]: e.target.value }))
                         }
                         disabled={locked}
-                        className="input flex-1 disabled:opacity-50"
+                        className="input-field flex-1 disabled:opacity-50"
                         placeholder="Réponse..."
                       />
                       <button

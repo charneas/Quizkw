@@ -66,7 +66,10 @@ function Home() {
         {/* Rejoindre une partie */}
         <div className="card">
           <h2 className="text-xl font-semibold mb-4">🎮 Rejoindre une partie</h2>
-          <div className="flex gap-3">
+          {/* flex-col en dessous de sm : à 360px de large, le placeholder en
+              tracking-widest + le bouton ne tenaient pas côte à côte et se
+              tronquaient l'un l'autre. */}
+          <div className="flex flex-col sm:flex-row gap-3">
             <input
               type="text"
               placeholder="Code de la partie"
@@ -124,7 +127,7 @@ function Home() {
                       onClick={() => setPlayersPerTeam(option.value)}
                       className={`flex-1 min-h-[44px] py-2 px-4 rounded-lg border transition-colors ${
                         playersPerTeam === option.value
-                          ? 'bg-brand-600 border-brand text-text'
+                          ? 'bg-brand-600 border-brand text-white'
                           : 'bg-surface border-border text-text-muted hover:border-brand'
                       }`}
                     >

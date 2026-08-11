@@ -4,10 +4,12 @@ import {
   SEGMENT_STARTS,
   SPIN_SPEED_DEG_PER_MS,
   LANDING_DURATION_MS,
+  LANDING_DURATION_MS_REDUCED,
   SEGMENT_EMOJIS,
   segmentKeyForResult,
   wheelBackground,
   easeOutCubic,
+  prefersReducedMotion,
   type WheelLikeResult,
 } from './wheelVisuals'
 
@@ -35,6 +37,7 @@ function WheelResultPopup({ result, onClose }: WheelResultPopupProps) {
 
   useEffect(() => {
     let cancelled = false
+    const reducedMotion = prefersReducedMotion()
     const spinStart = performance.now()
 
     const spinTick = (now: number) => {
@@ -55,12 +58,13 @@ function WheelResultPopup({ result, onClose }: WheelResultPopupProps) {
       const segmentCenter = SEGMENT_STARTS[targetIndex] + SEGMENTS[targetIndex].span / 2
       const startRotation = rotationRef.current
       const nextFullTurn = Math.ceil((startRotation + 1) / 360) * 360
-      const endRotation = nextFullTurn + 3 * 360 - segmentCenter
+      const endRotation = nextFullTurn + (reducedMotion ? 1 : 3) * 360 - segmentCenter
+      const duration = reducedMotion ? LANDING_DURATION_MS_REDUCED : LANDING_DURATION_MS
       const landingStart = performance.now()
 
       const landingTick = (now: number) => {
         if (cancelled) return
-        const t = Math.min(1, (now - landingStart) / LANDING_DURATION_MS)
+        const t = Math.min(1, (now - landingStart) / duration)
         setRotation(startRotation + (endRotation - startRotation) * easeOutCubic(t))
         if (t < 1) {
           rafRef.current = requestAnimationFrame(landingTick)
@@ -71,7 +75,13 @@ function WheelResultPopup({ result, onClose }: WheelResultPopupProps) {
       rafRef.current = requestAnimationFrame(landingTick)
     }
 
-    rafRef.current = requestAnimationFrame(spinTick)
+    // prefers-reduced-motion : on saute directement à l'atterrissage, sans
+    // la phase de rotation initiale qui n'a qu'un rôle d'effet.
+    if (reducedMotion) {
+      startLanding()
+    } else {
+      rafRef.current = requestAnimationFrame(spinTick)
+    }
     return () => {
       cancelled = true
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
@@ -89,10 +99,10 @@ function WheelResultPopup({ result, onClose }: WheelResultPopupProps) {
             className="absolute -top-2 left-1/2 -translate-x-1/2 z-10 w-0 h-0
                        border-l-[8px] border-l-transparent
                        border-r-[8px] border-r-transparent
-                       border-t-[14px] border-t-game-accent drop-shadow"
+                       border-t-[14px] border-t-brand drop-shadow"
           />
           <div
-            className="w-full h-full rounded-full border-4 border-game-accent shadow-xl"
+            className="w-full h-full rounded-full border-4 border-brand shadow-xl"
             style={{ background: wheelBackground, transform: `rotate(${rotation}deg)` }}
           >
             {SEGMENTS.map((seg, i) => {
@@ -109,7 +119,7 @@ function WheelResultPopup({ result, onClose }: WheelResultPopupProps) {
             })}
           </div>
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="w-6 h-6 rounded-full bg-game-accent border-2 border-white/70 shadow" />
+            <div className="w-6 h-6 rounded-full bg-brand border-2 border-text/70 shadow" />
           </div>
         </div>
 

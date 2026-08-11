@@ -1,4 +1,5 @@
 import { Routes, Route } from 'react-router-dom'
+import ThemeToggle from './components/ThemeToggle'
 import Home from './pages/Home'
 import Lobby from './pages/Lobby'
 import Game from './pages/Game'
@@ -16,7 +17,8 @@ import AdminPropositionsRejected from './pages/AdminPropositionsRejected'
 
 function App() {
   return (
-    <div className="min-h-screen bg-game-bg">
+    <div className="min-h-screen bg-bg">
+      <ThemeToggle />
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/lobby/:code" element={<Lobby />} />

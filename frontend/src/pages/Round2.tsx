@@ -330,6 +330,16 @@ function Round2() {
   )?.round2_stats?.qualification_status
   const isEliminated = currentPlayerQualification === 'eliminated'
 
+  // Question chronométrée en cours : quitter maintenant coupe la réponse en
+  // train d'être tapée sans aucun avertissement, d'où la confirmation.
+  const isAnsweringQuestion = !isEliminated && !!selectedTheme && !!currentQuestion && !answerResult
+  const handleReturnToGame = () => {
+    if (isAnsweringQuestion && !window.confirm('Une question est en cours — quitter maintenant coupera votre réponse. Continuer ?')) {
+      return
+    }
+    navigate(getCurrentRoundPath(code!, game?.current_round))
+  }
+
   return (
     <div className="min-h-screen bg-bg p-4 md:p-8">
       <div className="max-w-6xl mx-auto">
@@ -347,7 +357,7 @@ function Round2() {
             <button
               className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={!game}
-              onClick={() => navigate(getCurrentRoundPath(code!, game?.current_round))}
+              onClick={handleReturnToGame}
             >
               ← Retour au jeu
             </button>
@@ -470,7 +480,7 @@ function Round2() {
               {currentQuestion.options.map((option, index) => (
                 <button
                   key={index}
-                  className="bg-brand-600 hover:bg-brand-hover text-text p-4 rounded-lg text-center transition-transform hover:scale-105"
+                  className="bg-brand-600 hover:bg-brand-hover text-white p-4 rounded-lg text-center transition-transform hover:scale-105"
                   onClick={() => handleAnswerSubmit(option)}
                 >
                   {option}

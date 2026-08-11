@@ -2,9 +2,48 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Tokens "Neon Pit Lane" (sombre, défaut) et son compagnon clair "Pit Lane
+   Daylight" — triplets RGB (pas de #) pour permettre `rgb(var(--x) / alpha)`
+   dans tailwind.config.js. `[data-theme]` est posé sur <html> avant le
+   premier paint (script inline dans index.html) pour éviter tout flash. */
+:root {
+  --color-bg: 8 6 12;
+  --color-surface: 21 15 36;
+  --color-surface-raised: 29 21 51;
+  --color-border: 42 33 69;
+  --color-brand: 139 92 246;
+  --color-brand-600: 116 66 214;
+  --color-brand-hover: 124 58 237;
+  --color-brand-muted: 76 58 130;
+  --color-accent: 255 110 199;
+  --color-success: 34 211 166;
+  --color-danger: 255 77 110;
+  --color-text: 237 233 254;
+  --color-text-muted: 185 174 221;
+}
+
+/* Piste A "Pit Lane Daylight" (choisie parmi 3 candidats vérifiés AA, cf.
+   _bmad-output/ux-designs/ux-Quizkw-2026-07-26/) : réutilise le violet `brand`
+   exact du thème sombre pour que la bascule reste perçue comme le même produit. */
+:root[data-theme="light"] {
+  --color-bg: 247 245 252;
+  --color-surface: 255 255 255;
+  --color-surface-raised: 241 236 250;
+  --color-border: 220 210 240;
+  --color-brand: 124 58 237;
+  --color-brand-600: 109 40 217;
+  --color-brand-hover: 139 92 246;
+  --color-brand-muted: 217 199 245;
+  --color-accent: 196 18 126;
+  --color-success: 11 122 78;
+  --color-danger: 209 40 74;
+  --color-text: 28 19 48;
+  --color-text-muted: 91 78 125;
+}
+
 @layer base {
   body {
-    @apply text-white font-sans;
+    @apply text-text font-sans;
   }
 }
 
@@ -12,9 +51,15 @@
   /* Migré vers les tokens "Neon Pit Lane" (DESIGN.md, story I-001, 2026-07-26).
      brand-600 (pas brand/DEFAULT) pour les fonds pleins de bouton : corrige un contraste
      WCAG insuffisant (texte clair sur brand seul = 3.57:1, sous l'AA 4.5:1 ; sur
-     brand-600 = 5.06:1). Micro-interaction hover-scale existante conservée à l'identique. */
+     brand-600 = 5.06:1 en sombre, 6.57:1 en clair). Micro-interaction hover-scale
+     existante conservée à l'identique.
+     Texte blanc fixe (pas `text-text`, qui suit le thème) : brand-600 reste un
+     remplissage "pas trop clair" dans les deux thèmes par construction, le blanc
+     y passe l'AA dans les deux cas (6.01:1 sombre / 7.10:1 clair) — alors que
+     `text-text` bascule vers un texte quasi-noir en thème clair et tombe à 2.49:1
+     sur ce même fond (trouvé lors de l'ajout du thème clair). */
   .btn-primary {
-    @apply bg-brand-600 hover:bg-brand-hover text-text font-bold py-3 px-6 rounded-lg transition-all duration-200 transform hover:scale-105 active:scale-95;
+    @apply bg-brand-600 hover:bg-brand-hover text-white font-bold py-3 px-6 rounded-lg transition-all duration-200 transform hover:scale-105 active:scale-95;
   }
 
   /* Fond transparent conforme à DESIGN.md.components.button-secondary (background: transparent) —
@@ -26,9 +71,17 @@
 
   /* Hover en opacité réduite (pas de couleur Tailwind brute type red-600/emerald-600) pour
      rester dans la teinte du token au lieu de jurer avec la palette Neon Pit Lane au survol
-     (corrigé en revue de code, 2026-07-26). */
+     (corrigé en revue de code, 2026-07-26).
+     BUG trouvé lors de l'ajout du thème clair : `danger` est une couleur CLAIRE en
+     thème sombre (#FF4D6D, un rouge vif) mais volontairement plus foncée en thème
+     clair (#D1284A, cf. règle "accent = emphase rare" appliquée aux couleurs
+     sémantiques). `text-text` (qui suit aussi le thème) y était donc illisible dans
+     les deux sens : 2.71:1 en sombre, 3.47:1 en clair, sous l'AA dans les deux cas.
+     `text-bg` (qui bascule dans le sens INVERSE de `text-text`) tombe juste : quasi-noir
+     sur le rouge vif du sombre (6.27:1), quasi-blanc sur le rouge plus sourd du clair
+     (4.72:1) — même bascule que .btn-success ci-dessous, pour la même raison. */
   .btn-danger {
-    @apply bg-danger hover:bg-danger/80 text-text font-bold py-3 px-6 rounded-lg transition-all duration-200;
+    @apply bg-danger hover:bg-danger/80 text-bg font-bold py-3 px-6 rounded-lg transition-all duration-200;
   }
 
   /* text-bg (texte quasi-noir) volontaire ici, PAS une incohérence avec les autres boutons qui
@@ -103,5 +156,26 @@
 
   .animate-timer-pulse {
     animation: timer-pulse 1s ease-in-out infinite;
+  }
+}
+
+/* Coupe/réduit toute animation et micro-interaction de survol (keyframes
+   maison ci-dessus, utilitaires Tailwind animate-spin/bounce/pulse, et les
+   transform hover:scale-* des .btn-*) pour les utilisateurs qui ont demandé
+   moins de mouvement au niveau système. Ne couvre pas les animations
+   pilotées en JS (roue) — voir prefersReducedMotion() dans wheelVisuals.ts. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .btn-primary:hover,
+  .btn-primary:active {
+    transform: none;
   }
 }

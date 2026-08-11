@@ -484,7 +484,7 @@ function Game() {
             {feedbackMessage && (
               <div className={`p-4 rounded-xl text-white font-bold text-center shadow-2xl transition-all border-2 ${
                 feedbackMessage.type === 'swap' ? 'bg-blue-600 border-blue-400' :
-                feedbackMessage.type === 'penalty' ? 'bg-red-600 border-red-400' : 'bg-amber-500 border-amber-300 text-slate-900'
+                feedbackMessage.type === 'penalty' ? 'bg-red-600 border-red-400' : 'bg-amber-500 border-amber-300 text-bg'
               }`}>
                 <div className="flex items-center justify-between">
                   <span className="flex-1 text-base">{feedbackMessage.text}</span>

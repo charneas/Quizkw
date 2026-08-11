@@ -63,10 +63,10 @@ function PingPongResults({
         <h3 className="text-2xl font-bold text-yellow-400 mb-2">
           {winner.name} remporte le duel !
         </h3>
-        <p className="text-slate-300">
+        <p className="text-text-muted">
           {winner.correctAnswers.length} réponses correctes • +{winnerPoints} points
         </p>
-        <p className="text-sm text-slate-400 mt-1">
+        <p className="text-sm text-text-muted mt-1">
           Duel terminé en {totalTurns} tours
         </p>
       </div>
@@ -75,28 +75,28 @@ function PingPongResults({
       <div className="grid grid-cols-2 gap-4 mb-6">
         {/* Winner */}
         <div className="bg-yellow-900/20 border-2 border-yellow-700 rounded-lg p-4 text-center">
-          <p className="text-xs text-slate-400 uppercase tracking-wide mb-2">Vainqueur</p>
+          <p className="text-xs text-text-muted uppercase tracking-wide mb-2">Vainqueur</p>
           <p className="text-xl font-bold text-yellow-400 mb-3">{winner.name} 👑</p>
           <div className="flex justify-center gap-4 text-sm">
             <div>
-              <span className="text-2xl font-bold text-white">{winner.turns}</span>
-              <p className="text-xs text-slate-500">tours joués</p>
+              <span className="text-2xl font-bold text-text">{winner.turns}</span>
+              <p className="text-xs text-text-muted">tours joués</p>
             </div>
             <div>
-              <span className="text-2xl font-bold text-game-success">{winner.correctAnswers.length}</span>
-              <p className="text-xs text-slate-500">bonnes réponses</p>
+              <span className="text-2xl font-bold text-success">{winner.correctAnswers.length}</span>
+              <p className="text-xs text-text-muted">bonnes réponses</p>
             </div>
             <div>
-              <span className="text-2xl font-bold text-game-accent">+{winnerPoints}</span>
-              <p className="text-xs text-slate-500">points</p>
+              <span className="text-2xl font-bold text-brand">+{winnerPoints}</span>
+              <p className="text-xs text-text-muted">points</p>
             </div>
           </div>
           {winner.correctAnswers.length > 0 && (
             <div className="mt-3 pt-3 border-t border-yellow-700/50">
-              <p className="text-xs text-slate-500 mb-2">Réponses données :</p>
+              <p className="text-xs text-text-muted mb-2">Réponses données :</p>
               <div className="flex flex-wrap justify-center gap-1">
                 {winner.correctAnswers.map((ans, i) => (
-                  <span key={i} className="px-2 py-0.5 bg-green-900/50 text-green-400 rounded text-xs">
+                  <span key={i} className="px-2 py-0.5 bg-success/10 text-success rounded text-xs">
                     {ans}
                   </span>
                 ))}
@@ -106,29 +106,29 @@ function PingPongResults({
         </div>
 
         {/* Loser */}
-        <div className="bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 text-center">
-          <p className="text-xs text-slate-400 uppercase tracking-wide mb-2">Perdant</p>
-          <p className="text-xl font-bold text-slate-300 mb-3">{loser.name}</p>
+        <div className="bg-surface-raised border-2 border-border rounded-lg p-4 text-center">
+          <p className="text-xs text-text-muted uppercase tracking-wide mb-2">Perdant</p>
+          <p className="text-xl font-bold text-text-muted mb-3">{loser.name}</p>
           <div className="flex justify-center gap-4 text-sm">
             <div>
-              <span className="text-2xl font-bold text-white">{loser.turns}</span>
-              <p className="text-xs text-slate-500">tours joués</p>
+              <span className="text-2xl font-bold text-text">{loser.turns}</span>
+              <p className="text-xs text-text-muted">tours joués</p>
             </div>
             <div>
-              <span className="text-2xl font-bold text-slate-400">{loser.correctAnswers.length}</span>
-              <p className="text-xs text-slate-500">bonnes réponses</p>
+              <span className="text-2xl font-bold text-text-muted">{loser.correctAnswers.length}</span>
+              <p className="text-xs text-text-muted">bonnes réponses</p>
             </div>
             <div>
-              <span className="text-2xl font-bold text-slate-400">0</span>
-              <p className="text-xs text-slate-500">points</p>
+              <span className="text-2xl font-bold text-text-muted">0</span>
+              <p className="text-xs text-text-muted">points</p>
             </div>
           </div>
           {loser.correctAnswers.length > 0 && (
-            <div className="mt-3 pt-3 border-t border-slate-700">
-              <p className="text-xs text-slate-500 mb-2">Réponses données :</p>
+            <div className="mt-3 pt-3 border-t border-border">
+              <p className="text-xs text-text-muted mb-2">Réponses données :</p>
               <div className="flex flex-wrap justify-center gap-1">
                 {loser.correctAnswers.map((ans, i) => (
-                  <span key={i} className="px-2 py-0.5 bg-slate-700 text-slate-400 rounded text-xs">
+                  <span key={i} className="px-2 py-0.5 bg-surface text-text-muted rounded text-xs">
                     {ans}
                   </span>
                 ))}
@@ -142,9 +142,9 @@ function PingPongResults({
           scellé le duel — pour les synonymes / réponses partielles valides
           que la liste de réponses acceptées n'anticipait pas. */}
       {losingTurn && onOverride && (
-        <div className="bg-slate-700/30 border border-dashed border-slate-600 rounded-lg p-4 mb-6 text-center">
-          <p className="text-sm text-slate-400 mb-3">
-            La réponse "<span className="text-white font-semibold">{losingTurn.answer_given}</span>" de{' '}
+        <div className="bg-surface-raised border border-dashed border-border rounded-lg p-4 mb-6 text-center">
+          <p className="text-sm text-text-muted mb-3">
+            La réponse "<span className="text-text font-semibold">{losingTurn.answer_given}</span>" de{' '}
             <span className="font-semibold">{loser.name}</span> était en fait valable ?
           </p>
           <button
@@ -158,8 +158,8 @@ function PingPongResults({
       )}
 
       {/* Toutes les réponses possibles */}
-      <div className="bg-slate-700/30 rounded-lg p-4 mb-6">
-        <h4 className="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-3">
+      <div className="bg-surface-raised rounded-lg p-4 mb-6">
+        <h4 className="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">
           Toutes les réponses possibles ({theme.correct_answers.length})
         </h4>
         <div className="flex flex-wrap gap-2">
@@ -172,8 +172,8 @@ function PingPongResults({
                 key={index}
                 className={`px-3 py-1 rounded-full text-sm ${
                   wasGiven
-                    ? 'bg-game-success/20 text-game-success border border-game-success/30'
-                    : 'bg-slate-600/50 text-slate-500 border border-slate-600'
+                    ? 'bg-success/10 text-success border border-success/30'
+                    : 'bg-surface text-text-muted border border-border'
                 }`}
               >
                 {answer}

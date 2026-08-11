@@ -21,39 +21,39 @@ function PingPongTeamSelector({
           <span className="font-bold text-white">DUEL PING-PONG</span>
         </div>
         <h2 className="text-xl font-bold mb-2">Choisissez votre adversaire</h2>
-        <p className="text-slate-400 text-sm">
-          <span className="font-bold text-game-accent">{currentTeam.name}</span>, quelle équipe voulez-vous défier ?
+        <p className="text-text-muted text-sm">
+          <span className="font-bold text-brand">{currentTeam.name}</span>, quelle équipe voulez-vous défier ?
         </p>
       </div>
 
       {/* Current team */}
-      <div className="bg-game-accent/10 border-2 border-game-accent rounded-lg p-4 mb-6 text-center">
-        <p className="text-sm text-slate-400">Votre équipe</p>
-        <p className="text-xl font-bold text-game-accent">{currentTeam.name}</p>
-        <p className="text-xs text-slate-500 mt-1">Vous commencerez le duel</p>
+      <div className="bg-brand-muted/20 border-2 border-brand rounded-lg p-4 mb-6 text-center">
+        <p className="text-sm text-text-muted">Votre équipe</p>
+        <p className="text-xl font-bold text-brand">{currentTeam.name}</p>
+        <p className="text-xs text-text-muted mt-1">Vous commencerez le duel</p>
       </div>
 
       {/* Opponent selection */}
       {availableTeams.length === 0 ? (
         <div className="text-center py-4">
-          <p className="text-slate-400">Aucune autre équipe disponible</p>
+          <p className="text-text-muted">Aucune autre équipe disponible</p>
         </div>
       ) : (
         <div className="space-y-3 mb-6">
-          <p className="text-sm font-semibold text-slate-400 uppercase tracking-wide">
+          <p className="text-sm font-semibold text-text-muted uppercase tracking-wide">
             Adversaires disponibles
           </p>
           {availableTeams.map((team) => (
             <button
               key={team.id}
               onClick={() => onSelect(team)}
-              className="w-full p-4 bg-slate-700/50 hover:bg-slate-700 border-2 border-slate-600 hover:border-game-accent rounded-lg text-left transition-colors flex items-center justify-between group"
+              className="w-full p-4 bg-surface-raised hover:bg-surface border-2 border-border hover:border-brand rounded-lg text-left transition-colors flex items-center justify-between group"
             >
               <div>
-                <p className="font-bold text-white group-hover:text-game-accent transition-colors">
+                <p className="font-bold text-text group-hover:text-brand transition-colors">
                   {team.name}
                 </p>
-                <p className="text-sm text-slate-400">
+                <p className="text-sm text-text-muted">
                   Score actuel : {team.score} pts
                 </p>
               </div>
@@ -66,7 +66,7 @@ function PingPongTeamSelector({
       )}
 
       {/* Cancel */}
-      <button onClick={onCancel} className="w-full py-2 border-2 border-dashed border-slate-600 hover:border-red-500 text-slate-400 hover:text-red-400 rounded-lg transition-colors">
+      <button onClick={onCancel} className="w-full py-2 border-2 border-dashed border-border hover:border-danger text-text-muted hover:text-danger rounded-lg transition-colors">
         Annuler le duel ping-pong
       </button>
     </div>

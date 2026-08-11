@@ -60,7 +60,7 @@ function QuestionCard({
               ⭐ Bonus x2
             </span>
           )}
-          <span className={`font-bold ${isBonusActive ? 'text-amber-400 text-lg' : 'text-game-accent'}`}>
+          <span className={`font-bold ${isBonusActive ? 'text-amber-400 text-lg' : 'text-brand'}`}>
             {displayPoints} pts
           </span>
         </div>
