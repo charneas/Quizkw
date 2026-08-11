@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { getGame, createTeam, startGame, joinTeam } from '../services/api'
 import type { GameSession } from '../types'
 import DevHelper from '../components/DevHelper'
+import { pluralJoueurs } from '../utils/pluralize'
 
 function Lobby() {
   const { code } = useParams<{ code: string }>()
@@ -129,7 +130,7 @@ function Lobby() {
             </span>
           </div>
           <p className="mt-2 text-text-muted">
-            {game.teams.length}/{maxTeams} équipes • {game.players_per_team} joueurs par équipe
+            {game.teams.length}/{maxTeams} équipes • {game.players_per_team} {pluralJoueurs(game.players_per_team)} par équipe
           </p>
         </div>
 
@@ -155,7 +156,7 @@ function Lobby() {
                         <div>
                           <p className="font-semibold text-text">{team.name}</p>
                           <p className="text-sm text-text-muted">
-                            {team.players.length}/{game.players_per_team} joueurs
+                            {team.players.length}/{game.players_per_team} {pluralJoueurs(game.players_per_team)}
                             {team.players.length > 0 && ` — ${team.players.map((p) => p.name).join(', ')}`}
                           </p>
                         </div>
@@ -257,7 +258,7 @@ function Lobby() {
                 Manche 2 sous ce nom générique. */}
             {game.teams.length >= 2 && !allTeamsFull && (
               <p className="text-sm text-text-muted text-center">
-                En attente que toutes les équipes soient complètes ({game.players_per_team} joueurs chacune) pour démarrer.
+                En attente que toutes les équipes soient complètes ({game.players_per_team} {pluralJoueurs(game.players_per_team)} chacune) pour démarrer.
               </p>
             )}
             <div className="flex gap-3">

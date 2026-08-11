@@ -1,6 +1,13 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { createGame, storeHostToken } from '../services/api'
+import { pluralJoueurs } from '../utils/pluralize'
+
+const PLAYERS_PER_TEAM_OPTIONS = [
+  { value: 1, label: '1 joueur (solo)' },
+  { value: 2, label: '2 joueurs' },
+  { value: 3, label: '3 joueurs' },
+]
 
 function Home() {
   const navigate = useNavigate()
@@ -103,31 +110,24 @@ function Home() {
                   Joueurs par équipe
                 </label>
                 <div className="flex gap-3">
-                  <button
-                    onClick={() => setPlayersPerTeam(2)}
-                    className={`flex-1 min-h-[44px] py-2 px-4 rounded-lg border transition-colors ${
-                      playersPerTeam === 2
-                        ? 'bg-brand-600 border-brand text-text'
-                        : 'bg-surface border-border text-text-muted hover:border-brand'
-                    }`}
-                  >
-                    2 joueurs
-                  </button>
-                  <button
-                    onClick={() => setPlayersPerTeam(3)}
-                    className={`flex-1 min-h-[44px] py-2 px-4 rounded-lg border transition-colors ${
-                      playersPerTeam === 3
-                        ? 'bg-brand-600 border-brand text-text'
-                        : 'bg-surface border-border text-text-muted hover:border-brand'
-                    }`}
-                  >
-                    3 joueurs
-                  </button>
+                  {PLAYERS_PER_TEAM_OPTIONS.map((option) => (
+                    <button
+                      key={option.value}
+                      onClick={() => setPlayersPerTeam(option.value)}
+                      className={`flex-1 min-h-[44px] py-2 px-4 rounded-lg border transition-colors ${
+                        playersPerTeam === option.value
+                          ? 'bg-brand-600 border-brand text-text'
+                          : 'bg-surface border-border text-text-muted hover:border-brand'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
                 </div>
               </div>
 
               <div className="text-sm text-text-muted text-center">
-                {Math.floor(totalPlayers / playersPerTeam)} équipes de {playersPerTeam} joueurs
+                {Math.floor(totalPlayers / playersPerTeam)} équipes de {playersPerTeam} {pluralJoueurs(playersPerTeam)}
               </div>
 
               {error && (
