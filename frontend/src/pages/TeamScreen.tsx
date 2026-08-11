@@ -195,7 +195,8 @@ function TeamScreen() {
       }
     }
 
-    const timer = setTimeout(() => setFeedbackMessage(null), 5000)
+    const isPenalty = rawType.includes('PENALT') || rawType.includes('PÉNALIT')
+    const timer = setTimeout(() => setFeedbackMessage(null), isPenalty ? 8000 : 5000)
     return () => clearTimeout(timer)
   }, [state?.last_token_used?.id, teamIdNum])
 
@@ -538,14 +539,14 @@ function TeamScreen() {
         </div>
 
         {feedbackMessage && (
-          <div className={`p-4 rounded-xl text-white font-bold text-center shadow-2xl transition-all border-2 ${
+          <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-[70] w-[calc(100%-2rem)] max-w-xl p-4 rounded-xl text-white font-bold text-center shadow-2xl transition-all border-2 ${
             feedbackMessage.type === 'swap' ? 'bg-blue-600 border-blue-400' :
             feedbackMessage.type === 'penalty' ? 'bg-red-600 border-red-400' : 'bg-amber-500 border-amber-300 text-slate-900'
           }`}>
             <div className="flex items-center justify-between">
               <span className="flex-1 text-base">{feedbackMessage.text}</span>
-              <button 
-                onClick={() => setFeedbackMessage(null)} 
+              <button
+                onClick={() => setFeedbackMessage(null)}
                 className="ml-2 font-bold px-2 py-1 hover:opacity-75 rounded"
               >
                 ✕
@@ -578,17 +579,31 @@ function TeamScreen() {
         {state.other_teams.length > 0 && (
           <div className="card">
             <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">
-              Progression des équipes
+              📊 Classement
             </h3>
             <div className="space-y-2">
-              {state.other_teams.map((team) => (
-                <div key={team.team_id} className="flex items-center justify-between">
-                  <span className="text-sm">{team.team_name}</span>
-                  <span className={team.has_answered ? 'text-success' : 'text-text-muted'}>
-                    {team.has_answered ? '✓ Répondu' : '⏳ En attente'}
-                  </span>
-                </div>
-              ))}
+              {[
+                { team_id: state.team_id, team_name: state.team_name, team_score: state.team_score, has_answered: state.has_answered, isSelf: true },
+                ...state.other_teams.map((t) => ({ ...t, isSelf: false })),
+              ]
+                .sort((a, b) => b.team_score - a.team_score)
+                .map((team, rank) => (
+                  <div
+                    key={team.team_id}
+                    className={`flex items-center justify-between p-2 rounded-lg ${team.isSelf ? 'bg-brand-muted/20 border border-brand' : 'bg-surface-raised'}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-text-muted w-5">{rank + 1}.</span>
+                      <span className="text-sm font-medium">
+                        {team.team_name}{team.isSelf ? ' (vous)' : ''}
+                      </span>
+                      <span className={`text-xs ${team.has_answered ? 'text-success' : 'text-text-muted'}`}>
+                        {team.has_answered ? '✓' : '⏳'}
+                      </span>
+                    </div>
+                    <span className="font-bold text-brand">{team.team_score} pts</span>
+                  </div>
+                ))}
             </div>
           </div>
         )}

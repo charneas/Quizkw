@@ -263,54 +263,62 @@ def get_team_specific_state(db: Session, code: str, team_id: int) -> dict:
     last_wheel_event = None
     last_token_used = None
 
-    latest_effect = db.query(models.WheelEffect).filter(
-        models.WheelEffect.game_session_id == game.id
+    # Requêtes séparées par catégorie (jeton vs effet de roue classique) :
+    # avec une seule requête "dernier effet toutes catégories confondues",
+    # une pénalité pouvait être masquée par un effet de roue survenu juste
+    # après elle (avant le prochain poll de l'équipe visée), et la
+    # notification de pénalité n'apparaissait jamais côté équipe.
+    latest_token_effect = db.query(models.WheelEffect).filter(
+        models.WheelEffect.game_session_id == game.id,
+        models.WheelEffect.effect_type.startswith("TOKEN_"),
     ).order_by(models.WheelEffect.id.desc()).first()
 
-    if latest_effect:
-        target = db.query(models.Team).filter(models.Team.id == latest_effect.target_team_id).first()
-        target_name = target.name if target else "?"
+    latest_wheel_effect = db.query(models.WheelEffect).filter(
+        models.WheelEffect.game_session_id == game.id,
+        ~models.WheelEffect.effect_type.startswith("TOKEN_"),
+    ).order_by(models.WheelEffect.id.desc()).first()
 
-        # Si l'effet est un jeton joué
-        if latest_effect.effect_type.startswith("TOKEN_"):
-            token_type_name = latest_effect.effect_type.replace("TOKEN_", "")
+    if latest_token_effect:
+        token_type_name = latest_token_effect.effect_type.replace("TOKEN_", "")
+        target_team = db.query(models.Team).filter(models.Team.id == latest_token_effect.target_team_id).first()
 
-            # 1. On récupère la cible (target)
-            target_team = db.query(models.Team).filter(models.Team.id == latest_effect.target_team_id).first()
-
-            # 2. Pour SWAP / BONUS, l'émetteur est la cible (l'équipe qui a cliqué)
-            # Pour PENALTY, l'émetteur est l'équipe qui A LANCÉ la pénalité
-            # (Si tu n'as pas de champ user_team_id dans WheelEffect, on cherche l'équipe qui n'est PAS la cible)
-            if token_type_name == "PENALTY":
-                # Trouver qui est l'émetteur : l'équipe qui n'a PAS subi la pénalité
-                # (Ou idéalement, celle qui a déclenché le jeton)
+        # Pour SWAP / BONUS, l'émetteur est la cible (l'équipe qui a cliqué).
+        # Pour PENALTY, l'émetteur est encodée dans `value` depuis #main_teams
+        # (l'équipe qui n'est pas la cible ne suffit plus dès 3+ équipes).
+        if token_type_name == "PENALTY":
+            user_team = None
+            if latest_token_effect.value:
+                user_team = db.query(models.Team).filter(models.Team.id == latest_token_effect.value).first()
+            if not user_team:
                 user_team = db.query(models.Team).filter(
                     models.Team.game_session_id == game.id,
-                    models.Team.id != latest_effect.target_team_id
+                    models.Team.id != latest_token_effect.target_team_id
                 ).first()
-            else:
-                user_team = target_team
-
-            last_token_used = {
-                "id": latest_effect.id,
-                "user_team_id": user_team.id if user_team else team_id,
-                "user_team_name": user_team.name if user_team else "Une équipe",
-                "token_type": token_type_name,
-                "target_team_id": latest_effect.target_team_id,
-                "target_team_name": target_team.name if target_team else None
-            }
         else:
-            # Effet classique de la roue
-            message = wheel_effect_message(latest_effect.effect_type, target_name, latest_effect.value)
+            user_team = target_team
 
-            last_wheel_event = {
-                "id": latest_effect.id,
-                "effect_type": latest_effect.effect_type,
-                "value": latest_effect.value,
-                "target_team_id": latest_effect.target_team_id,
-                "target_team_name": target_name,
-                "message": message,
-            }
+        last_token_used = {
+            "id": latest_token_effect.id,
+            "user_team_id": user_team.id if user_team else team_id,
+            "user_team_name": user_team.name if user_team else "Une équipe",
+            "token_type": token_type_name,
+            "target_team_id": latest_token_effect.target_team_id,
+            "target_team_name": target_team.name if target_team else None
+        }
+
+    if latest_wheel_effect:
+        target = db.query(models.Team).filter(models.Team.id == latest_wheel_effect.target_team_id).first()
+        target_name = target.name if target else "?"
+        message = wheel_effect_message(latest_wheel_effect.effect_type, target_name, latest_wheel_effect.value)
+
+        last_wheel_event = {
+            "id": latest_wheel_effect.id,
+            "effect_type": latest_wheel_effect.effect_type,
+            "value": latest_wheel_effect.value,
+            "target_team_id": latest_wheel_effect.target_team_id,
+            "target_team_name": target_name,
+            "message": message,
+        }
 
     return {
         "team_id": team_id,

@@ -293,10 +293,15 @@ def use_token(data: dict, db: Session = Depends(get_db), x_team_token: Optional[
             # Pour un SWAP ou BONUS, la cible enregistrée doit être l'équipe qui joue (team_id).
             actual_target = target_team_id if (token_type == "PENALTY" and target_team_id) else team_id
 
+            # Pour PENALTY, on encode l'équipe émettrice dans `value` (colonne
+            # sinon inutilisée pour ce type d'effet) : c'est ce qui permet à
+            # team_state_service de retrouver l'auteur réel de la pénalité au
+            # lieu de deviner "une équipe qui n'est pas la cible" (faux dès
+            # qu'il y a 3+ équipes).
             token_event = models.WheelEffect(
                 game_session_id=caller_team.game_session_id,
                 effect_type=f"TOKEN_{token_type}",
-                value=None,
+                value=team_id if token_type == "PENALTY" else None,
                 target_team_id=actual_target,
                 is_applied=True
             )
