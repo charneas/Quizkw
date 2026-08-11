@@ -498,12 +498,9 @@ function Game() {
               </div>
             )}
 
-            {currentTeam && (
-              <div className="card text-center">
-                <p className="text-sm text-slate-400">C'est au tour de</p>
-                <p className="text-2xl font-bold text-game-accent">{currentTeam.name}</p>
-              </div>
-            )}
+            {/* BUG-109 : en Manche 1, toutes les équipes répondent en parallèle
+                — il n'y a pas de tour de passage, donc pas de bandeau "à qui
+                le tour" à afficher (déjà corrigé côté HostGame.tsx). */}
 
             {currentQuestion && !answerResult && !waitingForTeams && (
               <QuestionCard

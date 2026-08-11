@@ -139,7 +139,7 @@ function Round2() {
 
       setLoading(false)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error loading Round 2')
+      setError(err instanceof Error ? err.message : 'Erreur au chargement de la Manche 2')
       setLoading(false)
     }
   }
@@ -152,7 +152,7 @@ function Round2() {
 
   const handleThemeSelection = async (theme: Theme) => {
     if (!currentPlayer) {
-      setError('Please select a player first')
+      setError("Veuillez d'abord sélectionner un joueur")
       return
     }
 
@@ -168,7 +168,7 @@ function Round2() {
       if (err instanceof Error) {
         setError(err.message);
       } else {
-        setError('An unknown error occurred while selecting the theme.');
+        setError('Une erreur est survenue lors de la sélection du thème.');
       }
       // Le thème peut avoir été pris par un autre joueur entre le chargement
       // de la liste et ce clic (BUG-210) — on rafraîchit pour ne pas laisser
@@ -191,7 +191,7 @@ function Round2() {
       setAnswerResult(null)
       setTimeRemaining(question.time_limit)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error loading question')
+      setError(err instanceof Error ? err.message : 'Erreur au chargement de la question')
     }
   }
 
@@ -230,7 +230,7 @@ function Round2() {
       const updatedProgress = await getRound2Progress(code!)
       setTournamentProgress(updatedProgress)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error submitting answer')
+      setError(err instanceof Error ? err.message : "Erreur lors de l'envoi de la réponse")
     }
   }
 
@@ -263,7 +263,7 @@ function Round2() {
         await loadLeaderboard()
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error checking progress')
+      setError(err instanceof Error ? err.message : 'Erreur lors de la vérification de la progression')
     }
   }
 
@@ -273,7 +273,7 @@ function Round2() {
       setLeaderboard(leaderboardData)
       setIsWaitingForLeaderboard(false)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error loading leaderboard')
+      setError(err instanceof Error ? err.message : 'Erreur au chargement du classement')
     }
   }
 
@@ -288,7 +288,7 @@ function Round2() {
       // Load updated leaderboard
       await loadLeaderboard()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error advancing phase')
+      setError(err instanceof Error ? err.message : 'Erreur lors du passage à la phase suivante')
     }
   }
 
@@ -297,11 +297,11 @@ function Round2() {
     
     switch (tournamentProgress.phase) {
       case '16_players':
-        return '16 Players Phase - Select Theme and Answer Questions'
+        return 'Phase à 16 joueurs — choisissez un thème et répondez aux questions'
       case '8_qualified':
-        return '8 Qualified Phase - Intermediate Leaderboard'
+        return 'Phase à 8 qualifiés — classement intermédiaire'
       case '4_finalists':
-        return '4 Finalists Phase - Ready for Round 3'
+        return '4 finalistes — prêts pour la Manche 3'
       default:
         return ''
     }
@@ -335,20 +335,21 @@ function Round2() {
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <header className="mb-8">
-          <h1 className="text-4xl font-display font-semibold text-text mb-2">Round 2: 16→8→4 Tournament</h1>
+          <h1 className="text-4xl font-display font-semibold text-text mb-2">Manche 2 : Tournoi 16→8→4</h1>
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-text-muted">Game Code: {code}</p>
+              <p className="text-text-muted">Code de la partie : {code}</p>
               <p className="text-text-muted">{getCurrentPhaseText()}</p>
               {currentPlayer && (
-                <p className="text-text-muted">Player: <span className="text-text">{currentPlayer.name}</span></p>
+                <p className="text-text-muted">Joueur : <span className="text-text">{currentPlayer.name}</span></p>
               )}
             </div>
             <button
-              className="btn-danger"
+              className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={!game}
               onClick={() => navigate(getCurrentRoundPath(code!, game?.current_round))}
             >
-              Back to Game
+              ← Retour au jeu
             </button>
           </div>
         </header>
@@ -365,7 +366,7 @@ function Round2() {
         {loading && (
           <div className="bg-surface rounded-lg p-8 text-center">
             <div className="animate-spin h-8 w-8 border-4 border-text border-t-transparent rounded-full mx-auto mb-4"></div>
-            <p className="text-text">Loading Round 2...</p>
+            <p className="text-text">Chargement de la Manche 2...</p>
           </div>
         )}
 
@@ -375,7 +376,7 @@ function Round2() {
             <div className="flex items-center">
               <span className="text-2xl mr-3">⚠️</span>
               <div>
-                <p className="text-text font-semibold mb-1">Error</p>
+                <p className="text-text font-semibold mb-1">Erreur</p>
                 <p className="text-text">{error}</p>
               </div>
             </div>
@@ -435,9 +436,9 @@ function Round2() {
           <div className="bg-surface rounded-lg p-6 mb-6">
             <div className="mb-4">
               <h2 className="text-2xl font-display font-semibold text-text mb-2">
-                Question {currentQuestion.question_number} (Difficulty: {currentQuestion.difficulty}/10)
+                Question {currentQuestion.question_number} (difficulté : {currentQuestion.difficulty}/10)
               </h2>
-              <p className="text-text-muted mb-2">Theme: {selectedTheme.name}</p>
+              <p className="text-text-muted mb-2">Thème : {selectedTheme.name}</p>
               <div className="bg-surface-raised rounded p-4 mb-4">
                 <p className="text-text text-lg">{currentQuestion.question.text}</p>
               </div>
@@ -448,10 +449,10 @@ function Round2() {
               <div className="mb-4">
                 <div className="flex justify-between items-center mb-2">
                   <span className={`text-sm font-bold ${timeRemaining <= 5 ? 'text-danger animate-timer-pulse' : 'text-text-muted'}`}>
-                    ⏱ {timeRemaining}s remaining
+                    ⏱ {timeRemaining}s restantes
                   </span>
                   <span className="text-sm text-text-muted">
-                    {currentQuestion.difficulty}/10 difficulty
+                    difficulté {currentQuestion.difficulty}/10
                   </span>
                 </div>
                 <div className="h-2 bg-border rounded-full overflow-hidden">
@@ -478,8 +479,8 @@ function Round2() {
             </div>
 
             <div className="mt-4 text-text-muted">
-              <p>Current score: {playerStats?.score}</p>
-              <p>Questions answered: {playerStats?.questions_answered}/10</p>
+              <p>Score actuel : {playerStats?.score}</p>
+              <p>Questions répondues : {playerStats?.questions_answered}/10</p>
             </div>
           </div>
         )}
@@ -493,16 +494,16 @@ function Round2() {
                 : 'bg-danger/20 animate-error-shake'
             }`}>
               <h3 className="text-xl font-bold text-text">
-                {answerResult.is_correct ? '✅ Correct!' : '❌ Incorrect'}
+                {answerResult.is_correct ? '✅ Bonne réponse !' : '❌ Mauvaise réponse'}
               </h3>
-              <p className="text-text">Points awarded: {answerResult.points_awarded}</p>
-              <p className="text-text mt-2">Correct answer: {answerResult.correct_answer}</p>
+              <p className="text-text">Points gagnés : {answerResult.points_awarded}</p>
+              <p className="text-text mt-2">Réponse correcte : {answerResult.correct_answer}</p>
             </div>
 
             <div className="bg-surface-raised rounded p-4 mb-4">
-              <p className="text-text">Your new score: {answerResult.player_score}</p>
+              <p className="text-text">Nouveau score : {answerResult.player_score}</p>
               <p className="text-text-muted">
-                Questions answered: {playerStats?.questions_answered}/10
+                Questions répondues : {playerStats?.questions_answered}/10
               </p>
             </div>
 
@@ -511,7 +512,7 @@ function Round2() {
                 className={answerResult.next_question_available ? 'btn-primary' : 'btn-success'}
                 onClick={handleNextQuestion}
               >
-                {answerResult.next_question_available ? 'Next Question' : 'Finish'}
+                {answerResult.next_question_available ? 'Question suivante' : 'Terminer'}
               </button>
             </div>
           </div>
@@ -521,9 +522,9 @@ function Round2() {
         {isWaitingForLeaderboard && (
           <div className="bg-surface rounded-lg p-8 text-center">
             <div className="animate-spin h-8 w-8 border-4 border-text border-t-transparent rounded-full mx-auto mb-4"></div>
-            <p className="text-text mb-2">Waiting for all players to finish...</p>
+            <p className="text-text mb-2">En attente que tous les joueurs terminent...</p>
             <p className="text-text-muted">
-              {tournamentProgress?.players_remaining}/{tournamentProgress?.players_total} players remaining
+              {tournamentProgress?.players_remaining}/{tournamentProgress?.players_total} joueurs restants
             </p>
           </div>
         )}
@@ -557,15 +558,15 @@ function Round2() {
           if (isFinalist) {
             return (
               <div className="bg-surface rounded-lg p-8 text-center">
-                <h2 className="text-3xl font-display font-semibold text-text mb-4">🎉 You are a Finalist!</h2>
+                <h2 className="text-3xl font-display font-semibold text-text mb-4">🎉 Vous êtes finaliste !</h2>
                 <p className="text-text-muted mb-6">
-                  Congratulations! You have qualified for Round 3 (Memory Grid).
+                  Félicitations ! Vous êtes qualifié pour la Manche 3 (Grille Mémoire).
                 </p>
                 <button
                   className="btn-success"
                   onClick={() => navigate(`/game/${code}/memory-grid`)}
                 >
-                  Continue to Round 3 (Memory Grid)
+                  Continuer vers la Manche 3 (Grille Mémoire)
                 </button>
               </div>
             )

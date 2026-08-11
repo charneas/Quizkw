@@ -13,6 +13,7 @@ function Results() {
   const [error, setError] = useState('')
   const [suddenDeath, setSuddenDeath] = useState<SuddenDeathState | null>(null)
   const [suddenDeathAnswers, setSuddenDeathAnswers] = useState<Record<number, string>>({})
+  const [submittingPlayerIds, setSubmittingPlayerIds] = useState<Record<number, boolean>>({})
   const isHost = !!getHostToken(code!)
   // Évite de redéclencher start-sudden-death en boucle pendant qu'un rejeu
   // (round épuisé sans vainqueur) est déjà en cours de création côté serveur.
@@ -64,6 +65,11 @@ function Results() {
     }
   }
 
+  useEffect(() => {
+    setSubmittingPlayerIds({})
+    setSuddenDeathAnswers({})
+  }, [suddenDeath?.id])
+
   const handleStartSuddenDeath = async () => {
     try {
       const state = await startSuddenDeath(code!)
@@ -74,7 +80,8 @@ function Results() {
   }
 
   const handleSubmitSuddenDeathAnswer = async (playerId: number) => {
-    if (!suddenDeath) return
+    if (!suddenDeath || submittingPlayerIds[playerId]) return
+    setSubmittingPlayerIds((prev) => ({ ...prev, [playerId]: true }))
     try {
       const result = await answerSuddenDeath(code!, suddenDeath.id, playerId, suddenDeathAnswers[playerId] || '')
       if (result.is_completed) {
@@ -87,6 +94,7 @@ function Results() {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Réponse refusée')
+      setSubmittingPlayerIds((prev) => ({ ...prev, [playerId]: false }))
     }
   }
 
@@ -198,6 +206,7 @@ function Results() {
                 .filter((playerId) => !suddenDeath.eliminated_player_ids.includes(playerId))
                 .map((playerId) => {
                   const player = podium.find((p) => p.player_id === playerId)
+                  const locked = !!submittingPlayerIds[playerId]
                   return (
                     <div key={playerId} className="flex gap-2 items-center">
                       <span className="w-32 truncate">{player?.player_name ?? `Joueur ${playerId}`}</span>
@@ -207,11 +216,16 @@ function Results() {
                         onChange={(e) =>
                           setSuddenDeathAnswers((prev) => ({ ...prev, [playerId]: e.target.value }))
                         }
-                        className="input flex-1"
+                        disabled={locked}
+                        className="input flex-1 disabled:opacity-50"
                         placeholder="Réponse..."
                       />
-                      <button onClick={() => handleSubmitSuddenDeathAnswer(playerId)} className="btn-primary">
-                        Valider
+                      <button
+                        onClick={() => handleSubmitSuddenDeathAnswer(playerId)}
+                        disabled={locked}
+                        className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {locked ? 'Envoyée' : 'Valider'}
                       </button>
                     </div>
                   )

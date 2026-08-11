@@ -11,6 +11,7 @@ import WaitingForTeams from '../components/WaitingForTeams'
 import PingPongQuestion from '../components/PingPongQuestion'
 import PingPongResults from '../components/PingPongResults'
 import PingPongTeamSelector from '../components/PingPongTeamSelector'
+import ConfirmModal from '../components/ConfirmModal'
 
 function HostGame() {
   const { code } = useParams<{ code: string }>()
@@ -29,6 +30,7 @@ function HostGame() {
   const [error, setError] = useState('')
   const [waitingForTeams, setWaitingForTeams] = useState(false)
   const [answersStatus, setAnswersStatus] = useState<any>(null)
+  const [showForceNewQuestionConfirm, setShowForceNewQuestionConfirm] = useState(false)
   const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Ping-Pong Duel states
@@ -571,9 +573,15 @@ function HostGame() {
             <div className="flex gap-2">
               <button
                 onClick={handleValidateAnswers}
-                disabled={!!answerResult}
+                disabled={!!answerResult || !answersStatus?.all_answered}
                 className="btn-success flex-1 text-sm disabled:opacity-40 disabled:cursor-not-allowed"
-                title={answerResult ? 'Déjà validé — cliquez Tour suivant pour continuer' : ''}
+                title={
+                  answerResult
+                    ? 'Déjà validé — cliquez Tour suivant pour continuer'
+                    : !answersStatus?.all_answered
+                      ? 'En attente que toutes les équipes aient répondu'
+                      : ''
+                }
               >
                 ✅ Valider les réponses
               </button>
@@ -585,7 +593,13 @@ function HostGame() {
                 Tour suivant →
               </button>
               <button
-                onClick={forceNewQuestion}
+                onClick={() => {
+                  if (showQuestion && !answerResult && !answersStatus?.all_answered) {
+                    setShowForceNewQuestionConfirm(true)
+                  } else {
+                    forceNewQuestion()
+                  }
+                }}
                 disabled={showPingPong || showTeamSelector || showPingPongResults}
                 className="btn-secondary flex-1 text-sm disabled:opacity-40 disabled:cursor-not-allowed"
               >
@@ -594,6 +608,19 @@ function HostGame() {
             </div>
           </div>
         </div>
+
+        {showForceNewQuestionConfirm && (
+          <ConfirmModal
+            title="Changer de question ?"
+            message="Des équipes n'ont pas encore répondu à la question en cours. La changer maintenant annule leurs réponses en attente."
+            confirmLabel="Changer quand même"
+            onConfirm={() => {
+              setShowForceNewQuestionConfirm(false)
+              forceNewQuestion()
+            }}
+            onCancel={() => setShowForceNewQuestionConfirm(false)}
+          />
+        )}
 
         {/* Modal Roue — tourne une fois par équipe */}
         {showWheel && (

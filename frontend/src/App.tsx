@@ -3,7 +3,6 @@ import Home from './pages/Home'
 import Lobby from './pages/Lobby'
 import Game from './pages/Game'
 import HostGame from './pages/HostGame'
-import TeamJoin from './pages/TeamJoin'
 import TeamScreen from './pages/TeamScreen'
 import MemoryGrid from './pages/MemoryGrid'
 import Results from './pages/Results'
@@ -23,7 +22,6 @@ function App() {
         <Route path="/lobby/:code" element={<Lobby />} />
         <Route path="/game/:code" element={<Game />} />
         <Route path="/game/:code/host" element={<HostGame />} />
-        <Route path="/team/:code" element={<TeamJoin />} />
         <Route path="/team/:code/:teamId" element={<TeamScreen />} />
         <Route path="/game/:code/memory-grid" element={<MemoryGrid />} />
         <Route path="/results/:code" element={<Results />} />

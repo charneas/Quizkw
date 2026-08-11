@@ -9,6 +9,7 @@ import PingPongQuestion from '../components/PingPongQuestion'
 import PingPongResults from '../components/PingPongResults'
 import PingPongTeamSelector from '../components/PingPongTeamSelector'
 import TokenPanel from '../components/TokenPanel'
+import ConfirmModal from '../components/ConfirmModal'
 
 interface DuelState {
   duel_id: number
@@ -90,6 +91,7 @@ function TeamScreen() {
   const [editingName, setEditingName] = useState(false)
   const [nameDraft, setNameDraft] = useState('')
   const [validating, setValidating] = useState(false)
+  const [showValidateConfirm, setShowValidateConfirm] = useState(false)
   const isHost = !!code && !!getHostToken(code)
   const [renameError, setRenameError] = useState('')
   // BUG-106 (#8) : vue consolidée des tours de roue déjà joués.
@@ -330,7 +332,6 @@ function TeamScreen() {
 
   const handleValidateAnswers = async () => {
     if (!code) return
-    if (!window.confirm('Valider définitivement les réponses de toutes les équipes ? Cette action est irréversible.')) return
     setValidating(true)
     try {
       await validateAnswers(code)
@@ -681,7 +682,7 @@ function TeamScreen() {
                   Vous êtes l'hôte de cette partie — cette action verrouille définitivement les réponses de toutes les équipes et distribue les points.
                 </p>
                 <button
-                  onClick={handleValidateAnswers}
+                  onClick={() => setShowValidateConfirm(true)}
                   disabled={validating}
                   className="btn-primary w-full disabled:opacity-50"
                 >
@@ -690,6 +691,19 @@ function TeamScreen() {
               </div>
             )}
           </div>
+        )}
+
+        {showValidateConfirm && (
+          <ConfirmModal
+            title="Valider définitivement les réponses ?"
+            message="Cette action verrouille les réponses de toutes les équipes et distribue les points. Elle est irréversible."
+            confirmLabel="Valider définitivement"
+            onConfirm={() => {
+              setShowValidateConfirm(false)
+              handleValidateAnswers()
+            }}
+            onCancel={() => setShowValidateConfirm(false)}
+          />
         )}
 
         {state.validation_result && (

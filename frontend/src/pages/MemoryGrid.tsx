@@ -708,9 +708,9 @@ function MemoryGrid() {
               {' • '}4 finalistes
             </p>
           </div>
-          {!isSpectator && (
-            <button onClick={handleEndGame} className="btn-danger text-sm">
-              Terminer la partie
+          {!isSpectator && !isCompleted && (
+            <button onClick={handleEndGame} className="btn-secondary text-sm" title="La partie continue pour les autres finalistes — ceci ne fait que vous amener sur l'écran des résultats.">
+              Quitter vers les résultats
             </button>
           )}
         </div>
