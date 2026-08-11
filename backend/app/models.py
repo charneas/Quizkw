@@ -76,6 +76,7 @@ class Team(Base):
     name = Column(String, nullable=False)
     game_session_id = Column(Integer, ForeignKey("game_sessions.id"))
     score = Column(Integer, default=0)
+    icon = Column(String, nullable=True)  # Emoji choisi par l'équipe (Manche 1), distinct de `color` (Manche 3)
     color = Column(String, nullable=True)  # Round 3 color selection
     selected_theme_ids = Column(JSON, nullable=True)  # Round 3 selected theme IDs [1,2,3]
     bonus_active = Column(Boolean, default=False, nullable=False)  # Jeton BONUS consommé sur la prochaine validation

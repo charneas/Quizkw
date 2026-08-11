@@ -9,6 +9,7 @@ export interface Player {
 export interface Team {
   id: number
   name: string
+  icon?: string | null
   game_session_id: number
   score: number
   players: Player[]

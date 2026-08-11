@@ -39,7 +39,8 @@ def create_team(code: str, team_create: schemas.TeamCreate, db: Session = Depend
     team = models.Team(
         name=team_create.name,
         game_session_id=game.id,
-        score=0
+        score=0,
+        icon=team_create.icon,
     )
 
     db.add(team)
@@ -87,6 +88,7 @@ def rename_team(
         raise HTTPException(status_code=400, detail="Ce nom d'équipe est déjà pris dans cette partie")
 
     team.name = new_name
+    team.icon = team_update.icon
     db.commit()
     db.refresh(team)
     return team

@@ -229,10 +229,12 @@ export async function useToken(data: { team_id: number; token_type: string; targ
   })
 }
 
-export async function renameTeam(gameCode: string, teamId: number, name: string) {
-  return fetchApi<{ id: number; name: string }>(`/games/${gameCode}/teams/${teamId}`, {
+// `icon` doit toujours être renvoyé (même inchangé) : le backend l'applique
+// tel quel à chaque PATCH, un appel qui l'omettrait l'effacerait silencieusement.
+export async function renameTeam(gameCode: string, teamId: number, name: string, icon?: string | null) {
+  return fetchApi<{ id: number; name: string; icon: string | null }>(`/games/${gameCode}/teams/${teamId}`, {
     method: 'PATCH',
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, icon: icon ?? null }),
     headers: teamHeaders(teamId),
   })
 }

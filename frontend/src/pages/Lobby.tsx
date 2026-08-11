@@ -3,13 +3,19 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { getGame, createTeam, startGame, joinTeam } from '../services/api'
 import type { GameSession } from '../types'
 import DevHelper from '../components/DevHelper'
+import EmojiPicker, { TEAM_EMOJIS } from '../components/EmojiPicker'
 import { pluralJoueurs } from '../utils/pluralize'
+
+// Filet de sécurité pour les équipes créées avant l'ajout du picker (icon
+// jamais choisi) — déterministe par position pour rester stable au rafraîchissement.
+const FALLBACK_ICONS = TEAM_EMOJIS.slice(0, 12)
 
 function Lobby() {
   const { code } = useParams<{ code: string }>()
   const navigate = useNavigate()
   const [game, setGame] = useState<GameSession | null>(null)
   const [teamName, setTeamName] = useState('')
+  const [teamIcon, setTeamIcon] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [creating, setCreating] = useState(false)
@@ -56,8 +62,9 @@ function Lobby() {
     }
     setCreating(true)
     try {
-      await createTeam(code, { name: trimmedName })
+      await createTeam(code, { name: trimmedName, icon: teamIcon })
       setTeamName('')
+      setTeamIcon(null)
       await loadGame()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur lors de la création')
@@ -125,7 +132,7 @@ function Lobby() {
           <h1 className="text-3xl font-display font-semibold text-text">Salle d'attente</h1>
           <div className="mt-2 inline-block bg-surface border border-border rounded-lg px-4 py-2">
             <span className="text-text-muted text-sm">Code : </span>
-            <span className="text-2xl font-display font-semibold text-accent tracking-widest">
+            <span className="text-2xl font-display font-semibold text-brand tracking-widest">
               {game.code}
             </span>
           </div>
@@ -151,7 +158,11 @@ function Lobby() {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <span className="text-2xl">
-                          {['🔴', '🔵', '🟢', '🟡', '🟣', '🟠'][index % 6]}
+                          {/* Icône choisie par l'équipe elle-même via le picker
+                              à la création ; filet de sécurité déterministe
+                              pour les équipes créées avant ce champ (jamais
+                              de doublon en dessous du max théorique de 12). */}
+                          {team.icon || FALLBACK_ICONS[index % FALLBACK_ICONS.length]}
                         </span>
                         <div>
                           <p className="font-semibold text-text">{team.name}</p>
@@ -220,6 +231,12 @@ function Lobby() {
               >
                 {creating ? '...' : 'Ajouter'}
               </button>
+            </div>
+            <div>
+              <label className="block text-sm text-text-muted mb-2">
+                Icône {teamIcon && <span className="text-2xl align-middle ml-1">{teamIcon}</span>}
+              </label>
+              <EmojiPicker value={teamIcon} onChange={setTeamIcon} />
             </div>
           </div>
         )}

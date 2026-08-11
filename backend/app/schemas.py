@@ -95,6 +95,10 @@ class PlayerWithTeamToken(Player):
 
 class TeamBase(BaseModel):
     name: str
+    # Emoji choisi par l'équipe (picker frontend restreint à une liste
+    # curatée) — jamais de contenu arbitraire, donc pas de validation de
+    # format ici au-delà d'une longueur raisonnable.
+    icon: Optional[str] = None
 
     @field_validator('name')
     @classmethod
@@ -103,6 +107,13 @@ class TeamBase(BaseModel):
         if not stripped:
             raise ValueError("Le nom d'équipe ne peut pas être vide")
         return stripped
+
+    @field_validator('icon')
+    @classmethod
+    def icon_reasonable_length(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and len(v) > 8:
+            raise ValueError("Icône invalide")
+        return v
 
 class TeamCreate(TeamBase):
     pass
