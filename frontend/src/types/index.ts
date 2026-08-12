@@ -391,6 +391,25 @@ export interface QuestionStatsResponse {
   success_rate: number
 }
 
+export interface QuestionStatsListItem {
+  question_id: number
+  text: string
+  theme_id?: number | null
+  theme_name?: string | null
+  times_answered: number
+  correct_answers: number
+  success_rate: number
+}
+
+export interface ThemeStatsResponse {
+  theme_id: number
+  theme_name: string
+  questions_count: number
+  times_answered: number
+  correct_answers: number
+  success_rate: number
+}
+
 // === Génération de contenu (Epic F, story F.2) ===
 
 export interface GeneratedQuestion {

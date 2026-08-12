@@ -96,3 +96,24 @@ class QuestionStatsResponse(BaseModel):
     times_answered: int
     correct_answers: int
     success_rate: float
+
+class QuestionStatsListItem(BaseModel):
+    """Une ligne de /admin/stats/questions : stats agrégées + contexte
+    (texte, thème) pour éviter un aller-retour par question côté front."""
+    question_id: int
+    text: str
+    theme_id: Optional[int] = None
+    theme_name: Optional[str] = None
+    times_answered: int
+    correct_answers: int
+    success_rate: float
+
+class ThemeStatsResponse(BaseModel):
+    """Une ligne de /admin/stats/themes : stats agrégées sur toutes les
+    questions du thème."""
+    theme_id: int
+    theme_name: str
+    questions_count: int
+    times_answered: int
+    correct_answers: int
+    success_rate: float

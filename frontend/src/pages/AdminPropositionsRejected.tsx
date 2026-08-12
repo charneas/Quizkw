@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
 import type { Proposition, Difficulty } from '../types'
 import { adminListRejectedPropositions } from '../services/api'
+import AdminLayout from '../components/AdminLayout'
 
 type SortKey = 'text' | 'theme' | 'difficulty'
 
@@ -52,16 +52,12 @@ export default function AdminPropositionsRejected() {
   })
 
   return (
+    <AdminLayout>
     <div className="min-h-screen p-6">
       <div className="max-w-5xl mx-auto space-y-4">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-semibold">Propositions refusées</h1>
-          <div className="flex items-center gap-4">
-            <Link to="/admin/propositions" className="text-brand hover:underline text-sm">
-              ← Propositions en attente
-            </Link>
-            <button className="btn-secondary" onClick={refresh}>Rafraîchir</button>
-          </div>
+          <button className="btn-secondary" onClick={refresh}>Rafraîchir</button>
         </div>
 
         {error && <p className="text-sm text-red-500">{error}</p>}
@@ -98,5 +94,6 @@ export default function AdminPropositionsRejected() {
         </div>
       </div>
     </div>
+    </AdminLayout>
   )
 }

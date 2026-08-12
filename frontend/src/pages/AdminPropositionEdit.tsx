@@ -3,6 +3,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import type { Difficulty, Proposition, ThemeCategory } from '../types'
 import { adminListPendingPropositions, adminListThemes, adminUpdateProposition } from '../services/api'
 import type { Theme } from '../types'
+import AdminLayout from '../components/AdminLayout'
 
 const DIFFICULTIES: Difficulty[] = ['easy', 'medium', 'hard']
 const DIFFICULTY_LABELS: Record<Difficulty, string> = {
@@ -97,15 +98,18 @@ export default function AdminPropositionEdit() {
 
   if (!proposition) {
     return (
+      <AdminLayout>
       <div className="min-h-screen p-6">
         <div className="max-w-2xl mx-auto">
           {error ? <p className="text-sm text-red-500">{error}</p> : <p className="text-text-muted">Chargement...</p>}
         </div>
       </div>
+      </AdminLayout>
     )
   }
 
   return (
+    <AdminLayout>
     <div className="min-h-screen p-6">
       <div className="max-w-2xl mx-auto space-y-4">
         <h1 className="text-xl font-semibold">Éditer la proposition</h1>
@@ -223,5 +227,6 @@ export default function AdminPropositionEdit() {
         </form>
       </div>
     </div>
+    </AdminLayout>
   )
 }

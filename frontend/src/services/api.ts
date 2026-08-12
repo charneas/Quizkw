@@ -725,6 +725,8 @@ import type {
   ContentImportRequest,
   ContentImportResponse,
   QuestionStatsResponse,
+  QuestionStatsListItem,
+  ThemeStatsResponse,
   PropositionUpdateRequest,
 } from '../types'
 
@@ -803,6 +805,14 @@ export async function adminDeleteQuestion(questionId: number) {
 
 export async function adminGetQuestionStats(questionId: number) {
   return fetchApi<QuestionStatsResponse>(`/admin/questions/${questionId}/stats`)
+}
+
+export async function adminGetAllQuestionStats() {
+  return fetchApi<QuestionStatsListItem[]>('/admin/stats/questions')
+}
+
+export async function adminGetThemeStats() {
+  return fetchApi<ThemeStatsResponse[]>('/admin/stats/themes')
 }
 
 export async function adminExportContent() {

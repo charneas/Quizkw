@@ -14,6 +14,7 @@ import AdminLogin from './pages/AdminLogin'
 import AdminPropositions from './pages/AdminPropositions'
 import AdminPropositionEdit from './pages/AdminPropositionEdit'
 import AdminPropositionsRejected from './pages/AdminPropositionsRejected'
+import AdminStats from './pages/AdminStats'
 
 function App() {
   return (
@@ -33,6 +34,7 @@ function App() {
         <Route path="/admin/propositions" element={<AdminPropositions />} />
         <Route path="/admin/propositions/rejected" element={<AdminPropositionsRejected />} />
         <Route path="/admin/propositions/:id/edit" element={<AdminPropositionEdit />} />
+        <Route path="/admin/stats" element={<AdminStats />} />
         <Route path="/proposer" element={<Propositions />} />
       </Routes>
     </div>

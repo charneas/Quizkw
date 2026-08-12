@@ -9,8 +9,10 @@ session admin valide via le guard partagé `require_admin_session`. Seules
 (il faut pouvoir se connecter avant d'avoir un cookie).
 """
 import json
+from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+from sqlalchemy import case, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -21,7 +23,8 @@ from app.schemas_admin import (
     ThemeUpdate, QuestionUpdate,
     ThemeDeleteWarning, ThemeDeleteResponse, QuestionDeleteResponse,
     ContentExport, ContentImportRequest, ContentImportResponse,
-    QuestionStatsResponse, MIN_QUESTIONS_PER_THEME, DIFFICULTY_POINTS,
+    QuestionStatsResponse, QuestionStatsListItem, ThemeStatsResponse,
+    MIN_QUESTIONS_PER_THEME, DIFFICULTY_POINTS,
 )
 
 router = APIRouter(prefix="/admin", tags=["Admin"], dependencies=[Depends(require_admin_session)])
@@ -320,6 +323,69 @@ def get_question_stats(question_id: int, db: Session = Depends(get_db)):
         correct_answers=correct_answers,
         success_rate=success_rate,
     )
+
+
+@router.get("/stats/questions", response_model=List[QuestionStatsListItem])
+def get_all_question_stats(db: Session = Depends(get_db)):
+    """Stats agrégées de toutes les questions en une requête (évite le
+    N+1 côté front d'un appel par question, story sidebar admin 2026-08-12)."""
+    rows = (
+        db.query(
+            models.Question.id,
+            models.Question.text,
+            models.Question.theme_id,
+            models.Theme.name.label("theme_name"),
+            func.count(models.Answer.id).label("times_answered"),
+            func.sum(case((models.Answer.is_correct.is_(True), 1), else_=0)).label("correct_answers"),
+        )
+        .outerjoin(models.Answer, models.Answer.question_id == models.Question.id)
+        .outerjoin(models.Theme, models.Theme.id == models.Question.theme_id)
+        .group_by(models.Question.id)
+        .all()
+    )
+    return [
+        QuestionStatsListItem(
+            question_id=r.id,
+            text=r.text,
+            theme_id=r.theme_id,
+            theme_name=r.theme_name,
+            times_answered=r.times_answered or 0,
+            correct_answers=int(r.correct_answers or 0),
+            success_rate=(int(r.correct_answers or 0) / r.times_answered) if r.times_answered else 0.0,
+        )
+        for r in rows
+    ]
+
+
+@router.get("/stats/themes", response_model=List[ThemeStatsResponse])
+def get_theme_stats(db: Session = Depends(get_db)):
+    """Stats agrégées par thème (nombre de questions, réponses, taux de
+    réussite) — vue d'ensemble complémentaire à /stats/questions."""
+    rows = (
+        db.query(
+            models.Theme.id,
+            models.Theme.name,
+            func.count(func.distinct(models.Question.id)).label("questions_count"),
+            func.count(models.Answer.id).label("times_answered"),
+            func.sum(case((models.Answer.is_correct.is_(True), 1), else_=0)).label("correct_answers"),
+        )
+        .outerjoin(models.Question, models.Question.theme_id == models.Theme.id)
+        .outerjoin(models.Answer, models.Answer.question_id == models.Question.id)
+        .group_by(models.Theme.id)
+        .order_by(models.Theme.name)
+        .all()
+    )
+    return [
+        ThemeStatsResponse(
+            theme_id=r.id,
+            theme_name=r.name,
+            questions_count=r.questions_count or 0,
+            times_answered=r.times_answered or 0,
+            correct_answers=int(r.correct_answers or 0),
+            success_rate=(int(r.correct_answers or 0) / r.times_answered) if r.times_answered else 0.0,
+        )
+        for r in rows
+    ]
 
 
 # --- Propositions (Epic F-ext-2, modération) ---

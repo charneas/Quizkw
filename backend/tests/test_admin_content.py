@@ -231,6 +231,74 @@ def test_question_stats_404(authenticated_client):
     assert resp.status_code == 404
 
 
+def test_all_question_stats_aggregates_by_question(authenticated_client, db_session, sample_team, sample_question, sample_theme):
+    from app import models
+
+    other_team = models.Team(name="Other Team 2", game_session_id=sample_team.game_session_id, score=0)
+    db_session.add(other_team)
+    db_session.commit()
+    db_session.refresh(other_team)
+
+    db_session.add_all([
+        models.Answer(question_id=sample_question.id, team_id=sample_team.id, player_answer="Paris", is_correct=True, points_earned=2),
+        models.Answer(question_id=sample_question.id, team_id=other_team.id, player_answer="Berlin", is_correct=False, points_earned=0),
+    ])
+    db_session.commit()
+
+    resp = authenticated_client.get("/admin/stats/questions")
+    assert resp.status_code == 200
+    body = resp.json()
+    row = next(r for r in body if r["question_id"] == sample_question.id)
+    assert row["theme_id"] == sample_theme.id
+    assert row["theme_name"] == sample_theme.name
+    assert row["times_answered"] == 2
+    assert row["correct_answers"] == 1
+    assert row["success_rate"] == 0.5
+
+    # Une question jamais répondue apparaît quand même, à 0 sans division par zéro.
+    unanswered = authenticated_client.post("/admin/questions", json=_question_payload(text="Jamais répondue")).json()
+    resp2 = authenticated_client.get("/admin/stats/questions")
+    row2 = next(r for r in resp2.json() if r["question_id"] == unanswered["id"])
+    assert row2["times_answered"] == 0
+    assert row2["success_rate"] == 0.0
+
+
+def test_theme_stats_aggregates_across_questions(authenticated_client, db_session, sample_team, sample_question, sample_theme):
+    from app import models
+
+    other_team = models.Team(name="Other Team 3", game_session_id=sample_team.game_session_id, score=0)
+    db_session.add(other_team)
+    db_session.commit()
+    db_session.refresh(other_team)
+
+    db_session.add_all([
+        models.Answer(question_id=sample_question.id, team_id=sample_team.id, player_answer="Paris", is_correct=True, points_earned=2),
+        models.Answer(question_id=sample_question.id, team_id=other_team.id, player_answer="Berlin", is_correct=False, points_earned=0),
+    ])
+    db_session.commit()
+
+    resp = authenticated_client.get("/admin/stats/themes")
+    assert resp.status_code == 200
+    row = next(r for r in resp.json() if r["theme_id"] == sample_theme.id)
+    assert row["times_answered"] == 2
+    assert row["correct_answers"] == 1
+    assert row["success_rate"] == 0.5
+    assert row["questions_count"] >= 1
+
+
+def test_theme_stats_includes_theme_with_no_questions(authenticated_client):
+    theme = authenticated_client.post(
+        "/admin/themes", json={"name": "Thème vide stats", "category": "serious", "difficulty_level": 5}
+    ).json()
+
+    resp = authenticated_client.get("/admin/stats/themes")
+    assert resp.status_code == 200
+    row = next(r for r in resp.json() if r["theme_id"] == theme["id"])
+    assert row["questions_count"] == 0
+    assert row["times_answered"] == 0
+    assert row["success_rate"] == 0.0
+
+
 # --- Export / Import (AC #4) ---
 
 def test_export_content(authenticated_client):
