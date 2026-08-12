@@ -44,7 +44,10 @@ function PingPongResults({
 }: PingPongDuelResultsProps) {
   const winner = winnerTeamId === team1.id ? team1 : team2
   const loser = winnerTeamId === team1.id ? team2 : team1
-  const winnerPoints = winner.correctAnswers.length * 2
+  // Points fixes pour la victoire du duel (backend : ping_pong_manager.py,
+  // winner_points = 2), pas 2 points par bonne réponse donnée — l'affichage
+  // gonflait artificiellement le total avec winner.correctAnswers.length * 2.
+  const winnerPoints = 2
 
   return (
     <div className="card">
