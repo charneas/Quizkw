@@ -37,13 +37,28 @@ function TournamentProgressComponent({ progress, currentPlayerId }: TournamentPr
     const total = progress.players_total
     switch (phase) {
       case '16_players':
-        return `${total} Players`
+        return `${total} joueurs`
       case '8_qualified':
-        return `${Math.ceil(total / 2)} Qualified`
+        return `${Math.ceil(total / 2)} qualifiés`
       case '4_finalists':
-        return `${Math.ceil(total / 4)} Finalists`
+        return `${Math.ceil(total / 4)} finalistes`
       default:
         return phase
+    }
+  }
+
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case 'qualified':
+        return 'qualifié'
+      case 'finalist':
+        return 'finaliste'
+      case 'eliminated':
+        return 'éliminé'
+      case 'playing':
+        return 'en jeu'
+      default:
+        return status
     }
   }
 
@@ -64,10 +79,10 @@ function TournamentProgressComponent({ progress, currentPlayerId }: TournamentPr
     <div className="bg-surface rounded-lg p-6 mb-6">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="text-xl font-display font-semibold text-text">Tournament Progress</h2>
+          <h2 className="text-xl font-display font-semibold text-text">Progression du tournoi</h2>
           {currentPlayerRank && currentPlayerRank > 0 && (
             <p className="text-sm text-accent font-semibold mt-1">
-              🏆 Your Position: #{currentPlayerRank}/{progress.players_total}
+              🏆 Votre position : #{currentPlayerRank}/{progress.players_total}
             </p>
           )}
         </div>
@@ -94,15 +109,15 @@ function TournamentProgressComponent({ progress, currentPlayerId }: TournamentPr
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-surface-raised rounded p-4">
-          <p className="text-text-muted text-sm">Total Players</p>
+          <p className="text-text-muted text-sm">Total joueurs</p>
           <p className="text-2xl font-bold text-text">{progress.players_total}</p>
         </div>
         <div className="bg-surface-raised rounded p-4">
-          <p className="text-text-muted text-sm">Remaining</p>
+          <p className="text-text-muted text-sm">Restants</p>
           <p className="text-2xl font-bold text-text">{progress.players_remaining}</p>
         </div>
         <div className="bg-surface-raised rounded p-4">
-          <p className="text-text-muted text-sm">Eliminated</p>
+          <p className="text-text-muted text-sm">Éliminés</p>
           <p className="text-2xl font-bold text-text">{progress.players_eliminated}</p>
         </div>
         <div className="bg-surface-raised rounded p-4">
@@ -114,7 +129,7 @@ function TournamentProgressComponent({ progress, currentPlayerId }: TournamentPr
       {/* Top players */}
       {progress.top_players.length > 0 && (
         <div className="mt-6">
-          <h3 className="text-lg font-medium text-text mb-3">Top Players</h3>
+          <h3 className="text-lg font-medium text-text mb-3">Meilleurs joueurs</h3>
           <div className="space-y-2">
             {progress.top_players.slice(0, 5).map((player, index) => (
               <div key={player.player_id} className="flex items-center justify-between bg-surface-raised rounded p-3">
@@ -130,7 +145,7 @@ function TournamentProgressComponent({ progress, currentPlayerId }: TournamentPr
                     player.status === 'eliminated' ? 'bg-danger text-bg' :
                     'bg-brand-600 text-white'
                   }`}>
-                    {player.status}
+                    {getStatusText(player.status)}
                   </span>
                 </div>
               </div>

@@ -27,7 +27,7 @@ def qualify_players_from_round1(code: str, db: Session = Depends(get_db), _host:
     """
     game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
     if not game:
-        raise HTTPException(status_code=404, detail="Game session not found")
+        raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
 
     manager = Round2Manager(db)
     try:
@@ -53,7 +53,7 @@ def get_round2_qualified_players(game_code: str, db: Session = Depends(get_db)):
     """
     game = db.query(models.GameSession).filter(models.GameSession.code == game_code).first()
     if not game:
-        raise HTTPException(status_code=404, detail="Game session not found")
+        raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
 
     stats = db.query(models.PlayerRound2Stats).filter(
         models.PlayerRound2Stats.game_session_id == game.id
@@ -110,7 +110,7 @@ def get_round2_themes(game_code: str, db: Session = Depends(get_db)):
     """
     game = db.query(models.GameSession).filter(models.GameSession.code == game_code).first()
     if not game:
-        raise HTTPException(status_code=404, detail="Game session not found")
+        raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
 
     manager = Round2Manager(db)
     themes = manager.get_available_themes(game.id, count=3)
@@ -127,7 +127,7 @@ def select_theme(game_code: str, theme_request: schemas.ThemeSelectionRequest, d
     """
     game = db.query(models.GameSession).filter(models.GameSession.code == game_code).first()
     if not game:
-        raise HTTPException(status_code=404, detail="Game session not found")
+        raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
 
     # CRITICAL FIX: Clear session cache before creating manager
     # This prevents SQLAlchemy object identity issues
@@ -138,7 +138,7 @@ def select_theme(game_code: str, theme_request: schemas.ThemeSelectionRequest, d
     # Verify that the player exists
     player = db.query(models.Player).filter(models.Player.id == theme_request.player_id).first()
     if not player:
-        raise HTTPException(status_code=404, detail="Player not found")
+        raise HTTPException(status_code=404, detail="Joueur non trouvé")
 
     try:
         print(f"DEBUG: Starting select_theme for player_id={theme_request.player_id}, theme_id={theme_request.theme_id}")
@@ -169,9 +169,7 @@ def select_theme(game_code: str, theme_request: schemas.ThemeSelectionRequest, d
             # But it created/modified the wrong player (player 7)
             raise HTTPException(
                 status_code=500,
-                detail=f"CRITICAL BUG: No stats found for player {theme_request.player_id} after select_theme! "
-                       f"Manager created/modified wrong player (player 7). "
-                       f"This is a fundamental SQLAlchemy object identity bug."
+                detail=f"BUG CRITIQUE : aucune statistique trouvée pour le joueur {theme_request.player_id} après select_theme."
             )
 
         # CRITICAL FIX: Verify the query returned the correct player
@@ -179,7 +177,7 @@ def select_theme(game_code: str, theme_request: schemas.ThemeSelectionRequest, d
         if fresh_stats.player_id != theme_request.player_id:
             raise HTTPException(
                 status_code=500,
-                detail=f"BUG: Query returned wrong player! Expected {theme_request.player_id}, got {fresh_stats.player_id}"
+                detail=f"BUG : la requête a retourné le mauvais joueur (attendu {theme_request.player_id}, obtenu {fresh_stats.player_id})"
             )
 
         # ULTIMATE FIX: Also verify the object in the database matches
@@ -196,9 +194,8 @@ def select_theme(game_code: str, theme_request: schemas.ThemeSelectionRequest, d
             # But we check again for absolute certainty
             raise HTTPException(
                 status_code=500,
-                detail=f"CRITICAL BUG: Database object has wrong player_id! "
-                       f"Expected {theme_request.player_id}, got {fresh_stats.player_id}. "
-                       f"This indicates a fundamental SQLAlchemy or database corruption issue."
+                detail=f"BUG CRITIQUE : l'objet en base a le mauvais player_id "
+                       f"(attendu {theme_request.player_id}, obtenu {fresh_stats.player_id})."
             )
 
         # Create a dictionary with the exact data we want to return
@@ -223,7 +220,7 @@ def select_theme(game_code: str, theme_request: schemas.ThemeSelectionRequest, d
         return schemas.ThemeSelectionResponse(
             theme=theme,
             player_stats=player_stats_data,  # Pass dict instead of SQLAlchemy object
-            message=f"Theme '{theme.name}' successfully selected"
+            message=f"Thème « {theme.name} » sélectionné avec succès"
         )
     except ValueError as e:
         print(f"DEBUG: ValueError caught in select_theme endpoint: {e}")
@@ -234,7 +231,7 @@ def select_theme(game_code: str, theme_request: schemas.ThemeSelectionRequest, d
         raise e
     except Exception as e:
         print(f"DEBUG: Unexpected exception: {type(e).__name__}: {e}")
-        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erreur inattendue : {str(e)}")
 
 @router.get("/round2/{game_code}/question", response_model=schemas.Round2QuestionResponse)
 def get_round2_question(game_code: str, player_id: int, db: Session = Depends(get_db)):
@@ -243,14 +240,14 @@ def get_round2_question(game_code: str, player_id: int, db: Session = Depends(ge
     """
     game = db.query(models.GameSession).filter(models.GameSession.code == game_code).first()
     if not game:
-        raise HTTPException(status_code=404, detail="Game session not found")
+        raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
 
     manager = Round2Manager(db)
 
     try:
         question = manager.get_next_question(player_id, game.id)
         if not question:
-            raise HTTPException(status_code=404, detail="No question available - player may have finished")
+            raise HTTPException(status_code=404, detail="Aucune question disponible — le joueur a peut-être déjà terminé")
 
         # Shuffle options
         wrong_answers = json.loads(question.wrong_answers) if question.wrong_answers else []
@@ -274,7 +271,7 @@ def submit_round2_answer(game_code: str, answer_request: schemas.Round2AnswerReq
     """
     game = db.query(models.GameSession).filter(models.GameSession.code == game_code).first()
     if not game:
-        raise HTTPException(status_code=404, detail="Game session not found")
+        raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
 
     manager = Round2Manager(db)
 
@@ -298,7 +295,7 @@ def get_round2_leaderboard(game_code: str, db: Session = Depends(get_db)):
     """
     game = db.query(models.GameSession).filter(models.GameSession.code == game_code).first()
     if not game:
-        raise HTTPException(status_code=404, detail="Game session not found")
+        raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
 
     manager = Round2Manager(db)
     leaderboard = manager.calculate_intermediate_leaderboard(game.id)
@@ -312,7 +309,7 @@ def advance_round2_phase(game_code: str, db: Session = Depends(get_db), _host: m
     """
     game = db.query(models.GameSession).filter(models.GameSession.code == game_code).first()
     if not game:
-        raise HTTPException(status_code=404, detail="Game session not found")
+        raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
 
     manager = Round2Manager(db)
 
@@ -354,7 +351,7 @@ def advance_round2_phase(game_code: str, db: Session = Depends(get_db), _host: m
         if len(completed_players) < len(all_players):
             raise HTTPException(
                 status_code=400,
-                detail=f"All players must finish before advancing ({len(completed_players)}/{len(all_players)} completed)"
+                detail=f"Tous les joueurs doivent terminer avant de pouvoir avancer ({len(completed_players)}/{len(all_players)} terminés)"
             )
 
         # Advance to 8 qualified
@@ -363,7 +360,7 @@ def advance_round2_phase(game_code: str, db: Session = Depends(get_db), _host: m
             new_phase="8_qualified",
             qualified_count=len(leaderboard.qualified_players),
             eliminated_count=len(leaderboard.eliminated_players),
-            message="Phase 16→8 completed, top 8 qualified"
+            message="Phase 16→8 terminée, les meilleurs qualifiés"
         )
 
     elif progress.phase == "8_qualified":
@@ -394,7 +391,7 @@ def advance_round2_phase(game_code: str, db: Session = Depends(get_db), _host: m
         return result
 
     else:
-        raise HTTPException(status_code=400, detail="Tournament is already in final phase")
+        raise HTTPException(status_code=400, detail="Le tournoi est déjà dans sa phase finale")
 
 @router.get("/round2/{game_code}/progress", response_model=schemas.TournamentProgress)
 def get_round2_progress(game_code: str, db: Session = Depends(get_db)):
@@ -403,7 +400,7 @@ def get_round2_progress(game_code: str, db: Session = Depends(get_db)):
     """
     game = db.query(models.GameSession).filter(models.GameSession.code == game_code).first()
     if not game:
-        raise HTTPException(status_code=404, detail="Game session not found")
+        raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
 
     manager = Round2Manager(db)
     progress = manager.get_tournament_progress(game.id)

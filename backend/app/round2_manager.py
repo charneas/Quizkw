@@ -110,15 +110,15 @@ class Round2Manager:
             # VERIFICATION: Immediately check the object
             if stats.player_id != player_id:
                 raise ValueError(
-                    f"CRITICAL BUG: Created object has wrong player_id! "
-                    f"Expected {player_id}, got {stats.player_id}"
+                    f"BUG CRITIQUE : l'objet créé a le mauvais player_id "
+                    f"(attendu {player_id}, obtenu {stats.player_id})"
                 )
-        
+
         # FINAL VERIFICATION
         if stats.player_id != player_id:
             raise ValueError(
-                f"CRITICAL BUG: Retrieved object has wrong player_id! "
-                f"Expected {player_id}, got {stats.player_id}"
+                f"BUG CRITIQUE : l'objet récupéré a le mauvais player_id "
+                f"(attendu {player_id}, obtenu {stats.player_id})"
             )
         
         return stats
@@ -181,14 +181,14 @@ class Round2Manager:
         # Check if theme exists
         theme = self.db.query(models.Theme).filter(models.Theme.id == theme_id).first()
         if not theme:
-            raise ValueError(f"Theme with ID {theme_id} not found")
-        
+            raise ValueError(f"Thème avec l'ID {theme_id} non trouvé")
+
         self._check_players_turn(player_id, game_session_id)
 
         # Check if player has already selected a theme
         stats = self.get_player_stats(player_id, game_session_id)
         if stats.theme_id is not None:
-            raise ValueError("Player has already selected a theme")
+            raise ValueError("Le joueur a déjà sélectionné un thème")
 
         # Check if another player in this session already took this theme
         # (BUG-210 : la vérification précédente ne portait que sur le joueur
@@ -229,11 +229,11 @@ class Round2Manager:
         ).first()
         
         if not fresh_stats:
-            raise ValueError(f"Failed to retrieve stats after update for player {player_id}")
-        
+            raise ValueError(f"Impossible de récupérer les statistiques après mise à jour pour le joueur {player_id}")
+
         # Double-check that theme_id was saved
         if fresh_stats.theme_id != theme_id:
-            raise ValueError(f"Failed to save theme selection: expected {theme_id}, got {fresh_stats.theme_id}")
+            raise ValueError(f"Échec de l'enregistrement du thème : attendu {theme_id}, obtenu {fresh_stats.theme_id}")
         
         return fresh_stats
     

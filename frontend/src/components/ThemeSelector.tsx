@@ -31,11 +31,11 @@ function ThemeSelectorComponent({ themes, onSelectTheme, gameCode: _gameCode }: 
   const getCategoryText = (category: string) => {
     switch (category) {
       case 'serious':
-        return 'Serious'
+        return 'Sérieux'
       case 'pop_culture':
-        return 'Pop Culture'
+        return 'Culture pop'
       case 'whimsical':
-        return 'Whimsical'
+        return 'Fantaisie'
       default:
         return category
     }
@@ -47,9 +47,9 @@ function ThemeSelectorComponent({ themes, onSelectTheme, gameCode: _gameCode }: 
 
   return (
     <div className="bg-surface rounded-lg p-6">
-      <h2 className="text-2xl font-display font-semibold text-text mb-2">Choose Your Theme</h2>
+      <h2 className="text-2xl font-display font-semibold text-text mb-2">Choisissez votre thème</h2>
       <p className="text-text-muted mb-6">
-        Select one of these {themes.length} random theme{themes.length > 1 ? 's' : ''} for your Round 2 questions
+        Sélectionnez un de ces {themes.length} thème{themes.length > 1 ? 's' : ''} tiré{themes.length > 1 ? 's' : ''} au sort pour vos questions de Manche 2
       </p>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -65,7 +65,7 @@ function ThemeSelectorComponent({ themes, onSelectTheme, gameCode: _gameCode }: 
                 <span className={`px-3 py-1 rounded-full text-sm ${getCategoryColor(theme.category)} ${getCategoryTextColor(theme.category)}`}>
                   {getCategoryText(theme.category)}
                 </span>
-                <span className="text-text-muted text-sm">Difficulty: {theme.difficulty_level}/10</span>
+                <span className="text-text-muted text-sm">Difficulté : {theme.difficulty_level}/10</span>
               </div>
 
               <h3 className="text-xl font-bold text-text mb-3">{theme.name}</h3>
@@ -75,7 +75,7 @@ function ThemeSelectorComponent({ themes, onSelectTheme, gameCode: _gameCode }: 
               )}
 
               <div className="mb-4">
-                <p className="text-text-muted text-sm mb-1">Difficulty Level:</p>
+                <p className="text-text-muted text-sm mb-1">Niveau de difficulté :</p>
                 <div className="text-yellow-400 text-lg">
                   {getDifficultyStars(theme.difficulty_level)}
                 </div>
@@ -83,7 +83,7 @@ function ThemeSelectorComponent({ themes, onSelectTheme, gameCode: _gameCode }: 
 
               <div className="text-center">
                 <button className="btn-primary">
-                  Select This Theme
+                  Choisir ce thème
                 </button>
               </div>
             </div>
@@ -92,8 +92,8 @@ function ThemeSelectorComponent({ themes, onSelectTheme, gameCode: _gameCode }: 
       </div>
 
       <div className="mt-6 text-center text-text-muted">
-        <p>Each theme has 10 questions with progressive difficulty (1-10)</p>
-        <p>Points awarded: 1-10 points per question based on difficulty</p>
+        <p>Chaque thème propose 10 questions de difficulté progressive (1-10)</p>
+        <p>Points attribués : de 1 à 10 points par question selon la difficulté</p>
       </div>
     </div>
   )

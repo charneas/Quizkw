@@ -198,7 +198,7 @@ class TestRound2Manager:
         sample_player_stats.theme_selected_at = datetime.now()
         round2_manager.db.commit()
         
-        with pytest.raises(ValueError, match="Player has already selected a theme"):
+        with pytest.raises(ValueError, match="a déjà sélectionné un thème"):
             round2_manager.select_theme(
                 player_id=sample_player_stats.player_id,
                 game_session_id=sample_player_stats.game_session_id,
@@ -207,7 +207,7 @@ class TestRound2Manager:
             
     def test_select_theme_invalid_theme(self, round2_manager, sample_player, sample_game_session):
         """Test sélection de thème avec un thème inexistant."""
-        with pytest.raises(ValueError, match="Theme with ID"):
+        with pytest.raises(ValueError, match="Thème avec l'ID"):
             round2_manager.select_theme(
                 player_id=sample_player.id,
                 game_session_id=sample_game_session.id,

@@ -38,14 +38,14 @@ function PlayerSelection({ gameCode, onSelectPlayer, existingPlayers = [] }: Pla
       })
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ detail: 'Network error' }))
-        throw new Error(errorData.detail || `Error ${response.status}`)
+        const errorData = await response.json().catch(() => ({ detail: 'Erreur réseau' }))
+        throw new Error(errorData.detail || `Erreur ${response.status}`)
       }
 
       const newPlayer: Player = await response.json()
       onSelectPlayer(newPlayer)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create player')
+      setError(err instanceof Error ? err.message : 'Échec de la création du joueur')
     } finally {
       setIsJoining(false)
     }
