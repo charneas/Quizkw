@@ -99,7 +99,7 @@ export default function AdminPropositionEdit() {
   if (!proposition) {
     return (
       <AdminLayout>
-      <div className="min-h-screen p-6">
+      <div>
         <div className="max-w-2xl mx-auto">
           {error ? <p className="text-sm text-red-500">{error}</p> : <p className="text-text-muted">Chargement...</p>}
         </div>
@@ -110,7 +110,7 @@ export default function AdminPropositionEdit() {
 
   return (
     <AdminLayout>
-    <div className="min-h-screen p-6">
+    <div>
       <div className="max-w-2xl mx-auto space-y-4">
         <h1 className="text-xl font-semibold">Éditer la proposition</h1>
 

@@ -91,7 +91,7 @@ export default function AdminPropositions() {
 
   return (
     <AdminLayout>
-    <div className="min-h-screen p-6">
+    <div>
       <div className="max-w-5xl mx-auto space-y-4">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-semibold">Propositions en attente</h1>
