@@ -485,7 +485,7 @@ function HostGame() {
           </div>
 
           {/* Zone de contrôle */}
-          <div className="lg:col-span-2 space-y-4">
+          <div className="lg:col-span-2 space-y-4 relative">
             {/* Question affichée pour référence (les équipes répondent via leur écran) */}
             {showQuestion && currentQuestion && (
               <div className="card">
@@ -606,6 +606,22 @@ function HostGame() {
                 Nouvelle question
               </button>
             </div>
+
+            {/* Modal Roue — tourne une fois par équipe. Positionné en
+                overlay de la seule colonne de contrôle (grâce à `relative`
+                sur son parent) pour laisser le classement visible sur le
+                côté pendant l'enchaînement des spins, comme prévu à
+                l'origine (2026-08-12). */}
+            {showWheel && (
+              <WheelModal
+                onSpin={handleSpinWheel}
+                result={wheelResult}
+                onClose={handleCloseWheel}
+                teamName={wheelTeamQueue.length > 0 ? game.teams[wheelTeamQueue[wheelTeamIdx]]?.name : currentTeam.name}
+                teamProgress={wheelTeamQueue.length > 0 ? `${wheelTeamIdx + 1}/${wheelTeamQueue.length}` : undefined}
+                isLastTeam={wheelTeamQueue.length === 0 || wheelTeamIdx >= wheelTeamQueue.length - 1}
+              />
+            )}
           </div>
         </div>
 
@@ -619,18 +635,6 @@ function HostGame() {
               forceNewQuestion()
             }}
             onCancel={() => setShowForceNewQuestionConfirm(false)}
-          />
-        )}
-
-        {/* Modal Roue — tourne une fois par équipe */}
-        {showWheel && (
-          <WheelModal
-            onSpin={handleSpinWheel}
-            result={wheelResult}
-            onClose={handleCloseWheel}
-            teamName={wheelTeamQueue.length > 0 ? game.teams[wheelTeamQueue[wheelTeamIdx]]?.name : currentTeam.name}
-            teamProgress={wheelTeamQueue.length > 0 ? `${wheelTeamIdx + 1}/${wheelTeamQueue.length}` : undefined}
-            isLastTeam={wheelTeamQueue.length === 0 || wheelTeamIdx >= wheelTeamQueue.length - 1}
           />
         )}
 

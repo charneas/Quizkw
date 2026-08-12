@@ -157,7 +157,7 @@ function WheelModal({ onSpin, result, onClose, teamName, teamProgress, isLastTea
   }
 
   return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+    <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-50 p-4 rounded-lg">
       <div className="card max-w-md w-full text-center">
         <h2 className="text-2xl font-bold mb-2">🎡 Roue de Fortune</h2>
 
