@@ -502,7 +502,7 @@ function TeamScreen() {
     )
   }
 
-  const showRanking = state.other_teams.length > 0 && state.game_phase !== 'manche_1' && !state.current_question && !state.active_duel && !state.spectator_duel && !state.validation_result
+  const showRanking = state.other_teams.length > 0
   const showLeftColumn = showRanking || wheelHistory.length > 0
 
   return (
@@ -562,9 +562,10 @@ function TeamScreen() {
         <div className={showLeftColumn ? 'grid grid-cols-1 lg:grid-cols-3 gap-6' : 'max-w-3xl mx-auto space-y-6'}>
           {showLeftColumn && (
           <div className="lg:col-span-1 space-y-6">
-            {/* Classement affiché uniquement pendant les tours de roue (pas
-                de question/duel/validation en cours) -- pendant une question,
-                l'attention doit rester sur celle-ci, pas sur le classement. */}
+            {/* Classement affiché en permanence dans la colonne latérale,
+                y compris pendant une question/duel — feedback playtest
+                du 2026-08-12 : le retirer pendant la Manche 1 privait les
+                équipes de l'info de classement trop longtemps. */}
             {showRanking && (
               <div className="card">
                 <h3 className="text-sm font-semibold text-text-muted uppercase tracking-wide mb-3">
