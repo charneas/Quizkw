@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getGame, createTeam, startGame, joinTeam } from '../services/api'
+import { getGame, createTeam, startGame, joinTeam, renameTeam, getTeamToken } from '../services/api'
 import type { GameSession } from '../types'
 import DevHelper from '../components/DevHelper'
 import EmojiPicker, { TEAM_EMOJIS } from '../components/EmojiPicker'
@@ -24,6 +24,10 @@ function Lobby() {
   // jamais nommés réellement avant la Manche 2).
   const [pseudoDrafts, setPseudoDrafts] = useState<Record<number, string>>({})
   const [joiningTeamId, setJoiningTeamId] = useState<number | null>(null)
+  // Édition d'icône ouverte pour une équipe (uniquement possible pour un
+  // appareil qui en est déjà membre — team_token stocké localement).
+  const [editingIconTeamId, setEditingIconTeamId] = useState<number | null>(null)
+  const [savingIcon, setSavingIcon] = useState(false)
 
   useEffect(() => {
     if (code) {
@@ -85,6 +89,20 @@ function Lobby() {
       setError(err instanceof Error ? err.message : 'Erreur lors de la connexion')
     } finally {
       setJoiningTeamId(null)
+    }
+  }
+
+  const handleChangeIcon = async (team: { id: number; name: string }, icon: string) => {
+    if (!code) return
+    setSavingIcon(true)
+    try {
+      await renameTeam(code, team.id, team.name, icon)
+      setEditingIconTeamId(null)
+      await loadGame()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur lors du changement d'icône")
+    } finally {
+      setSavingIcon(false)
     }
   }
 
@@ -150,6 +168,10 @@ function Lobby() {
             <div className="space-y-3">
               {game.teams.map((team, index) => {
                 const isFull = team.players.length >= game.players_per_team
+                // Seul un appareil déjà membre de l'équipe (token stocké lors
+                // du join/create) peut changer son icône — pas de vérification
+                // serveur supplémentaire nécessaire, renameTeam la fait déjà.
+                const isMember = !game.started && !!getTeamToken(team.id)
                 return (
                   <div
                     key={team.id}
@@ -157,13 +179,24 @@ function Lobby() {
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <span className="text-2xl">
-                          {/* Icône choisie par l'équipe elle-même via le picker
-                              à la création ; filet de sécurité déterministe
-                              pour les équipes créées avant ce champ (jamais
-                              de doublon en dessous du max théorique de 12). */}
-                          {team.icon || FALLBACK_ICONS[index % FALLBACK_ICONS.length]}
-                        </span>
+                        {isMember ? (
+                          <button
+                            type="button"
+                            onClick={() => setEditingIconTeamId((id) => (id === team.id ? null : team.id))}
+                            title="Changer l'icône de l'équipe"
+                            className="text-2xl w-9 h-9 rounded-lg hover:bg-surface border border-transparent hover:border-brand transition-colors flex items-center justify-center"
+                          >
+                            {team.icon || FALLBACK_ICONS[index % FALLBACK_ICONS.length]}
+                          </button>
+                        ) : (
+                          <span className="text-2xl">
+                            {/* Icône choisie par l'équipe elle-même via le picker
+                                à la création ; filet de sécurité déterministe
+                                pour les équipes créées avant ce champ (jamais
+                                de doublon en dessous du max théorique de 12). */}
+                            {team.icon || FALLBACK_ICONS[index % FALLBACK_ICONS.length]}
+                          </span>
+                        )}
                         <div>
                           <p className="font-semibold text-text">{team.name}</p>
                           <p className="text-sm text-text-muted">
@@ -203,6 +236,18 @@ function Lobby() {
                         >
                           {joiningTeamId === team.id ? '...' : 'Rejoindre cette équipe'}
                         </button>
+                      </div>
+                    )}
+
+                    {editingIconTeamId === team.id && (
+                      <div className="mt-3 pt-3 border-t border-border">
+                        <p className="text-xs text-text-muted mb-2">
+                          {savingIcon ? 'Enregistrement...' : "Choisir une nouvelle icône pour l'équipe"}
+                        </p>
+                        <EmojiPicker
+                          value={team.icon ?? null}
+                          onChange={(icon) => handleChangeIcon(team, icon)}
+                        />
                       </div>
                     )}
                   </div>
