@@ -123,6 +123,52 @@ class Round2Manager:
         
         return stats
     
+    def _check_players_turn(self, player_id: int, game_session_id: int) -> None:
+        """Manche 2 en tour par rôle : un seul joueur à la fois choisit son
+        thème et répond à ses questions, les autres sont spectateurs.
+        """
+        game = self.db.query(models.GameSession).filter(
+            models.GameSession.id == game_session_id
+        ).first()
+        if not game:
+            raise ValueError(f"Session de jeu {game_session_id} non trouvée")
+
+        if game.round2_current_turn_player_id != player_id:
+            raise ValueError("Ce n'est pas votre tour")
+
+    def _advance_turn(self, game_session_id: int) -> None:
+        """Fait passer le tour au prochain joueur de round2_turn_order qui
+        n'a pas encore terminé ses 10 questions. Ne commit pas (AD-5,
+        appelée depuis submit_answer qui possède déjà la transaction).
+        """
+        game = self.db.query(models.GameSession).filter(
+            models.GameSession.id == game_session_id
+        ).first()
+        if not game or not game.round2_turn_order:
+            return
+
+        stats_by_player = {
+            s.player_id: s
+            for s in self.db.query(models.PlayerRound2Stats).filter(
+                models.PlayerRound2Stats.game_session_id == game_session_id
+            ).all()
+        }
+
+        current_index = (
+            game.round2_turn_order.index(game.round2_current_turn_player_id)
+            if game.round2_current_turn_player_id in game.round2_turn_order
+            else -1
+        )
+
+        next_player_id = None
+        for candidate_id in game.round2_turn_order[current_index + 1:]:
+            candidate_stats = stats_by_player.get(candidate_id)
+            if candidate_stats and candidate_stats.current_question_index < 10:
+                next_player_id = candidate_id
+                break
+
+        game.round2_current_turn_player_id = next_player_id
+
     def select_theme(self, player_id: int, game_session_id: int, theme_id: int) -> models.PlayerRound2Stats:
         """Allow a player to select a theme"""
         # Check if theme exists
@@ -130,6 +176,8 @@ class Round2Manager:
         if not theme:
             raise ValueError(f"Theme with ID {theme_id} not found")
         
+        self._check_players_turn(player_id, game_session_id)
+
         # Check if player has already selected a theme
         stats = self.get_player_stats(player_id, game_session_id)
         if stats.theme_id is not None:
@@ -193,11 +241,17 @@ class Round2Manager:
         if stats.current_question_index >= 10:
             return None
         
-        # Récupérer la question correspondant au thème et au numéro
+        # Récupérer la question correspondant au thème et au numéro. Tirage
+        # aléatoire (pas juste .first()) : si plusieurs questions partagent le
+        # même (theme_id, question_number) — aucune contrainte d'unicité ne
+        # l'empêche —, un .first() sans ORDER BY renvoie toujours la même
+        # (la plus ancienne en pratique sur SQLite), rendant les autres
+        # injouables en permanence. Le tirage aléatoire les rend toutes
+        # accessibles et varie l'expérience d'un thème rejoué.
         question = self.db.query(models.Question).filter(
             models.Question.theme_id == stats.theme_id,
             models.Question.question_number == stats.current_question_index + 1
-        ).first()
+        ).order_by(func.random()).first()
         
         if not question:
             # Pour MVP: créer une question générique si pas trouvée
@@ -207,8 +261,10 @@ class Round2Manager:
     
     def submit_answer(self, player_id: int, game_session_id: int, question_id: int, player_answer: str) -> Dict:
         """Soumettre une réponse et calculer le score"""
+        self._check_players_turn(player_id, game_session_id)
+
         stats = self.get_player_stats(player_id, game_session_id)
-        
+
         # Vérifier si le joueur peut encore répondre
         if stats.qualification_status != models.QualificationStatus.PLAYING:
             raise ValueError("Le joueur ne participe plus à ce round")
@@ -241,7 +297,8 @@ class Round2Manager:
         if stats.current_question_index >= 10:
             stats.completed_at = datetime.now()
             stats.qualification_status = models.QualificationStatus.QUALIFIED
-        
+            self._advance_turn(game_session_id)
+
         self.db.commit()
         
         return {
@@ -366,12 +423,25 @@ class Round2Manager:
                 "status": player.qualification_status.value
             })
         
+        game = self.db.query(models.GameSession).filter(
+            models.GameSession.id == game_session_id
+        ).first()
+        current_turn_player_id = game.round2_current_turn_player_id if game else None
+        current_turn_player_name = None
+        if current_turn_player_id is not None:
+            current_turn_player = self.db.query(models.Player).filter(
+                models.Player.id == current_turn_player_id
+            ).first()
+            current_turn_player_name = current_turn_player.name if current_turn_player else None
+
         return schemas.TournamentProgress(
             phase=phase,
             players_total=len(all_players),
             players_remaining=len(playing) + len(qualified) + len(finalists),
             players_eliminated=len(eliminated),
-            top_players=top_players
+            top_players=top_players,
+            current_turn_player_id=current_turn_player_id,
+            current_turn_player_name=current_turn_player_name,
         )
     
     def _create_fallback_question(self, theme_id: int, question_number: int) -> models.Question:
@@ -484,12 +554,21 @@ class Round2Manager:
                     qualification_status=models.QualificationStatus.PLAYING,
                 ))
 
+        # Manche 2 en tour par rôle : ordre de passage aléatoire figé une
+        # fois pour toutes, le premier joueur de l'ordre commence.
+        turn_order = [p.id for p in qualified]
+        random.shuffle(turn_order)
+
         # AD-7 : compare-and-set sur la phase
         updated = self.db.query(models.GameSession).filter(
             models.GameSession.id == game_session_id,
             models.GameSession.current_round == models.RoundType.MANCHE_1,
         ).update(
-            {models.GameSession.current_round: models.RoundType.MANCHE_2},
+            {
+                models.GameSession.current_round: models.RoundType.MANCHE_2,
+                models.GameSession.round2_turn_order: turn_order,
+                models.GameSession.round2_current_turn_player_id: turn_order[0],
+            },
             synchronize_session=False,
         )
         if updated == 0:
