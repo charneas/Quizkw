@@ -157,13 +157,15 @@ def next_question(code: str, db: Session = Depends(get_db), _host: models.GameSe
         }
 
     if game.questions_played % game.wheel_frequency == 0:
-        wheel_event = manche1_orchestration.trigger_wheel_effect(db, game)
+        # Un tirage indépendant par équipe (pas une seule équipe par rotation) —
+        # voir Dev Notes de trigger_wheel_effect.
+        wheel_events = manche1_orchestration.trigger_wheel_effect(db, game)
         game.current_question_id = None
         db.commit()
         return {
             "message": "C'est l'heure de la roue de fortune !",
             "question_id": None,
-            "wheel_event": wheel_event,
+            "wheel_events": wheel_events,
         }
 
     # Choisir une question aléatoire

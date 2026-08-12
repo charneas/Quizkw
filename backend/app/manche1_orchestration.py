@@ -32,62 +32,65 @@ def _roll_wheel_effect(has_opponent: bool):
     return spin_result, "bonus", 3
 
 
-def trigger_wheel_effect(db: Session, game: models.GameSession) -> Optional[dict]:
-    """Fait tourner la roue automatiquement pour l'équipe dont c'est le tour
-    (rotation déterministe sur `questions_played // game.wheel_frequency`),
-    applique l'effet en base et le journalise dans WheelEffect. Reprend les
+def trigger_wheel_effect(db: Session, game: models.GameSession) -> list[dict]:
+    """Fait tourner la roue automatiquement pour TOUTES les équipes en jeu
+    (un tirage indépendant par équipe, pas une seule équipe choisie par
+    rotation — décision produit du 2026-08-12 : un tour de roue partagé
+    par une seule équipe "n'a aucun sens" pour le jeu). Applique chaque
+    effet en base et le journalise dans WheelEffect. Reprend les
     probabilités du jeu de plateau (1-5 malus, 6-10 +1, 11-18 ping-pong, 19-20 +3).
     """
     teams = db.query(models.Team).filter(models.Team.game_session_id == game.id).order_by(models.Team.id).all()
     if not teams:
-        return None
+        return []
 
-    wheel_round = game.questions_played // game.wheel_frequency
-    spinning_team = teams[(wheel_round - 1) % len(teams)]
+    events = []
+    for spinning_team in teams:
+        # Probabilités partagées avec spin_wheel (roue host) via _roll_wheel_effect
+        # — voir revue de code de la story J.004 (duplication déjà divergente).
+        has_opponent = any(t.id != spinning_team.id for t in teams)
+        _spin_result, effect_type, value = _roll_wheel_effect(has_opponent)
 
-    # Probabilités partagées avec spin_wheel (roue host) via _roll_wheel_effect
-    # — voir revue de code de la story J.004 (duplication déjà divergente).
-    has_opponent = any(t.id != spinning_team.id for t in teams)
-    _spin_result, effect_type, value = _roll_wheel_effect(has_opponent)
+        if effect_type == "malus":
+            spinning_team = apply_team_score_delta(db, spinning_team.id, value, floor_zero=True)
+            message = f"💀 Malus : {spinning_team.name} perd 3 points"
+        elif effect_type == "bonus" and value == 1:
+            spinning_team = apply_team_score_delta(db, spinning_team.id, value)
+            message = f"🎉 {spinning_team.name} gagne 1 point"
+        elif effect_type == "ping_pong":
+            # L'équipe qui tombe sur le ping-pong choisit elle-même son adversaire
+            # (voir TeamScreen.tsx) — pas de duel démarré ici, juste l'annonce.
+            message = f"🏓 {spinning_team.name}, choisissez votre adversaire !"
+        elif effect_type == "bonus" and value == 2:
+            # Une seule équipe en jeu : pas d'adversaire possible pour le duel.
+            spinning_team = apply_team_score_delta(db, spinning_team.id, value)
+            message = f"Pas d'adversaire disponible pour le ping-pong : {spinning_team.name} reçoit +2 points à la place."
+        else:  # bonus +3 (19-20)
+            spinning_team = apply_team_score_delta(db, spinning_team.id, value)
+            message = f"🎉 Bonus : {spinning_team.name} gagne 3 points !"
 
-    if effect_type == "malus":
-        spinning_team = apply_team_score_delta(db, spinning_team.id, value, floor_zero=True)
-        message = f"💀 Malus : {spinning_team.name} perd 3 points"
-    elif effect_type == "bonus" and value == 1:
-        spinning_team = apply_team_score_delta(db, spinning_team.id, value)
-        message = f"🎉 {spinning_team.name} gagne 1 point"
-    elif effect_type == "ping_pong":
-        # L'équipe qui tombe sur le ping-pong choisit elle-même son adversaire
-        # (voir TeamScreen.tsx) — pas de duel démarré ici, juste l'annonce.
-        message = f"🏓 {spinning_team.name}, choisissez votre adversaire !"
-    elif effect_type == "bonus" and value == 2:
-        # Une seule équipe en jeu : pas d'adversaire possible pour le duel.
-        spinning_team = apply_team_score_delta(db, spinning_team.id, value)
-        message = f"Pas d'adversaire disponible pour le ping-pong : {spinning_team.name} reçoit +2 points à la place."
-    else:  # bonus +3 (19-20)
-        spinning_team = apply_team_score_delta(db, spinning_team.id, value)
-        message = f"🎉 Bonus : {spinning_team.name} gagne 3 points !"
+        wheel_effect = models.WheelEffect(
+            game_session_id=game.id,
+            effect_type=effect_type,
+            value=value,
+            target_team_id=spinning_team.id,
+            is_applied=True,
+        )
+        db.add(wheel_effect)
+        db.commit()
+        db.refresh(wheel_effect)
 
-    wheel_effect = models.WheelEffect(
-        game_session_id=game.id,
-        effect_type=effect_type,
-        value=value,
-        target_team_id=spinning_team.id,
-        is_applied=True,
-    )
-    db.add(wheel_effect)
-    db.commit()
-    db.refresh(wheel_effect)
+        events.append({
+            "id": wheel_effect.id,
+            "effect_type": wheel_effect.effect_type,
+            "value": wheel_effect.value,
+            "target_team_id": spinning_team.id,
+            "target_team_name": spinning_team.name,
+            "duel_id": None,
+            "message": message,
+        })
 
-    return {
-        "id": wheel_effect.id,
-        "effect_type": wheel_effect.effect_type,
-        "value": wheel_effect.value,
-        "target_team_id": spinning_team.id,
-        "target_team_name": spinning_team.name,
-        "duel_id": None,
-        "message": message,
-    }
+    return events
 
 
 def _pending_tiebreak_duel(db: Session, game: models.GameSession) -> Optional[models.PingPongDuel]:

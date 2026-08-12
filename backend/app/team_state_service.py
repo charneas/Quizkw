@@ -258,8 +258,12 @@ def get_team_specific_state(db: Session, code: str, team_id: int) -> dict:
                     ],
                 }
 
-    # --- Dernier effet de roue (pour afficher un modal sur tous les écrans,
-    # y compris ceux qui n'ont pas cliqué sur "Tour suivant") ---
+    # --- Dernier effet de roue ---
+    # Depuis que chaque équipe tire indépendamment à chaque tour de roue
+    # (2026-08-12, trigger_wheel_effect), le "dernier effet de la partie"
+    # n'a plus de sens pour ce popup : il ne montrerait que le tirage de la
+    # DERNIÈRE équipe traitée à tout le monde. Filtré sur target_team_id
+    # pour que chaque équipe voie son propre résultat, pas celui d'une autre.
     last_wheel_event = None
     last_token_used = None
 
@@ -275,6 +279,7 @@ def get_team_specific_state(db: Session, code: str, team_id: int) -> dict:
 
     latest_wheel_effect = db.query(models.WheelEffect).filter(
         models.WheelEffect.game_session_id == game.id,
+        models.WheelEffect.target_team_id == team_id,
         ~models.WheelEffect.effect_type.startswith("TOKEN_"),
     ).order_by(models.WheelEffect.id.desc()).first()
 
