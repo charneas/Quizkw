@@ -14,6 +14,7 @@ const EMPTY_FORM = {
   wrongAnswers: ['', '', ''],
   themeId: '',
   difficulty: '' as Difficulty | '',
+  imageUrl: '',
 }
 
 function Propositions() {
@@ -50,6 +51,7 @@ function Propositions() {
         wrong_answers: form.wrongAnswers.map((a) => a.trim()).filter((a) => a !== ''),
         theme_id: form.themeId === '' ? undefined : Number(form.themeId),
         difficulty: form.difficulty as Difficulty,
+        image_url: form.imageUrl.trim() === '' ? undefined : form.imageUrl.trim(),
       })
       setConfirmation('Votre proposition a bien été enregistrée. Elle sera vérifiée avant d\'être ajoutée au jeu.')
       setForm(EMPTY_FORM)
@@ -128,6 +130,20 @@ function Propositions() {
                 </option>
               ))}
             </select>
+          </div>
+
+          <div>
+            <label htmlFor="proposition-image-url" className="block text-sm text-text-muted mb-1">
+              Lien vers une image (facultatif)
+            </label>
+            <input
+              id="proposition-image-url"
+              type="url"
+              value={form.imageUrl}
+              onChange={(e) => setForm((prev) => ({ ...prev, imageUrl: e.target.value }))}
+              className="input-field"
+              placeholder="https://..."
+            />
           </div>
 
           <div>

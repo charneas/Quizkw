@@ -301,6 +301,7 @@ export interface PropositionCreateRequest {
   wrong_answers: string[]
   theme_id?: number | null
   difficulty: Difficulty
+  image_url?: string | null
 }
 
 export interface Proposition {
@@ -312,6 +313,7 @@ export interface Proposition {
   difficulty: Difficulty
   status: 'pending' | 'accepted' | 'rejected'
   rejection_reason?: string | null
+  image_url?: string | null
   created_at: string
 }
 
@@ -322,6 +324,7 @@ export interface PropositionUpdateRequest {
   theme_id?: number | null
   new_theme?: ThemeCreateRequest
   difficulty?: Difficulty
+  image_url?: string | null
 }
 
 export interface QuestionCreateRequest {

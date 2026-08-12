@@ -376,6 +376,7 @@ class PropositionBase(BaseModel):
     wrong_answers: List[str] = Field(default_factory=list, max_length=3)
     theme_id: Optional[int] = None
     difficulty: DifficultyEnum
+    image_url: Optional[str] = None
 
     @field_validator('text', 'correct_answer')
     @classmethod
@@ -425,6 +426,7 @@ class PropositionUpdate(BaseModel):
     theme_id: Optional[int] = None
     new_theme: Optional[ThemeCreate] = None
     difficulty: Optional[DifficultyEnum] = None
+    image_url: Optional[str] = None
 
     @field_validator('text', 'correct_answer')
     @classmethod

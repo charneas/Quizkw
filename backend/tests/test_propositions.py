@@ -32,6 +32,23 @@ def test_create_proposition_without_theme(test_client):
     assert body["status"] == "pending"
 
 
+def test_create_proposition_with_image_url(test_client, sample_theme):
+    """Un proposant peut joindre un lien d'image à sa proposition (comme
+    pour Question, qui a déjà ce champ)."""
+    payload = _proposition_payload(theme_id=sample_theme.id)
+    payload["image_url"] = "https://example.com/image.png"
+
+    resp = test_client.post("/propositions", json=payload)
+    assert resp.status_code == 200
+    assert resp.json()["image_url"] == "https://example.com/image.png"
+
+
+def test_create_proposition_without_image_url_defaults_to_none(test_client, sample_theme):
+    resp = test_client.post("/propositions", json=_proposition_payload(theme_id=sample_theme.id))
+    assert resp.status_code == 200
+    assert resp.json()["image_url"] is None
+
+
 def test_create_proposition_missing_question(test_client):
     payload = _proposition_payload()
     del payload["text"]

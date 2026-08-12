@@ -407,6 +407,7 @@ def accept_proposition(proposition_id: int, db: Session = Depends(get_db)):
         wrong_answers=proposition.wrong_answers,
         theme_id=proposition.theme_id,
         question_number=None,
+        image_url=proposition.image_url,
     )
     db.add(question)
     _flush_or_400(db)

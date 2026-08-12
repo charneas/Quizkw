@@ -8,7 +8,7 @@ import json
 from app import models
 
 
-def _make_proposition(db_session, text, status, theme_id=None):
+def _make_proposition(db_session, text, status, theme_id=None, image_url=None):
     proposition = models.Proposition(
         text=text,
         correct_answer="Réponse",
@@ -16,6 +16,7 @@ def _make_proposition(db_session, text, status, theme_id=None):
         theme_id=theme_id,
         difficulty=models.Difficulty.EASY,
         status=status,
+        image_url=image_url,
     )
     db_session.add(proposition)
     db_session.commit()
@@ -219,6 +220,21 @@ def test_accept_proposition_creates_question(authenticated_client, db_session, s
 
     db_session.refresh(prop)
     assert prop.status == models.PropositionStatus.ACCEPTED
+
+
+def test_accept_proposition_carries_image_url_to_question(authenticated_client, db_session, sample_theme):
+    """L'image jointe à une proposition doit se retrouver sur la Question
+    créée à l'acceptation, pas être perdue en route."""
+    prop = _make_proposition(
+        db_session, "Question avec image", models.PropositionStatus.PENDING,
+        theme_id=sample_theme.id, image_url="https://example.com/image.png",
+    )
+    resp = authenticated_client.post(f"/admin/propositions/{prop.id}/accept")
+    assert resp.status_code == 200
+    question_id = resp.json()["question_id"]
+
+    question = db_session.query(models.Question).filter(models.Question.id == question_id).first()
+    assert question.image_url == "https://example.com/image.png"
 
 
 def test_accept_proposition_question_appears_in_random_pool(authenticated_client, db_session, sample_theme):

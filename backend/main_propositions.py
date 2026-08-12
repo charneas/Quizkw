@@ -48,6 +48,7 @@ def create_proposition(payload: schemas.PropositionCreate, db: Session = Depends
         theme_id=payload.theme_id,
         difficulty=models.Difficulty(payload.difficulty.value),
         status=models.PropositionStatus.PENDING,
+        image_url=payload.image_url,
     )
     db.add(proposition)
     _commit_or_400(db)

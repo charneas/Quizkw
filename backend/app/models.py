@@ -195,6 +195,7 @@ class Proposition(Base):
     difficulty = Column(SQLEnum(Difficulty), nullable=False)
     status = Column(SQLEnum(PropositionStatus), nullable=False, default=PropositionStatus.PENDING, server_default="PENDING")
     rejection_reason = Column(String, nullable=True)
+    image_url = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relations

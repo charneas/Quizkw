@@ -28,6 +28,7 @@ export default function AdminPropositionEdit() {
   const [correctAnswer, setCorrectAnswer] = useState('')
   const [wrongAnswers, setWrongAnswers] = useState(['', '', ''])
   const [difficulty, setDifficulty] = useState<Difficulty>('easy')
+  const [imageUrl, setImageUrl] = useState('')
   const [themeChoice, setThemeChoice] = useState<string>('')
   const [newThemeName, setNewThemeName] = useState('')
   const [newThemeCategory, setNewThemeCategory] = useState<ThemeCategory>('serious')
@@ -61,6 +62,7 @@ export default function AdminPropositionEdit() {
       proposition.wrong_answers[2] ?? '',
     ])
     setDifficulty(proposition.difficulty)
+    setImageUrl(proposition.image_url ?? '')
     setThemeChoice(proposition.theme_id === null ? '' : String(proposition.theme_id))
   }, [proposition])
 
@@ -80,6 +82,7 @@ export default function AdminPropositionEdit() {
         correct_answer: correctAnswer,
         wrong_answers: cleanedWrongAnswers,
         difficulty,
+        image_url: imageUrl.trim() === '' ? null : imageUrl.trim(),
         ...(isNewTheme
           ? { new_theme: { name: newThemeName, category: newThemeCategory, difficulty_level: 5 } }
           : { theme_id: themeChoice === '' ? null : Number(themeChoice) }),
@@ -149,6 +152,18 @@ export default function AdminPropositionEdit() {
                 <option key={d} value={d}>{DIFFICULTY_LABELS[d]}</option>
               ))}
             </select>
+          </div>
+
+          <div>
+            <label className="block text-sm mb-1" htmlFor="prop-image-url">Lien vers une image (facultatif)</label>
+            <input
+              id="prop-image-url"
+              type="url"
+              className="input-field"
+              value={imageUrl}
+              onChange={(e) => setImageUrl(e.target.value)}
+              placeholder="https://..."
+            />
           </div>
 
           <div>
