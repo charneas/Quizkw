@@ -15,6 +15,9 @@ import AdminPropositions from './pages/AdminPropositions'
 import AdminPropositionEdit from './pages/AdminPropositionEdit'
 import AdminPropositionsRejected from './pages/AdminPropositionsRejected'
 import AdminStats from './pages/AdminStats'
+import AdminThemes from './pages/AdminThemes'
+import AdminQuestions from './pages/AdminQuestions'
+import AdminContentGeneration from './pages/AdminContentGeneration'
 
 function App() {
   return (
@@ -31,6 +34,9 @@ function App() {
         <Route path="/game/:code/round2" element={<Round2 />} />
         <Route path="/admin" element={<Admin />} />
         <Route path="/admin/login" element={<AdminLogin />} />
+        <Route path="/admin/themes" element={<AdminThemes />} />
+        <Route path="/admin/questions" element={<AdminQuestions />} />
+        <Route path="/admin/content/generate" element={<AdminContentGeneration />} />
         <Route path="/admin/propositions" element={<AdminPropositions />} />
         <Route path="/admin/propositions/rejected" element={<AdminPropositionsRejected />} />
         <Route path="/admin/propositions/:id/edit" element={<AdminPropositionEdit />} />

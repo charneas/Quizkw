@@ -8,6 +8,9 @@ interface AdminLayoutProps {
 
 const NAV_ITEMS = [
   { to: '/admin', label: 'Contenu' },
+  { to: '/admin/themes', label: 'Thèmes' },
+  { to: '/admin/questions', label: 'Questions' },
+  { to: '/admin/content/generate', label: 'Génération de contenu' },
   { to: '/admin/propositions', label: 'Propositions en attente' },
   { to: '/admin/propositions/rejected', label: 'Propositions refusées' },
   { to: '/admin/stats', label: 'Statistiques' },
