@@ -327,8 +327,14 @@ class Round2Manager:
         # Le round1 qualifie déjà des équipes entières (8 ou 9 joueurs au
         # total, jamais plus) : ne jamais couper une équipe qualifiée ici non
         # plus. Cette coupe ne doit intervenir qu'au-delà de la tolérance
-        # partagée avec advance_to_finalists.
-        cutoff = self.ROUND2_SLOTS + 1
+        # partagée avec advance_to_finalists. Avec de petites équipes, moins
+        # de 8 joueurs peuvent être entrés en Manche 2 : la coupe se base
+        # alors sur l'effectif réel pour ne jamais éliminer qui que ce soit
+        # au-dessous du seuil normal (BUG 2026-08-12).
+        total_players = self.db.query(models.PlayerRound2Stats).filter(
+            models.PlayerRound2Stats.game_session_id == game_session_id
+        ).count()
+        cutoff = min(self.ROUND2_SLOTS + 1, total_players)
         qualified_players = all_players[:cutoff] if len(all_players) > cutoff else all_players
         eliminated_players = all_players[cutoff:] if len(all_players) > cutoff else []
         
@@ -358,10 +364,18 @@ class Round2Manager:
             models.PlayerRound2Stats.qualification_status == models.QualificationStatus.QUALIFIED
         ).order_by(desc(models.PlayerRound2Stats.score)).all()
         
-        if len(qualified_players) not in (self.ROUND2_SLOTS, self.ROUND2_SLOTS + 1):
+        # BUG (2026-08-12) : exiger exactement 8 ou 9 qualifiés empêchait
+        # jamais d'avancer vers les finalistes quand la Manche 1 avait
+        # qualifié moins de 8 joueurs. On compare à l'effectif réel entré en
+        # Manche 2 (borné à la tolérance habituelle) plutôt qu'à la
+        # constante.
+        total_players = self.db.query(models.PlayerRound2Stats).filter(
+            models.PlayerRound2Stats.game_session_id == game_session_id
+        ).count()
+        expected = min(self.ROUND2_SLOTS + 1, total_players)
+        if len(qualified_players) != expected:
             raise ValueError(
-                f"Attendu {self.ROUND2_SLOTS} ou {self.ROUND2_SLOTS + 1} joueurs qualifiés, "
-                f"trouvé {len(qualified_players)}"
+                f"Attendu {expected} joueurs qualifiés, trouvé {len(qualified_players)}"
             )
         
         # Top 4 deviennent finalistes
@@ -396,9 +410,17 @@ class Round2Manager:
         eliminated = [p for p in all_players if p.qualification_status == models.QualificationStatus.ELIMINATED]
         
         # Déterminer la phase actuelle
+        # BUG (2026-08-12) : comparer à la seule constante ROUND2_SLOTS (8)
+        # bloquait indéfiniment la transition quand la Manche 1 avait qualifié
+        # moins de 8 joueurs (petites équipes) — `len(qualified) >= 8` n'était
+        # alors jamais vrai même une fois tout le monde qualifié. On garde le
+        # comportement voulu à 8/9 joueurs (passage anticipé à "8_qualified"
+        # dès que 8 ont fini, même si un 9e joue encore — géré explicitement
+        # par /round2/{code}/advance), et on ajoute `playing` vide comme
+        # condition de repli pour les parties à moins de 8 joueurs.
         if finalists:
             phase = "4_finalists"
-        elif qualified and len(qualified) >= 8:
+        elif qualified and (len(qualified) >= self.ROUND2_SLOTS or len(playing) == 0):
             phase = "8_qualified"
         else:
             phase = "16_players"

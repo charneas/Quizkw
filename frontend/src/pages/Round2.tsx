@@ -63,6 +63,10 @@ function Round2() {
   // reconnecter sous sa vraie identité plutôt que de créer un joueur libre
   // jamais relié à la qualification (bug utilisateur).
   const [qualifiedPlayers, setQualifiedPlayers] = useState<Round2QualifiedPlayer[]>([])
+  // Question du joueur actif, visible en lecture seule par les spectateurs
+  // (bug 2026-08-12 : le spectateur ne voyait que le nom/thème du joueur
+  // actif, jamais la question qu'il est en train de résoudre).
+  const [activePlayerQuestion, setActivePlayerQuestion] = useState<Round2QuestionResponse | null>(null)
 
   useEffect(() => {
     if (code) initializeRound2()
@@ -242,6 +246,39 @@ function Round2() {
     }, 4000)
 
     return () => clearInterval(interval)
+  }, [code, currentPlayer, isEliminated, tournamentProgress?.phase, tournamentProgress?.current_turn_player_id])
+
+  // Spectateurs : récupérer (en lecture seule) la question du joueur actif
+  // pour l'afficher pendant qu'il répond. getRound2Question n'a pas d'effet
+  // de bord et n'est pas restreint au joueur dont c'est le tour.
+  useEffect(() => {
+    const activePlayerId = tournamentProgress?.current_turn_player_id
+    if (!code || !currentPlayer || isEliminated) return
+    if (tournamentProgress?.phase !== '16_players') return
+    if (!activePlayerId || activePlayerId === currentPlayer.id) {
+      setActivePlayerQuestion(null)
+      return
+    }
+
+    let cancelled = false
+    const fetchActiveQuestion = async () => {
+      try {
+        const question = await getRound2Question(code, activePlayerId)
+        if (!cancelled) setActivePlayerQuestion(question)
+      } catch {
+        // Le joueur actif n'a pas encore choisi de thème ou vient de
+        // terminer sa question : on masque simplement le bloc plutôt que
+        // d'afficher une erreur.
+        if (!cancelled) setActivePlayerQuestion(null)
+      }
+    }
+
+    fetchActiveQuestion()
+    const interval = setInterval(fetchActiveQuestion, 4000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
   }, [code, currentPlayer, isEliminated, tournamentProgress?.phase, tournamentProgress?.current_turn_player_id])
 
   const handleAnswerSubmit = async (answer: string) => {
@@ -474,6 +511,27 @@ function Round2() {
                 : 'En attente du prochain tour...'
             }
           >
+            {activePlayerQuestion && (
+              <div className="bg-surface rounded-lg p-6">
+                <h3 className="text-lg font-semibold text-text mb-3">
+                  Question de {tournamentProgress.current_turn_player_name ?? 'ce joueur'}
+                  {' '}({activePlayerQuestion.question_number}/10, difficulté {activePlayerQuestion.difficulty}/10)
+                </h3>
+                <div className="bg-surface-raised rounded p-4 mb-4">
+                  <p className="text-text text-lg">{activePlayerQuestion.question.text}</p>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {activePlayerQuestion.options.map((option, index) => (
+                    <div
+                      key={index}
+                      className="bg-surface-raised text-text-muted p-4 rounded-lg text-center"
+                    >
+                      {option}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="bg-surface rounded-lg p-6">
               <h3 className="text-lg font-semibold text-text mb-3">Joueurs en cours</h3>
               <div className="space-y-2">
