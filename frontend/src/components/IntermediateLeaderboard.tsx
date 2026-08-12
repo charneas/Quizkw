@@ -5,9 +5,12 @@ interface IntermediateLeaderboardProps {
   tournamentProgress: TournamentProgress
   onAdvance: () => void
   canAdvance: boolean
+  // PlayerRound2Stats n'a que player_id (pas de nom côté backend) — le nom
+  // vient de qualifiedPlayers, déjà chargé par ailleurs dans Round2.tsx.
+  playerNames: Record<number, string>
 }
 
-function IntermediateLeaderboardComponent({ leaderboard, tournamentProgress, onAdvance, canAdvance }: IntermediateLeaderboardProps) {
+function IntermediateLeaderboardComponent({ leaderboard, tournamentProgress, onAdvance, canAdvance, playerNames }: IntermediateLeaderboardProps) {
   return (
     <div className="bg-surface rounded-lg p-6">
       <div className="flex items-center justify-between mb-6">
@@ -32,7 +35,7 @@ function IntermediateLeaderboardComponent({ leaderboard, tournamentProgress, onA
                   <div className="flex items-center">
                     <span className="text-text-muted mr-3">#{index + 1}</span>
                     <div>
-                      <p className="text-text font-medium">Joueur {player.player_id}</p>
+                      <p className="text-text font-medium">{playerNames[player.player_id] ?? `Joueur ${player.player_id}`}</p>
                       <p className="text-text-muted text-sm">
                         Score : {player.score} | Correct : {player.correct_answers}/{player.questions_answered}
                       </p>
@@ -59,7 +62,7 @@ function IntermediateLeaderboardComponent({ leaderboard, tournamentProgress, onA
                   <div className="flex items-center">
                     <span className="text-text-muted mr-3">#{leaderboard.qualified_players.length + index + 1}</span>
                     <div>
-                      <p className="text-text font-medium">Joueur {player.player_id}</p>
+                      <p className="text-text font-medium">{playerNames[player.player_id] ?? `Joueur ${player.player_id}`}</p>
                       <p className="text-text-muted text-sm">
                         Score : {player.score} | Correct : {player.correct_answers}/{player.questions_answered}
                       </p>

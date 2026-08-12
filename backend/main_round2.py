@@ -283,7 +283,8 @@ def submit_round2_answer(game_code: str, answer_request: schemas.Round2AnswerReq
             points_awarded=result["points_awarded"],
             player_score=result["player_score"],
             correct_answer=result["correct_answer"],
-            next_question_available=result["next_question_available"]
+            next_question_available=result["next_question_available"],
+            qualification_status=result["qualification_status"],
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

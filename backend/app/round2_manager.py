@@ -102,7 +102,8 @@ class Round2Manager:
             stats.theme_id = None
             stats.theme_selected_at = None
             stats.completed_at = None
-            
+            stats.round_number = 1
+
             self.db.add(stats)
             self.db.commit()
             self.db.refresh(stats)
@@ -300,21 +301,72 @@ class Round2Manager:
         stats.questions_answered += 1
         stats.current_question_index += 1
         
-        # Si le joueur a terminé les 10 questions
+        # Si le joueur a terminé les 10 questions de son round en cours
         if stats.current_question_index >= 10:
-            stats.completed_at = datetime.now()
-            stats.qualification_status = models.QualificationStatus.QUALIFIED
-            self._advance_turn(game_session_id)
+            if stats.round_number == 1:
+                # Fin du 1er thème seulement : le joueur reste PLAYING en
+                # attendant que tout le monde ait fini son round 1, puis
+                # _maybe_start_round2 démarre le round 2 (nouveau thème, 10
+                # nouvelles questions) pour tous les joueurs d'un coup.
+                self._advance_turn(game_session_id)
+                self.db.flush()
+                self._maybe_start_round2(game_session_id)
+            else:
+                stats.completed_at = datetime.now()
+                stats.qualification_status = models.QualificationStatus.QUALIFIED
+                self._advance_turn(game_session_id)
 
         self.db.commit()
-        
+
         return {
             "is_correct": is_correct,
             "points_awarded": points_awarded,
             "player_score": stats.score,
             "correct_answer": question.correct_answer,
-            "next_question_available": stats.current_question_index < 10
+            "next_question_available": stats.current_question_index < 10,
+            "qualification_status": stats.qualification_status.value,
         }
+
+    def _maybe_start_round2(self, game_session_id: int) -> None:
+        """Démarre le round 2 (nouveau thème, 10 nouvelles questions) pour
+        tous les joueurs dès que plus aucun n'a de round 1 à terminer.
+
+        Idempotent : si le round 2 a déjà démarré (plus aucune ligne en
+        round_number == 1), la requête ne trouve rien et cette fonction ne
+        fait rien — un appel redondant est donc sans effet.
+        """
+        still_in_round1 = self.db.query(models.PlayerRound2Stats).filter(
+            models.PlayerRound2Stats.game_session_id == game_session_id,
+            models.PlayerRound2Stats.round_number == 1,
+            models.PlayerRound2Stats.current_question_index < 10,
+        ).count()
+        if still_in_round1 > 0:
+            return
+
+        game = self.db.query(models.GameSession).filter(
+            models.GameSession.id == game_session_id
+        ).first()
+        if not game or not game.round2_turn_order:
+            return
+
+        round1_players = self.db.query(models.PlayerRound2Stats).filter(
+            models.PlayerRound2Stats.game_session_id == game_session_id,
+            models.PlayerRound2Stats.round_number == 1,
+        ).all()
+        if not round1_players:
+            return
+
+        for player_stats in round1_players:
+            player_stats.round_number = 2
+            player_stats.current_question_index = 0
+            player_stats.theme_id = None
+            player_stats.theme_selected_at = None
+
+        # _advance_turn (appelée juste avant, pour le dernier joueur du round
+        # 1) a mis current_turn_player_id à None faute de candidat suivant
+        # dans l'ordre de passage — on reprend cet ordre depuis le début pour
+        # le round 2.
+        game.round2_current_turn_player_id = game.round2_turn_order[0]
     
     def calculate_intermediate_leaderboard(self, game_session_id: int) -> schemas.IntermediateLeaderboardResponse:
         """Calculer le classement intermédiaire après la première passe (top 8)"""
@@ -581,6 +633,7 @@ class Round2Manager:
                     correct_answers=0,
                     current_question_index=0,
                     qualification_status=models.QualificationStatus.PLAYING,
+                    round_number=1,
                 ))
 
         # Manche 2 en tour par rôle : ordre de passage aléatoire figé une

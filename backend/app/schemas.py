@@ -515,6 +515,11 @@ class Round2AnswerResponse(BaseModel):
     player_score: int
     correct_answer: str
     next_question_available: bool
+    # Manche 2 à deux thèmes (2026-08-12) : "playing" quand le round 1 vient
+    # de se terminer mais le round 2 (nouveau thème) reste à jouer, "qualified"
+    # une fois les deux rounds terminés — permet au frontend de distinguer les
+    # deux cas plutôt que de conclure systématiquement à la fin du round 2.
+    qualification_status: str = "playing"
 
 class TournamentProgress(BaseModel):
     phase: str  # "16_players", "8_qualified", "4_finalists"

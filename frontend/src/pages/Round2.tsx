@@ -216,6 +216,11 @@ function Round2() {
     return () => clearInterval(timer)
   }, [timeRemaining, answerResult])
 
+  // Le classement intermédiaire (PlayerRound2Stats) n'a que player_id, pas de
+  // nom — dérivé de qualifiedPlayers (déjà chargé) plutôt que d'ajouter un
+  // appel réseau ou un champ backend supplémentaire.
+  const playerNamesById = Object.fromEntries(qualifiedPlayers.map((p) => [p.id, p.name]))
+
   // BUG-401 (#32) : dérivé de qualifiedPlayers (déjà chargé, aucun appel
   // réseau supplémentaire) — couvre aussi bien la restauration automatique
   // que la sélection manuelle via PlayerSelection (handlePlayerSelection).
@@ -227,6 +232,12 @@ function Round2() {
   // Manche 2 en tour par rôle : c'est mon tour si le serveur me désigne
   // comme current_turn_player_id pendant la phase à 16 joueurs.
   const isMyTurn = !!currentPlayer && tournamentProgress?.current_turn_player_id === currentPlayer.id
+
+  // Manche 2 à deux thèmes (2026-08-12) : questions_answered est cumulatif
+  // sur les 20 questions (2 thèmes de 10) alors que current_question_index
+  // repart à 0 à chaque thème — on en déduit le round affiché (1 ou 2) sans
+  // champ dédié côté backend.
+  const roundNumber = (playerStats?.questions_answered ?? 0) >= 10 ? 2 : 1
 
   // Manche 2 en tour par rôle : les spectateurs (ce n'est pas leur tour)
   // pollent la progression pour détecter le changement de tour sans action
@@ -281,6 +292,28 @@ function Round2() {
     }
   }, [code, currentPlayer, isEliminated, tournamentProgress?.phase, tournamentProgress?.current_turn_player_id])
 
+  // BUG (2026-08-12) : une fois le classement intermédiaire affiché
+  // ("8_qualified"), plus aucun polling ne tournait — checkIfAllPlayersFinished
+  // ne se relance qu'en phase "16_players". Un joueur non-host restait donc
+  // bloqué sur cet écran même après que l'host ait désigné les finalistes
+  // (phase "4_finalists" côté serveur), tant qu'il ne rafraîchissait pas la
+  // page manuellement.
+  useEffect(() => {
+    if (!code || !currentPlayer || isEliminated) return
+    if (tournamentProgress?.phase !== '8_qualified') return
+
+    const interval = setInterval(async () => {
+      try {
+        const progress = await getRound2Progress(code)
+        setTournamentProgress(progress)
+      } catch {
+        // Best-effort : on retentera au prochain intervalle.
+      }
+    }, 4000)
+
+    return () => clearInterval(interval)
+  }, [code, currentPlayer, isEliminated, tournamentProgress?.phase])
+
   const handleAnswerSubmit = async (answer: string) => {
     if (!currentQuestion || !playerStats || !currentPlayer) return
     
@@ -310,10 +343,26 @@ function Round2() {
   }
 
   const handleNextQuestion = async () => {
+    const finishedRound1Only = !answerResult?.next_question_available && answerResult?.qualification_status === 'playing'
+    const finishedBothRounds = !answerResult?.next_question_available && answerResult?.qualification_status !== 'playing'
     setAnswerResult(null)
     if (answerResult?.next_question_available) {
       await loadNextQuestion(playerStats!, currentPlayer!.id)
-    } else {
+    } else if (finishedRound1Only) {
+      // Manche 2 à deux thèmes (2026-08-12) : round 1 terminé mais le round 2
+      // (nouveau thème) reste à jouer — pas encore la fin du round complet
+      // (BUG-205 : reset currentQuestion pour ne pas réafficher "Question Flow").
+      setCurrentQuestion(null)
+      setSelectedTheme(null)
+      setPlayerStats(prev => prev ? { ...prev, theme_id: undefined, current_question_index: 0 } : prev)
+      try {
+        const themesData = await getRound2Themes(code!)
+        setThemes(themesData.themes)
+      } catch {
+        // Best-effort : le ThemeSelector se rechargera de toute façon à la
+        // prochaine ouverture si cet appel échoue.
+      }
+    } else if (finishedBothRounds) {
       // Player has finished all questions (BUG-205 : sans ce reset,
       // currentQuestion garde la dernière question et le bloc "Question Flow"
       // se réaffiche dès que answerResult repasse à null ci-dessus).
@@ -569,7 +618,9 @@ function Round2() {
               <h2 className="text-2xl font-display font-semibold text-text mb-2">
                 Question {currentQuestion.question_number} (difficulté : {currentQuestion.difficulty}/10)
               </h2>
-              <p className="text-text-muted mb-2">Thème : {selectedTheme.name}</p>
+              <p className="text-text-muted mb-2">
+                Thème {roundNumber}/2 : {selectedTheme.name}
+              </p>
               <div className="bg-surface-raised rounded p-4 mb-4">
                 <p className="text-text text-lg">{currentQuestion.question.text}</p>
               </div>
@@ -611,7 +662,7 @@ function Round2() {
 
             <div className="mt-4 text-text-muted">
               <p>Score actuel : {playerStats?.score}</p>
-              <p>Questions répondues : {playerStats?.questions_answered}/10</p>
+              <p>Questions répondues (thème {roundNumber}/2) : {playerStats?.current_question_index}/10</p>
             </div>
           </div>
         )}
@@ -634,7 +685,7 @@ function Round2() {
             <div className="bg-surface-raised rounded p-4 mb-4">
               <p className="text-text">Nouveau score : {answerResult.player_score}</p>
               <p className="text-text-muted">
-                Questions répondues : {playerStats?.questions_answered}/10
+                Questions répondues (thème {roundNumber}/2) : {playerStats?.current_question_index}/10
               </p>
             </div>
 
@@ -643,7 +694,11 @@ function Round2() {
                 className={answerResult.next_question_available ? 'btn-primary' : 'btn-success'}
                 onClick={handleNextQuestion}
               >
-                {answerResult.next_question_available ? 'Question suivante' : 'Terminer'}
+                {answerResult.next_question_available
+                  ? 'Question suivante'
+                  : answerResult.qualification_status === 'playing'
+                    ? 'Thème suivant →'
+                    : 'Terminer'}
               </button>
             </div>
           </div>
@@ -672,6 +727,7 @@ function Round2() {
             // clic échouait silencieusement avec un 403. On ne montre le
             // bouton qu'au détenteur du token.
             canAdvance={!!getHostToken(code!)}
+            playerNames={playerNamesById}
           />
         )}
 

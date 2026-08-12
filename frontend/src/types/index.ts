@@ -234,6 +234,7 @@ export interface Round2AnswerResponse {
   player_score: number
   correct_answer: string
   next_question_available: boolean
+  qualification_status: string
 }
 
 export interface TournamentProgress {

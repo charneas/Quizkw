@@ -224,10 +224,15 @@ class PlayerRound2Stats(Base):
     score = Column(Integer, default=0)
     questions_answered = Column(Integer, default=0)
     correct_answers = Column(Integer, default=0)
-    current_question_index = Column(Integer, default=0)  # 0-9 (10 questions)
+    current_question_index = Column(Integer, default=0)  # 0-9 (10 questions), remis à 0 à chaque round
     qualification_status = Column(SQLEnum(QualificationStatus), default=QualificationStatus.PLAYING)
     theme_selected_at = Column(DateTime(timezone=True))
     completed_at = Column(DateTime(timezone=True))
+    # Manche 2 : deux thèmes de 10 questions par joueur (round 1 puis round 2)
+    # avant qualification. theme_id/current_question_index/theme_selected_at
+    # sont remis à zéro entre les deux rounds (round2_manager._maybe_start_round2) ;
+    # score/questions_answered/correct_answers restent cumulatifs sur les 20 questions.
+    round_number = Column(Integer, nullable=False, default=1)
     
     # Relations
     player = relationship("Player")
