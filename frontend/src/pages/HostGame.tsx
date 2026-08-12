@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getGame, getRandomQuestion, spinWheel, advanceRound2Phase, getCurrentQuestion, setCurrentQuestion as setCurrentQuestionApi, getAnswersStatus, getRandomPingPongTheme, startPingPongDuel, getPingPongDuelState, getPingPongDuelResults, getHostToken, cancelPingPongDuel, overridePingPongTurn, getWheelHistory } from '../services/api'
+import { getGame, getRandomQuestion, spinWheel, advanceRound2Phase, getCurrentQuestion, setCurrentQuestion as setCurrentQuestionApi, getAnswersStatus, getRandomPingPongTheme, startPingPongDuel, getPingPongDuelState, getPingPongDuelResults, getHostToken, cancelPingPongDuel, overridePingPongTurn, getWheelHistory, getLastTokenUsed } from '../services/api'
 import type { GameSession, QuestionResponse, WheelSpinResponse, Team } from '../types'
 import type { WheelHistoryEntry } from '../services/api'
 import WheelHistory from '../components/WheelHistory'
@@ -58,6 +58,9 @@ function HostGame() {
     }
   }, [])
 
+  const [tokenFeedback, setTokenFeedback] = useState<string | null>(null)
+  const lastSeenTokenIdRef = useRef<number | null>(null)
+
   // BUG-114 : rafraîchit la composition des équipes (join tardif) sans
   // attendre une action de jeu qui recharge déjà `game` par ailleurs.
   // BUG-106 (#8) : même intervalle réutilisé pour l'historique de la roue
@@ -74,6 +77,26 @@ function HostGame() {
       try {
         const { history } = await getWheelHistory(code)
         setWheelHistory(history)
+      } catch {
+        // Ignoré : un prochain tick réessaiera.
+      }
+      try {
+        const { last_token_used } = await getLastTokenUsed(code)
+        if (last_token_used) {
+          if (lastSeenTokenIdRef.current === null) {
+            lastSeenTokenIdRef.current = last_token_used.id
+          } else if (last_token_used.id !== lastSeenTokenIdRef.current) {
+            lastSeenTokenIdRef.current = last_token_used.id
+            if (last_token_used.token_type === 'SWAP') {
+              setTokenFeedback(`🔀 L'équipe ${last_token_used.user_team_name} a utilisé un SWAP — la question a changé pour toutes les équipes !`)
+            } else if (last_token_used.token_type === 'PENALTY') {
+              setTokenFeedback(`⚡ L'équipe ${last_token_used.user_team_name} a pénalisé ${last_token_used.target_team_name || 'une équipe'} !`)
+            } else if (last_token_used.token_type === 'BONUS') {
+              setTokenFeedback(`⭐ L'équipe ${last_token_used.user_team_name} a activé un BONUS !`)
+            }
+            setTimeout(() => setTokenFeedback(null), 6000)
+          }
+        }
       } catch {
         // Ignoré : un prochain tick réessaiera.
       }
@@ -458,6 +481,19 @@ function HostGame() {
   return (
     <div className="min-h-screen p-4">
       <div className="max-w-6xl mx-auto">
+        {tokenFeedback && (
+          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[70] w-[calc(100%-2rem)] max-w-xl p-4 rounded-xl text-white font-bold text-center shadow-2xl border-2 bg-blue-600 border-blue-400">
+            <div className="flex items-center justify-between">
+              <span className="flex-1 text-base">{tokenFeedback}</span>
+              <button
+                onClick={() => setTokenFeedback(null)}
+                className="ml-2 font-bold px-2 py-1 hover:opacity-75 rounded"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>

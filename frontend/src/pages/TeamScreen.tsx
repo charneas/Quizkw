@@ -502,7 +502,7 @@ function TeamScreen() {
     )
   }
 
-  const showRanking = state.other_teams.length > 0 && !state.current_question && !state.active_duel && !state.spectator_duel && !state.validation_result
+  const showRanking = state.other_teams.length > 0 && state.game_phase !== 'manche_1' && !state.current_question && !state.active_duel && !state.spectator_duel && !state.validation_result
   const showLeftColumn = showRanking || wheelHistory.length > 0
 
   return (
@@ -622,6 +622,22 @@ function TeamScreen() {
             onSelect={handleChooseWheelPingPongOpponent}
             onCancel={() => setChoosingPingPongOpponent(false)}
           />
+        )}
+
+        {state.current_question && state.other_teams.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-2">
+            {[
+              { team_id: state.team_id, team_name: state.team_name, has_answered: state.has_answered, isSelf: true },
+              ...state.other_teams.map((t) => ({ ...t, isSelf: false })),
+            ].map((team) => (
+              <span
+                key={team.team_id}
+                className={`text-xs px-2 py-1 rounded-full border ${team.has_answered ? 'text-success border-success' : 'text-text-muted border-border'}`}
+              >
+                {team.has_answered ? '✓' : '⏳'} {team.team_name}{team.isSelf ? ' (vous)' : ''}
+              </span>
+            ))}
+          </div>
         )}
 
         {/* Question courante — le formulaire reste modifiable par n'importe quel

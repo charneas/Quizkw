@@ -161,6 +161,52 @@ def get_wheel_history(code: str, db: Session = Depends(get_db)):
 
     return {"history": history}
 
+@router.get("/games/{code}/last-token-used")
+def get_last_token_used(code: str, db: Session = Depends(get_db)):
+    """
+    Dernier jeton (SWAP/PENALTY/BONUS) utilisé par une équipe, pour informer
+    l'hôte des changements globaux qu'il ne verrait sinon jamais (ex: SWAP,
+    qui change la question courante de TOUTE la partie sans notification
+    côté écran hôte jusqu'ici).
+    """
+    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
+
+    latest_token_effect = db.query(models.WheelEffect).filter(
+        models.WheelEffect.game_session_id == game.id,
+        models.WheelEffect.effect_type.startswith("TOKEN_"),
+    ).order_by(models.WheelEffect.id.desc()).first()
+
+    if not latest_token_effect:
+        return {"last_token_used": None}
+
+    token_type_name = latest_token_effect.effect_type.replace("TOKEN_", "")
+    target_team = db.query(models.Team).filter(models.Team.id == latest_token_effect.target_team_id).first()
+
+    if token_type_name == "PENALTY":
+        user_team = None
+        if latest_token_effect.value:
+            user_team = db.query(models.Team).filter(models.Team.id == latest_token_effect.value).first()
+        if not user_team:
+            user_team = db.query(models.Team).filter(
+                models.Team.game_session_id == game.id,
+                models.Team.id != latest_token_effect.target_team_id
+            ).first()
+    else:
+        user_team = target_team
+
+    return {
+        "last_token_used": {
+            "id": latest_token_effect.id,
+            "user_team_id": user_team.id if user_team else None,
+            "user_team_name": user_team.name if user_team else "Une équipe",
+            "token_type": token_type_name,
+            "target_team_id": latest_token_effect.target_team_id,
+            "target_team_name": target_team.name if target_team else None,
+        }
+    }
+
 @router.get("/games/{code}/answers-status")
 def get_answers_status(code: str, question_id: int = None, db: Session = Depends(get_db)):
     """

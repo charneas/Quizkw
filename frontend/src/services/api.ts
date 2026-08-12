@@ -276,6 +276,19 @@ export async function getWheelHistory(gameCode: string) {
   return fetchApi<{ history: WheelHistoryEntry[] }>(`/games/${gameCode}/wheel-history`)
 }
 
+export interface LastTokenUsed {
+  id: number
+  user_team_id: number | null
+  user_team_name: string
+  token_type: string
+  target_team_id: number | null
+  target_team_name: string | null
+}
+
+export async function getLastTokenUsed(gameCode: string) {
+  return fetchApi<{ last_token_used: LastTokenUsed | null }>(`/games/${gameCode}/last-token-used`)
+}
+
 export async function submitAnswer(data: any) {
   return fetchApi<any>('/answers/', {
     method: 'POST',
