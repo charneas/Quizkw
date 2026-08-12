@@ -247,6 +247,8 @@ export interface TournamentProgress {
     score: number
     status: QualificationStatus
   }[]
+  current_turn_player_id?: number
+  current_turn_player_name?: string
 }
 
 export interface IntermediateLeaderboardResponse {

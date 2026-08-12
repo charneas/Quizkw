@@ -522,6 +522,8 @@ class TournamentProgress(BaseModel):
     players_remaining: int
     players_eliminated: int
     top_players: List[dict]
+    current_turn_player_id: Optional[int] = None
+    current_turn_player_name: Optional[str] = None
 
 class IntermediateLeaderboardResponse(BaseModel):
     qualified_players: List[PlayerRound2Stats]

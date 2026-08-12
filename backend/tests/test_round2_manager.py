@@ -723,14 +723,13 @@ class TestRound1ToRound2Qualification:
         assert qualify_response.status_code == 200
         assert qualify_response.json()["qualified_count"] == 9
 
-        stats_list = db_session.query(models.PlayerRound2Stats).filter(
-            models.PlayerRound2Stats.game_session_id == sample_game_session.id
-        ).all()
+        stats_list = self._stats_in_turn_order(db_session, sample_game_session)
         assert len(stats_list) == 9
 
-        # Chaque joueur choisit le thème de test puis répond à ses 10 questions
-        # (le vrai chemin qui fait passer son statut PLAYING -> QUALIFIED, ligne
-        # submit_answer:172-174).
+        # Chaque joueur choisit le thème de test puis répond à ses 10 questions,
+        # dans l'ordre de tour posé par la qualification (Manche 2 en tour par
+        # rôle) — le vrai chemin qui fait passer son statut PLAYING -> QUALIFIED,
+        # ligne submit_answer:172-174.
         for stats in stats_list:
             round2_manager = self._round2_manager(db_session)
             theme, questions = self._make_theme_with_questions(db_session, sample_theme)
@@ -755,6 +754,22 @@ class TestRound1ToRound2Qualification:
     def _round2_manager(self, db_session):
         from app.round2_manager import Round2Manager
         return Round2Manager(db_session)
+
+    def _stats_in_turn_order(self, db_session, game_session):
+        """Manche 2 en tour par rôle : ordonne les PlayerRound2Stats selon
+        round2_turn_order (posé par qualify_players_from_round1), pour que
+        les tests fassent jouer les joueurs dans l'ordre autorisé plutôt que
+        dans un ordre de requête arbitraire."""
+        from app import models
+
+        db_session.refresh(game_session)
+        stats_by_player_id = {
+            s.player_id: s
+            for s in db_session.query(models.PlayerRound2Stats).filter(
+                models.PlayerRound2Stats.game_session_id == game_session.id
+            ).all()
+        }
+        return [stats_by_player_id[pid] for pid in game_session.round2_turn_order]
 
     def _make_theme_with_questions(self, db_session, sample_theme):
         """Crée un thème distinct de sample_theme, avec les mêmes 10 questions.
@@ -816,13 +831,12 @@ class TestRound1ToRound2Qualification:
         assert qualify_response.status_code == 200
         assert qualify_response.json()["qualified_count"] == 9
 
-        stats_list = db_session.query(models.PlayerRound2Stats).filter(
-            models.PlayerRound2Stats.game_session_id == sample_game_session.id
-        ).all()
+        stats_list = self._stats_in_turn_order(db_session, sample_game_session)
 
-        # 8 des 9 joueurs terminent leurs 10 questions ; le 9e reste PLAYING.
-        still_playing_stats = stats_list[0]
-        for stats in stats_list[1:]:
+        # 8 des 9 joueurs terminent leurs 10 questions, dans l'ordre de tour ;
+        # le dernier de l'ordre reste PLAYING (jamais son tour).
+        still_playing_stats = stats_list[-1]
+        for stats in stats_list[:-1]:
             round2_manager = self._round2_manager(db_session)
             theme, questions = self._make_theme_with_questions(db_session, sample_theme)
             round2_manager.select_theme(stats.player_id, sample_game_session.id, theme.id)
@@ -855,9 +869,7 @@ class TestRound1ToRound2Qualification:
         assert qualify_response.status_code == 200
         assert qualify_response.json()["qualified_count"] == 8
 
-        stats_list = db_session.query(models.PlayerRound2Stats).filter(
-            models.PlayerRound2Stats.game_session_id == sample_game_session.id
-        ).all()
+        stats_list = self._stats_in_turn_order(db_session, sample_game_session)
         for stats in stats_list:
             round2_manager = self._round2_manager(db_session)
             theme, questions = self._make_theme_with_questions(db_session, sample_theme)
@@ -899,3 +911,162 @@ class TestRound1ToRound2Qualification:
             models.PlayerRound2Stats.game_session_id == sample_game_session.id
         ).all()
         assert len(stats) == 2
+
+
+class TestRound2TurnOrder:
+    """Manche 2 en tour par rôle : un seul joueur qualifié joue à la fois,
+    les autres sont spectateurs jusqu'à leur tour."""
+
+    def _make_team(self, db_session, game, name, score, player_count):
+        from app import models
+        team = models.Team(name=name, game_session_id=game.id, score=score)
+        db_session.add(team)
+        db_session.flush()
+        for i in range(player_count):
+            db_session.add(models.Player(name=f"{name}-J{i}", team_id=team.id))
+        db_session.commit()
+        return team
+
+    def _round2_manager(self, db_session):
+        from app.round2_manager import Round2Manager
+        return Round2Manager(db_session)
+
+    def _make_theme_with_questions(self, db_session, sample_theme):
+        import json
+        import uuid
+        from app import models
+
+        theme = models.Theme(
+            name=f"Theme {sample_theme.id}-{uuid.uuid4().hex[:8]}",
+            category=sample_theme.category,
+            difficulty_level=sample_theme.difficulty_level,
+            description="Cloned test theme",
+        )
+        db_session.add(theme)
+        db_session.commit()
+        db_session.refresh(theme)
+
+        questions = []
+        for i in range(1, 11):
+            question = models.Question(
+                text=f"Test question {i} for theme {theme.name}",
+                category=theme.category.value,
+                difficulty=models.Difficulty.EASY if i <= 3 else models.Difficulty.MEDIUM if i <= 6 else models.Difficulty.HARD,
+                points=2 if i <= 3 else 4 if i <= 6 else 6,
+                correct_answer=f"Correct answer {i}",
+                wrong_answers=json.dumps([f"Wrong {i}a", f"Wrong {i}b", f"Wrong {i}c"]),
+                theme_id=theme.id,
+                question_number=i,
+            )
+            db_session.add(question)
+            questions.append(question)
+        db_session.commit()
+        for q in questions:
+            db_session.refresh(q)
+
+        return theme, questions
+
+    def test_qualification_sets_turn_order_and_first_turn(self, round2_manager, db_session, sample_game_session):
+        self._make_team(db_session, sample_game_session, "Alpha", 90, 2)
+        self._make_team(db_session, sample_game_session, "Bravo", 70, 2)
+
+        round2_manager.qualify_players_from_round1(sample_game_session.id)
+        db_session.commit()
+        db_session.refresh(sample_game_session)
+
+        assert sample_game_session.round2_turn_order is not None
+        assert len(sample_game_session.round2_turn_order) == 4
+        assert set(sample_game_session.round2_turn_order) == set(
+            p.id for team in sample_game_session.teams for p in team.players
+        )
+        assert sample_game_session.round2_current_turn_player_id == sample_game_session.round2_turn_order[0]
+
+    def test_select_theme_rejects_player_out_of_turn(
+        self, round2_manager, db_session, sample_game_session, sample_theme, sample_questions_for_theme
+    ):
+        self._make_team(db_session, sample_game_session, "Alpha", 90, 2)
+
+        round2_manager.qualify_players_from_round1(sample_game_session.id)
+        db_session.commit()
+        db_session.refresh(sample_game_session)
+
+        turn_order = sample_game_session.round2_turn_order
+        out_of_turn_player_id = turn_order[1]
+
+        with pytest.raises(ValueError, match="Ce n'est pas votre tour"):
+            round2_manager.select_theme(out_of_turn_player_id, sample_game_session.id, sample_theme.id)
+
+    def test_submit_answer_rejects_player_out_of_turn(
+        self, round2_manager, db_session, sample_game_session, sample_theme, sample_questions_for_theme
+    ):
+        self._make_team(db_session, sample_game_session, "Alpha", 90, 2)
+
+        round2_manager.qualify_players_from_round1(sample_game_session.id)
+        db_session.commit()
+        db_session.refresh(sample_game_session)
+
+        turn_order = sample_game_session.round2_turn_order
+        first_player_id, second_player_id = turn_order[0], turn_order[1]
+
+        round2_manager.select_theme(first_player_id, sample_game_session.id, sample_theme.id)
+        db_session.commit()
+
+        question = sample_questions_for_theme[0]
+        with pytest.raises(ValueError, match="Ce n'est pas votre tour"):
+            round2_manager.submit_answer(
+                second_player_id, sample_game_session.id, question.id, question.correct_answer
+            )
+
+    def test_turn_advances_to_next_player_after_ten_questions(
+        self, round2_manager, db_session, sample_game_session, sample_theme
+    ):
+        self._make_team(db_session, sample_game_session, "Alpha", 90, 2)
+
+        round2_manager.qualify_players_from_round1(sample_game_session.id)
+        db_session.commit()
+        db_session.refresh(sample_game_session)
+
+        turn_order = sample_game_session.round2_turn_order
+        first_player_id, second_player_id = turn_order[0], turn_order[1]
+
+        theme, questions = self._make_theme_with_questions(db_session, sample_theme)
+        round2_manager.select_theme(first_player_id, sample_game_session.id, theme.id)
+        db_session.commit()
+
+        for question in questions:
+            round2_manager.submit_answer(
+                first_player_id, sample_game_session.id, question.id, question.correct_answer
+            )
+        db_session.commit()
+        db_session.refresh(sample_game_session)
+
+        assert sample_game_session.round2_current_turn_player_id == second_player_id
+
+        # Le tour est bien passé au deuxième joueur : lui peut jouer désormais.
+        theme2, questions2 = self._make_theme_with_questions(db_session, sample_theme)
+        stats = round2_manager.select_theme(second_player_id, sample_game_session.id, theme2.id)
+        assert stats.player_id == second_player_id
+
+    def test_last_player_finishing_clears_current_turn(
+        self, round2_manager, db_session, sample_game_session, sample_theme
+    ):
+        self._make_team(db_session, sample_game_session, "Alpha", 90, 2)
+
+        round2_manager.qualify_players_from_round1(sample_game_session.id)
+        db_session.commit()
+        db_session.refresh(sample_game_session)
+
+        turn_order = sample_game_session.round2_turn_order
+
+        for player_id in turn_order:
+            theme, questions = self._make_theme_with_questions(db_session, sample_theme)
+            round2_manager.select_theme(player_id, sample_game_session.id, theme.id)
+            db_session.commit()
+            for question in questions:
+                round2_manager.submit_answer(
+                    player_id, sample_game_session.id, question.id, question.correct_answer
+                )
+            db_session.commit()
+            db_session.refresh(sample_game_session)
+
+        assert sample_game_session.round2_current_turn_player_id is None

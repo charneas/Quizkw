@@ -60,7 +60,11 @@ class GameSession(Base):
     started = Column(Boolean, default=False, nullable=False)
     questions_played = Column(Integer, default=0, nullable=False)  # déclenche la roue tous les 5
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
+    # Manche 2 en tour par rôle : ordre de passage figé à la qualification
+    # (liste de player_id) et joueur actuellement autorisé à jouer.
+    round2_turn_order = Column(JSON, nullable=True)
+    round2_current_turn_player_id = Column(Integer, ForeignKey("players.id"), nullable=True)
+
     # Relations
     current_question = relationship("Question")
     teams = relationship("Team", back_populates="game_session")

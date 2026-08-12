@@ -126,7 +126,13 @@ function Round2() {
             }
             setPlayerStats(hydratedStats)
             if (savedStats.questions_answered < 10) {
-              await loadNextQuestion(hydratedStats, savedPlayer.id)
+              // Ne recharger la question que si c'est vraiment le tour de ce
+              // joueur — sinon un spectateur qui rafraîchit la page
+              // déclencherait getRound2Question et se prendrait un 400 "pas
+              // votre tour" au lieu de retomber sur le mode spectateur.
+              if (progress.current_turn_player_id === savedPlayer.id) {
+                await loadNextQuestion(hydratedStats, savedPlayer.id)
+              }
             } else {
               setIsWaitingForLeaderboard(true)
               await checkIfAllPlayersFinished()
@@ -205,6 +211,38 @@ function Round2() {
 
     return () => clearInterval(timer)
   }, [timeRemaining, answerResult])
+
+  // BUG-401 (#32) : dérivé de qualifiedPlayers (déjà chargé, aucun appel
+  // réseau supplémentaire) — couvre aussi bien la restauration automatique
+  // que la sélection manuelle via PlayerSelection (handlePlayerSelection).
+  const currentPlayerQualification = qualifiedPlayers.find(
+    (p) => p.id === currentPlayer?.id
+  )?.round2_stats?.qualification_status
+  const isEliminated = currentPlayerQualification === 'eliminated'
+
+  // Manche 2 en tour par rôle : c'est mon tour si le serveur me désigne
+  // comme current_turn_player_id pendant la phase à 16 joueurs.
+  const isMyTurn = !!currentPlayer && tournamentProgress?.current_turn_player_id === currentPlayer.id
+
+  // Manche 2 en tour par rôle : les spectateurs (ce n'est pas leur tour)
+  // pollent la progression pour détecter le changement de tour sans action
+  // de leur part.
+  useEffect(() => {
+    if (!code || !currentPlayer || isEliminated) return
+    if (tournamentProgress?.phase !== '16_players') return
+    if (tournamentProgress?.current_turn_player_id === currentPlayer.id) return
+
+    const interval = setInterval(async () => {
+      try {
+        const progress = await getRound2Progress(code)
+        setTournamentProgress(progress)
+      } catch {
+        // Best-effort : on retentera au prochain intervalle.
+      }
+    }, 4000)
+
+    return () => clearInterval(interval)
+  }, [code, currentPlayer, isEliminated, tournamentProgress?.phase, tournamentProgress?.current_turn_player_id])
 
   const handleAnswerSubmit = async (answer: string) => {
     if (!currentQuestion || !playerStats || !currentPlayer) return
@@ -322,14 +360,6 @@ function Round2() {
     }
   }, [code])
 
-  // BUG-401 (#32) : dérivé de qualifiedPlayers (déjà chargé, aucun appel
-  // réseau supplémentaire) — couvre aussi bien la restauration automatique
-  // que la sélection manuelle via PlayerSelection (handlePlayerSelection).
-  const currentPlayerQualification = qualifiedPlayers.find(
-    (p) => p.id === currentPlayer?.id
-  )?.round2_stats?.qualification_status
-  const isEliminated = currentPlayerQualification === 'eliminated'
-
   // Question chronométrée en cours : quitter maintenant coupe la réponse en
   // train d'être tapée sans aucun avertissement, d'où la confirmation.
   const isAnsweringQuestion = !isEliminated && !!selectedTheme && !!currentQuestion && !answerResult
@@ -432,8 +462,41 @@ function Round2() {
           </SpectatorView>
         )}
 
+        {/* Spectateur (tour par rôle) : le joueur est qualifié et pas
+            éliminé mais ce n'est pas son tour — il regarde le tour du
+            joueur actif sans pouvoir agir. */}
+        {!loading && !error && currentPlayer && !isEliminated && !isMyTurn &&
+          tournamentProgress?.phase === '16_players' && (
+          <SpectatorView
+            message={
+              tournamentProgress.current_turn_player_name
+                ? `En attente du tour de ${tournamentProgress.current_turn_player_name}...`
+                : 'En attente du prochain tour...'
+            }
+          >
+            <div className="bg-surface rounded-lg p-6">
+              <h3 className="text-lg font-semibold text-text mb-3">Joueurs en cours</h3>
+              <div className="space-y-2">
+                {qualifiedPlayers
+                  .filter((p) => p.round2_stats && p.round2_stats.qualification_status !== 'eliminated')
+                  .map((p) => (
+                    <div key={p.id} className="flex items-center justify-between text-sm">
+                      <span className="text-text">
+                        {p.name}
+                        {p.round2_stats?.theme && (
+                          <span className="text-text-muted"> — {p.round2_stats.theme.name}</span>
+                        )}
+                      </span>
+                      <span className="text-text-muted">{p.round2_stats?.score ?? 0} pts</span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          </SpectatorView>
+        )}
+
         {/* Theme Selection */}
-        {!loading && !error && currentPlayer && !isEliminated && themes.length > 0 && !selectedTheme && (
+        {!loading && !error && currentPlayer && !isEliminated && isMyTurn && themes.length > 0 && !selectedTheme && (
           <ThemeSelectorComponent
             themes={themes}
             onSelectTheme={handleThemeSelection}
@@ -442,7 +505,7 @@ function Round2() {
         )}
 
         {/* Question Flow */}
-        {!isEliminated && selectedTheme && currentQuestion && !answerResult && (
+        {!isEliminated && isMyTurn && selectedTheme && currentQuestion && !answerResult && (
           <div className="bg-surface rounded-lg p-6 mb-6">
             <div className="mb-4">
               <h2 className="text-2xl font-display font-semibold text-text mb-2">

@@ -126,12 +126,19 @@ class Round2Manager:
     def _check_players_turn(self, player_id: int, game_session_id: int) -> None:
         """Manche 2 en tour par rôle : un seul joueur à la fois choisit son
         thème et répond à ses questions, les autres sont spectateurs.
+
+        L'ordre de tour n'est posé que par qualify_players_from_round1 : tant
+        qu'aucun ordre n'a été calculé pour cette partie (round2_turn_order
+        vide/absent), aucune restriction n'est appliquée.
         """
         game = self.db.query(models.GameSession).filter(
             models.GameSession.id == game_session_id
         ).first()
         if not game:
             raise ValueError(f"Session de jeu {game_session_id} non trouvée")
+
+        if not game.round2_turn_order:
+            return
 
         if game.round2_current_turn_player_id != player_id:
             raise ValueError("Ce n'est pas votre tour")
