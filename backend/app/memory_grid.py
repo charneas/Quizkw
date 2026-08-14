@@ -5,13 +5,17 @@ import enum
 import random
 import json
 import time
+import os
 from datetime import datetime
 
 # AD-0 (playtest 2026-08-15) : durée pendant laquelle la grille complète
 # (propriétaires des cases) est visible avant que le jeu ne masque tout —
 # sans quoi "grille à MÉMORISER" n'a aucun sens, les joueurs jouant sur du
 # pur hasard faute d'avoir jamais vu où se trouve quoi.
-MEMORIZE_DURATION_SECONDS = 120
+# Surchargeable via MEMORY_GRID_MEMORIZE_SECONDS (E2E : attendre 120s réelles
+# à chaque run rendrait le test round3.spec.ts impraticable) — jamais définie
+# en production, où la valeur par défaut (120) s'applique.
+MEMORIZE_DURATION_SECONDS = int(os.environ.get("MEMORY_GRID_MEMORIZE_SECONDS", "120"))
 
 class GridCellStatus(enum.Enum):
     HIDDEN = "hidden"

@@ -78,6 +78,15 @@ def generate_content(topic: str, wikipedia_extract: str, category: ThemeCategory
     text_blocks = [block.text for block in response.content if getattr(block, "type", None) == "text"]
     raw_text = "".join(text_blocks).strip()
 
+    # Playtest 2026-08-15 : malgré la consigne "sans balises markdown", le
+    # modèle enveloppe parfois sa réponse dans un bloc ```json ... ``` —
+    # retiré avant parsing plutôt que de faire échouer toute la génération.
+    if raw_text.startswith("```"):
+        raw_text = raw_text.split("\n", 1)[1] if "\n" in raw_text else raw_text[3:]
+        if raw_text.endswith("```"):
+            raw_text = raw_text[:-3]
+        raw_text = raw_text.strip()
+
     try:
         parsed = json.loads(raw_text)
     except json.JSONDecodeError as e:

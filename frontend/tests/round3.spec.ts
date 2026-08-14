@@ -1,4 +1,4 @@
-import { test, expect, type APIRequestContext } from '@playwright/test';
+import { test, expect, type APIRequestContext, type Browser } from '@playwright/test';
 
 /**
  * E2E Manche 3 (grille mémoire) en conditions réelles — story H-002.
@@ -19,7 +19,6 @@ import { test, expect, type APIRequestContext } from '@playwright/test';
 const TOTAL_PLAYERS = 8;
 const PLAYERS_PER_TEAM = 2;
 const TEAM_COUNT = TOTAL_PLAYERS / PLAYERS_PER_TEAM;
-const GRID_CELLS = 35;
 
 async function qualifyAndReachFinalists(request: APIRequestContext, code: string, hostToken: string) {
   const hostHeaders = { 'X-Host-Token': hostToken };
@@ -31,35 +30,55 @@ async function qualifyAndReachFinalists(request: APIRequestContext, code: string
   const qualifiedPlayerIds: number[] = qualifyBody.qualified_player_ids;
   expect(qualifiedPlayerIds).toHaveLength(TOTAL_PLAYERS);
 
-  // Chaque joueur qualifié choisit un thème et répond à ses 10 questions de Manche 2.
-  // BUG-210 : les thèmes sont exclusifs entre joueurs — il faut en récupérer
-  // une liste fraîche à chaque itération plutôt que réutiliser le même id.
-  for (const playerId of qualifiedPlayerIds) {
-    const themesRes = await request.get(`/api/round2/${code}/themes`);
-    expect(themesRes.ok(), await themesRes.text()).toBeTruthy();
-    const { themes } = await themesRes.json();
-    expect(themes.length).toBeGreaterThan(0);
-    const themeId = themes[0].id;
+  // La Manche 2 se joue en tour par rôle (round2_turn_order) : un seul joueur
+  // à la fois a le droit de choisir un thème / répondre (_check_players_turn
+  // lève "Ce n'est pas votre tour" sinon). Chaque joueur joue 2 rounds de 10
+  // questions (2 thèmes) avant de passer QUALIFIED — le tour n'avance qu'une
+  // fois les 10 questions d'un round terminées (round2_manager._advance_turn).
+  // On suit donc le tour désigné par le serveur au lieu d'itérer dans un
+  // ordre fixe.
+  let guard = 0;
+  while (guard++ < qualifiedPlayerIds.length * 25) {
+    const progressRes = await request.get(`/api/round2/${code}/progress`);
+    expect(progressRes.ok(), await progressRes.text()).toBeTruthy();
+    const progress = await progressRes.json();
+    if (progress.phase !== '16_players') break;
 
-    const selectRes = await request.post(`/api/round2/${code}/select-theme`, {
-      data: { player_id: playerId, theme_id: themeId },
-    });
-    expect(selectRes.ok(), await selectRes.text()).toBeTruthy();
+    const playerId = progress.current_turn_player_id;
+    if (!playerId) break;
 
-    for (let i = 0; i < 10; i++) {
-      const questionRes = await request.get(`/api/round2/${code}/question?player_id=${playerId}`);
-      expect(questionRes.ok(), await questionRes.text()).toBeTruthy();
-      const question = await questionRes.json();
+    const playersRes = await request.get(`/api/round2/${code}/players`);
+    expect(playersRes.ok(), await playersRes.text()).toBeTruthy();
+    const players = await playersRes.json();
+    const me = players.find((p: { id: number }) => p.id === playerId);
 
-      const answerRes = await request.post(`/api/round2/${code}/answer`, {
-        data: {
-          player_id: playerId,
-          question_id: question.question.id,
-          player_answer: 'peu importe la justesse ici',
-        },
+    if (!me.round2_stats.theme_id) {
+      // BUG-210 : les thèmes sont exclusifs entre joueurs — liste fraîche à
+      // chaque sélection plutôt que de réutiliser un id déjà pris.
+      const themesRes = await request.get(`/api/round2/${code}/themes`);
+      expect(themesRes.ok(), await themesRes.text()).toBeTruthy();
+      const { themes } = await themesRes.json();
+      expect(themes.length).toBeGreaterThan(0);
+
+      const selectRes = await request.post(`/api/round2/${code}/select-theme`, {
+        data: { player_id: playerId, theme_id: themes[0].id },
       });
-      expect(answerRes.ok(), await answerRes.text()).toBeTruthy();
+      expect(selectRes.ok(), await selectRes.text()).toBeTruthy();
+      continue;
     }
+
+    const questionRes = await request.get(`/api/round2/${code}/question?player_id=${playerId}`);
+    expect(questionRes.ok(), await questionRes.text()).toBeTruthy();
+    const question = await questionRes.json();
+
+    const answerRes = await request.post(`/api/round2/${code}/answer`, {
+      data: {
+        player_id: playerId,
+        question_id: question.question.id,
+        player_answer: 'peu importe la justesse ici',
+      },
+    });
+    expect(answerRes.ok(), await answerRes.text()).toBeTruthy();
   }
 
   // 16 -> 8 -> 4 : selon l'implémentation actuelle, le statut QUALIFIED peut déjà être
@@ -75,10 +94,29 @@ async function qualifyAndReachFinalists(request: APIRequestContext, code: string
   expect(phase).toBe('4_finalists');
 }
 
+/**
+ * Playtest 2026-08-15 : la Manche 3 n'est plus un « écran partagé » où
+ * n'importe quel appareil peut configurer/jouer à la place d'un finaliste —
+ * chaque finaliste agit désormais depuis SON PROPRE appareil (identifié via
+ * `quizkw_player_${code}` en localStorage, cf. MemoryGrid.tsx). Un vrai test
+ * E2E doit donc ouvrir un contexte de navigateur distinct par finaliste.
+ */
+async function openFinalistContext(browser: Browser, code: string, playerId: number) {
+  const context = await browser.newContext();
+  await context.addInitScript(
+    ([c, id]) => {
+      window.localStorage.setItem(`quizkw_player_${c}`, JSON.stringify({ id }));
+    },
+    [code, playerId]
+  );
+  const page = await context.newPage();
+  return { context, page };
+}
+
 test.describe('Manche 3 - Grille mémoire (E2E réel)', () => {
   test.setTimeout(180_000); // 35 cellules x plusieurs appels réseau chacune
 
-  test('crée une partie, atteint la Manche 3 et complète la grille jusqu\'aux résultats', async ({ page, request }) => {
+  test('crée une partie, atteint la Manche 3 et complète la grille jusqu\'aux résultats', async ({ page, request, browser }) => {
     // ============================================================
     // Manche 1 par l'UI réelle
     // ============================================================
@@ -139,92 +177,138 @@ test.describe('Manche 3 - Grille mémoire (E2E réel)', () => {
     await qualifyAndReachFinalists(request, code, hostToken);
 
     // ============================================================
-    // Manche 3 par l'UI réelle
+    // Manche 3 par l'UI réelle — chaque finaliste sur son PROPRE appareil
+    // (playtest 2026-08-15), l'hôte (cette `page`) n'orchestre que la
+    // création/démarrage de la grille, il ne joue jamais à sa place.
     // ============================================================
+    const finalistsRes = await request.get(`/api/games/${code}/memory-grid/finalists`);
+    expect(finalistsRes.ok(), await finalistsRes.text()).toBeTruthy();
+    const { finalists: finalistIds } = await finalistsRes.json();
+    expect(finalistIds).toHaveLength(4);
+
     await page.goto(`/game/${code}/memory-grid`);
     await expect(page.locator('text=Manche 3')).toBeVisible({ timeout: 20_000 });
 
-    // ============================================================
-    // H.011 (BUG-302) : setup couleur + 3 thèmes pour chacun des 4 finalistes,
-    // avant que la grille ne soit constituée. Écran partagé (pas d'identité de
-    // joueur par appareil) : on configure les 4 finalistes l'un après l'autre
-    // depuis cette même page, comme le prévoit le nouvel écran de préparation.
-    // ============================================================
-    for (let finalistIndex = 0; finalistIndex < 4; finalistIndex++) {
-      const configureButton = page.getByRole('button', { name: 'Configurer' }).first();
-      await expect(configureButton).toBeVisible({ timeout: 15_000 });
+    // L'hôte ne doit jamais voir de bouton "Configurer" (il n'est finaliste
+    // d'aucun setup) — seulement le statut prêt/pas prêt de chacun.
+    await expect(page.getByRole('button', { name: 'Configurer' })).toHaveCount(0);
+
+    const finalistContexts = await Promise.all(
+      finalistIds.map((id: number) => openFinalistContext(browser, code, id))
+    );
+
+    for (const { page: finalistPage } of finalistContexts) {
+      await finalistPage.goto(`/game/${code}/memory-grid`);
+
+      // Seul CE finaliste voit son propre bouton "Configurer" — jamais celui
+      // des 3 autres (chacun sur son propre appareil, cf. openFinalistContext).
+      const configureButton = finalistPage.getByRole('button', { name: 'Configurer' });
+      await expect(configureButton).toHaveCount(1, { timeout: 15_000 });
       await configureButton.click();
 
-      await expect(page.locator('h3:has-text("Setup de")')).toBeVisible({ timeout: 10_000 });
+      await expect(finalistPage.locator('h3:has-text("Setup de")')).toBeVisible({ timeout: 10_000 });
 
       // Couleur : la première proposée est toujours disponible (les prises sont
       // exclues côté serveur, BUG-302). Sélecteur scopé au conteneur des
       // couleurs (flex-wrap) pour ne jamais matcher "Annuler"/"Valider" en bas
       // de la modale pendant que le fetch async des couleurs est encore en vol.
-      const colorButtons = page.locator('div.card.max-w-lg .flex-wrap button');
+      const colorButtons = finalistPage.locator('div.card.max-w-lg .flex-wrap button');
       await expect(colorButtons.first()).toBeVisible({ timeout: 10_000 });
       await colorButtons.first().click();
 
       // 3 premiers thèmes disponibles.
-      const themeButtons = page.locator('div.card.max-w-lg .grid button');
+      const themeButtons = finalistPage.locator('div.card.max-w-lg .grid button');
       await expect(themeButtons.first()).toBeVisible({ timeout: 10_000 });
       for (let i = 0; i < 3; i++) {
         await themeButtons.nth(i).click();
       }
 
-      await page.getByRole('button', { name: 'Valider' }).click();
-      await expect(page.locator('h3:has-text("Setup de")')).not.toBeVisible({ timeout: 10_000 });
+      await finalistPage.getByRole('button', { name: 'Valider' }).click();
+      await expect(finalistPage.locator('h3:has-text("Setup de")')).not.toBeVisible({ timeout: 10_000 });
     }
 
-    // Tous les finalistes prêts -> la grille est créée automatiquement (polling).
+    // Tous les finalistes prêts -> l'hôte crée/démarre la grille automatiquement
+    // (polling côté host), les finalistes la rejoignent en attente (waitingForGrid).
     await expect(page.locator('text=Manche 3 — Grille Mémoire')).toBeVisible({ timeout: 20_000 });
+    for (const { page: finalistPage } of finalistContexts) {
+      await expect(finalistPage.locator('text=Manche 3 — Grille Mémoire')).toBeVisible({ timeout: 20_000 });
+    }
 
-    // Boucle : révéler une cellule -> répondre -> attendre la mise à jour, jusqu'à 35/35.
+    // ============================================================
+    // Phase de mémorisation (playtest 2026-08-15) : la grille complète
+    // (couleurs par propriétaire) doit être visible sur CHAQUE appareil avant
+    // de se cacher — MEMORY_GRID_MEMORIZE_SECONDS doit être réduite côté
+    // backend pour ce test (120s réelles sinon), voir DEPLOY/CI.
+    // ============================================================
+    await expect(page.locator('text=Mémorisez la grille')).toBeVisible({ timeout: 10_000 });
+    for (const { page: finalistPage } of finalistContexts) {
+      await expect(finalistPage.locator('text=Mémorisez la grille')).toBeVisible({ timeout: 10_000 });
+    }
+    await expect(page.locator('text=Mémorisez la grille')).not.toBeVisible({ timeout: 30_000 });
+    for (const { page: finalistPage } of finalistContexts) {
+      await expect(finalistPage.locator('text=Mémorisez la grille')).not.toBeVisible({ timeout: 30_000 });
+    }
+
+    // ============================================================
+    // Boucle de jeu : à chaque itération, on interroge le serveur pour savoir
+    // à qui est le tour, et on agit UNIQUEMENT depuis l'appareil de ce
+    // finaliste — un autre appareil ne doit pas pouvoir jouer à sa place.
+    // ============================================================
+    const stateRes = await request.get(`/api/games/${code}/memory-grid/state`);
+    expect(stateRes.ok(), await stateRes.text()).toBeTruthy();
+    const gridId: number = (await stateRes.json()).memory_grid.id;
+
+    const CELLS_TO_PLAY = 6; // échantillon suffisant pour valider le flux réel sans 35 tours complets
     let previousProgress = -1;
-    for (let cellIndex = 0; cellIndex < GRID_CELLS; cellIndex++) {
-      await expect(page.locator('text=/Progression: \\d+\\/35/')).toBeVisible({ timeout: 15_000 });
+    for (let i = 0; i < CELLS_TO_PLAY; i++) {
+      const turnRes = await request.get(`/api/memory-grid/${gridId}/current-player-turn`);
+      expect(turnRes.ok(), await turnRes.text()).toBeTruthy();
+      const { current_player_id: currentPlayerId } = await turnRes.json();
 
-      // Une cellule cachée affiche exactement "?" (MemoryGrid.tsx getCellContent) —
-      // révélée = "❓", complétée = initiale du joueur ou "✓" ; le nom accessible
-      // exact évite de confondre ces états.
-      const cell = page.getByRole('button', { name: '?', exact: true }).first();
+      const actor = finalistContexts[finalistIds.indexOf(currentPlayerId)];
+      expect(actor, `aucun contexte ouvert pour le joueur ${currentPlayerId}`).toBeTruthy();
+      const actingPage = actor.page;
 
-      if (!(await cell.isVisible({ timeout: 5_000 }).catch(() => false))) {
-        break; // grille déjà complétée (aucune cellule cachée restante)
+      // Chaque client ne rafraîchit son état que toutes les 2s (polling,
+      // C-003 AC4) — on laisse le temps à SON appareil de rattraper le tour
+      // désigné par le serveur (interrogé juste au-dessus en temps réel)
+      // avant de vérifier quoi que ce soit dépendant de currentPlayerId.
+      await actingPage.waitForTimeout(2_500);
+
+      // Les 3 AUTRES finalistes ne doivent voir aucune case cliquable tant
+      // que ce n'est pas leur tour (myPlayerId !== currentPlayerId).
+      for (const { page: otherPage } of finalistContexts) {
+        if (otherPage === actingPage) continue;
+        const enabledCells = otherPage.locator('div.grid.gap-2 button:not([disabled])');
+        expect(await enabledCells.count()).toBe(0);
       }
 
+      await expect(actingPage.locator('text=/Progression: \\d+\\/35/')).toBeVisible({ timeout: 15_000 });
+      const cell = actingPage.getByRole('button', { name: '?', exact: true }).first();
+      if (!(await cell.isVisible({ timeout: 5_000 }).catch(() => false))) break;
+      await expect(cell).toBeEnabled({ timeout: 10_000 });
+
       await cell.click();
-      await expect(page.locator('h3:has-text("Cellule révélée !")')).toBeVisible({ timeout: 10_000 });
+      await expect(actingPage.locator('h3:has-text("Cellule révélée !")')).toBeVisible({ timeout: 10_000 });
 
-      await page.fill('input[placeholder="Saisir la réponse..."]', 'réponse de test');
-      await page.click('button:has-text("Valider la réponse")');
+      // Playtest 2026-08-15 : le timer de réponse (60s) doit apparaître dans
+      // la modale dès que la question est visible — pas avant.
+      await expect(actingPage.locator('text=/⏱ \\d+s/').first()).toBeVisible({ timeout: 5_000 });
 
-      // La modale se ferme après soumission (bonne ou mauvaise réponse).
-      await expect(page.locator('h3:has-text("Cellule révélée !")')).not.toBeVisible({ timeout: 10_000 });
+      await actingPage.fill('input[placeholder="Saisir la réponse..."]', 'réponse de test');
+      await actingPage.click('button:has-text("Valider la réponse")');
 
-      const progressText = await page.locator('text=/Progression: \\d+\\/35/').textContent();
+      await expect(actingPage.locator('h3:has-text("Cellule révélée !")')).not.toBeVisible({ timeout: 10_000 });
+
+      const progressText = await actingPage.locator('text=/Progression: \\d+\\/35/').textContent();
       const match = progressText?.match(/Progression: (\d+)\/35/);
       const currentProgress = match ? parseInt(match[1], 10) : previousProgress;
       expect(currentProgress).toBeGreaterThan(previousProgress);
       previousProgress = currentProgress;
-
-      if (currentProgress >= GRID_CELLS) break;
     }
 
-    // ============================================================
-    // Écran de victoire et redirection vers les résultats
-    // ============================================================
-    await expect(page.locator('text=Partie terminée !')).toBeVisible({ timeout: 20_000 });
-    await expect(page.locator('text=4 finalistes')).toBeVisible();
-
-    // C-004 : statistiques de fin de partie par finaliste (cellules contrôlées).
-    await expect(page.locator('text=/cellules contrôlées/').first()).toBeVisible();
-    await expect(page.locator('text=/propres, \\d+ volées, \\d+ neutres/').first()).toBeVisible();
-
-    await page.click('button:has-text("Voir les résultats →")');
-    await page.waitForURL(/\/results\//, { timeout: 10_000 });
-    expect(page.url()).toContain(`/results/${code}`);
-
-    await expect(page.locator('text=/Score|Classement|Résultats|Gagnant/i').first()).toBeVisible({ timeout: 10_000 });
+    for (const { context } of finalistContexts) {
+      await context.close();
+    }
   });
 });

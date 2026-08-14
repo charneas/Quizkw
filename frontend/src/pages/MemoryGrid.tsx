@@ -269,7 +269,12 @@ function MemoryGrid() {
       } catch {
         // Identité illisible : on retombe sur le flux normal, pas spectateur.
       }
-      if (savedPlayerId !== null && !finalists.includes(savedPlayerId)) {
+      // L'hôte prime toujours sur une identité de joueur non-finaliste
+      // périmée dans son localStorage (ex. il a lui-même rejoint une équipe
+      // en Manche 1 sur ce même appareil avant d'être éliminé) : il reste
+      // orchestrateur, jamais spectateur — sinon la grille ne serait plus
+      // jamais créée/démarrée par personne.
+      if (!isHost && savedPlayerId !== null && !finalists.includes(savedPlayerId)) {
         setIsSpectator(true)
         await initSpectator()
         setLoading(false)
