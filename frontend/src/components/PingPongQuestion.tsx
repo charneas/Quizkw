@@ -18,6 +18,8 @@ interface PingPongDuelProps {
   onSubmit: (answer: string) => void
   onPass: () => void
   disabled: boolean
+  timeRemaining?: number | null
+  turnDurationSeconds?: number
 }
 
 function PingPongQuestion({
@@ -31,6 +33,8 @@ function PingPongQuestion({
   onSubmit,
   onPass,
   disabled,
+  timeRemaining,
+  turnDurationSeconds,
 }: PingPongDuelProps) {
   const [answer, setAnswer] = useState('')
 
@@ -98,6 +102,21 @@ function PingPongQuestion({
           Tour {turnNumber} • Au tour de{' '}
           <span className="font-bold text-brand">{currentTeam.name}</span>
         </p>
+        {timeRemaining !== null && timeRemaining !== undefined && turnDurationSeconds && (
+          <div className="mt-2 max-w-xs mx-auto">
+            <p className={`text-sm font-bold ${timeRemaining <= 5 ? 'text-danger animate-timer-pulse' : 'text-text'}`}>
+              ⏱ {timeRemaining}s
+            </p>
+            <div className="h-2 bg-border rounded-full overflow-hidden mt-1">
+              <div
+                className={`h-full transition-all duration-1000 ease-linear ${
+                  timeRemaining <= 5 ? 'bg-danger' : timeRemaining <= 15 ? 'bg-brand-600' : 'bg-success'
+                }`}
+                style={{ width: `${(timeRemaining / turnDurationSeconds) * 100}%` }}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Réponses déjà données */}

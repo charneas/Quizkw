@@ -77,6 +77,9 @@ interface TeamStateData {
   } | null
 }
 
+// Duel ping-pong : un tour se joue vite (une seule réponse courte).
+const PING_PONG_TURN_DURATION_SECONDS = 20
+
 function TeamScreen() {
   const { code, teamId } = useParams<{ code: string; teamId: string }>()
   const navigate = useNavigate()
@@ -149,6 +152,41 @@ function TeamScreen() {
       lastDuelRef.current = state.active_duel
     }
   }, [state?.active_duel])
+
+  // Timer du duel ping-pong : plus long qu'en Manche 2 (temps de réflexion à
+  // deux, réponses moins immédiates), mais expiration = perdu pour l'équipe
+  // qui avait la main (auto-abandon), comme le bouton "Abandonner" manuel.
+  // Redémarre à chaque nouveau tour (duel, numéro de tour ou équipe active).
+  const [duelTimeRemaining, setDuelTimeRemaining] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (!state?.active_duel || state.active_duel.is_completed) {
+      setDuelTimeRemaining(null)
+      return
+    }
+    setDuelTimeRemaining(PING_PONG_TURN_DURATION_SECONDS)
+  }, [
+    state?.active_duel?.duel_id,
+    state?.active_duel?.turn_number,
+    state?.active_duel?.current_turn_team_id,
+    state?.active_duel?.is_completed,
+  ])
+
+  useEffect(() => {
+    if (duelTimeRemaining === null) return
+    if (duelTimeRemaining <= 0) {
+      // Seule l'équipe dont c'est le tour déclenche l'abandon automatique —
+      // évite un double appel si les deux écrans d'équipe touchent 0 en
+      // même temps.
+      if (state?.active_duel?.is_my_turn_in_duel && !duelResult) {
+        handleDuelPass()
+      }
+      return
+    }
+    const timer = setTimeout(() => setDuelTimeRemaining((prev) => (prev !== null ? prev - 1 : null)), 1000)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [duelTimeRemaining])
 
   useEffect(() => {
     duelResultRef.current = duelResult
@@ -842,6 +880,8 @@ function TeamScreen() {
                 onSubmit={handleDuelAnswer}
                 onPass={handleDuelPass}
                 disabled={!state.active_duel.is_my_turn_in_duel || state.active_duel.is_completed}
+                timeRemaining={duelTimeRemaining}
+                turnDurationSeconds={PING_PONG_TURN_DURATION_SECONDS}
               />
             )}
           </div>

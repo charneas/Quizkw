@@ -5,6 +5,13 @@ import enum
 import random
 import json
 import time
+from datetime import datetime
+
+# AD-0 (playtest 2026-08-15) : durée pendant laquelle la grille complète
+# (propriétaires des cases) est visible avant que le jeu ne masque tout —
+# sans quoi "grille à MÉMORISER" n'a aucun sens, les joueurs jouant sur du
+# pur hasard faute d'avoir jamais vu où se trouve quoi.
+MEMORIZE_DURATION_SECONDS = 120
 
 class GridCellStatus(enum.Enum):
     HIDDEN = "hidden"
@@ -16,8 +23,8 @@ class MemoryGrid(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     game_session_id = Column(Integer, ForeignKey("game_sessions.id"))
-    rows = Column(Integer, default=7)  # 7 rows
-    cols = Column(Integer, default=5)  # 5 columns
+    rows = Column(Integer, default=5)  # 5 rows
+    cols = Column(Integer, default=7)  # 7 columns (paysage, adapté 16:9)
     current_turn = Column(Integer, default=0)  # Track turns
     is_completed = Column(Boolean, default=False)
     
@@ -77,6 +84,9 @@ class MemoryGridRound(Base):
     # AD-0 : la Manche 3 est individuelle — c'est le tour d'un JOUEUR.
     current_player_id = Column(Integer, ForeignKey("players.id"), nullable=True)
     is_active = Column(Boolean, default=True)
+    # Point de départ de la phase de mémorisation (MEMORIZE_DURATION_SECONDS)
+    # avant que les cases ne se cachent — cf. get_grid_state.
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     game_session = relationship("GameSession")
     memory_grid = relationship("MemoryGrid")
@@ -87,7 +97,7 @@ class MemoryGridManager:
     def __init__(self, db):
         self.db = db
     
-    def create_memory_grid(self, game_session_id, rows=7, cols=5):
+    def create_memory_grid(self, game_session_id, rows=5, cols=7):
         """Create a new memory grid for the final round (7x5 grid)"""
         memory_grid = MemoryGrid(
             game_session_id=game_session_id,
@@ -179,7 +189,13 @@ class MemoryGridManager:
         """Start the memory grid round"""
         round_obj = MemoryGridRound(
             game_session_id=game_session_id,
-            memory_grid_id=memory_grid_id
+            memory_grid_id=memory_grid_id,
+            # Fixé explicitement (pas seulement server_default) : la colonne
+            # a été ajoutée par une migration SQLite sans DEFAULT au niveau
+            # DB (ALTER TABLE ADD COLUMN n'accepte pas de défaut non-constant),
+            # donc s'appuyer uniquement sur le server_default du modèle
+            # laisserait created_at à NULL sur les bases déjà migrées.
+            created_at=datetime.now(),
         )
         self.db.add(round_obj)
         self.db.commit()
@@ -192,6 +208,12 @@ class MemoryGridManager:
         round_obj = self.db.query(MemoryGridRound).filter(MemoryGridRound.id == round_id).first()
         if not round_obj:
             raise LookupError(f"Manche de grille {round_id} introuvable")
+
+        if round_obj.created_at:
+            started_at = round_obj.created_at.replace(tzinfo=None)
+            elapsed = (datetime.now() - started_at).total_seconds()
+            if elapsed < MEMORIZE_DURATION_SECONDS:
+                raise ValueError("La phase de mémorisation n'est pas terminée")
 
         cell = self.db.query(GridCell).filter(GridCell.id == cell_id).first()
         if not cell:
@@ -237,8 +259,12 @@ class MemoryGridManager:
         if not question:
             raise LookupError(f"Question {cell.question_id} introuvable pour la cellule {cell_id}")
 
+        # BUG-504 (#36) : même tolérance qu'au ping-pong (1 faute de frappe
+        # au-delà de 3 caractères) — la correspondance stricte précédente
+        # pénalisait des réponses correctes mal orthographiées.
+        from app.ping_pong_manager import answer_matches_with_tolerance
         submitted = (player_answer or "").strip().lower()
-        is_correct = submitted == question.correct_answer.strip().lower()
+        is_correct = answer_matches_with_tolerance(submitted, [question.correct_answer.strip().lower()])
 
         cell.status = GridCellStatus.ANSWERED
         cell.answered_by_player_id = player_id
@@ -301,7 +327,17 @@ class MemoryGridManager:
         memory_grid = self.db.query(MemoryGrid).filter(MemoryGrid.id == memory_grid_id).first()
         if not memory_grid:
             return None
-        
+
+        round_obj = self.db.query(MemoryGridRound).filter(
+            MemoryGridRound.memory_grid_id == memory_grid_id
+        ).order_by(MemoryGridRound.id.desc()).first()
+
+        memorize_seconds_remaining = 0
+        if round_obj and round_obj.created_at:
+            started_at = round_obj.created_at.replace(tzinfo=None)
+            elapsed = (datetime.now() - started_at).total_seconds()
+            memorize_seconds_remaining = max(0, int(MEMORIZE_DURATION_SECONDS - elapsed))
+
         cells = self.db.query(GridCell).filter(
             GridCell.memory_grid_id == memory_grid_id
         ).order_by(GridCell.row, GridCell.col).all()
@@ -350,6 +386,14 @@ class MemoryGridManager:
                 'grid_size': memory_grid.cols,  # alias for frontend
                 'current_turn': memory_grid.current_turn,
                 'is_completed': memory_grid.is_completed,
+                # Permet aux appareils non-hôte (finalistes) de récupérer le
+                # round_id sans passer par POST start (host-only) : ils le
+                # lisent par polling au lieu de le créer eux-mêmes.
+                'round_id': round_obj.id if round_obj else None,
+                # Playtest 2026-08-15 : compte à rebours de la phase de
+                # mémorisation, décompté côté serveur (source de vérité,
+                # pas d'horloge client à resynchroniser).
+                'memorize_seconds_remaining': memorize_seconds_remaining,
             },
             'cells': cells_data,
         }
@@ -419,7 +463,7 @@ class MemoryGridManager:
         turn_index = memory_grid.current_turn % len(finalist_ranking)
         return finalist_ranking[turn_index]
     
-    def create_memory_grid_with_themes(self, game_session_id, rows=7, cols=5):
+    def create_memory_grid_with_themes(self, game_session_id, rows=5, cols=7):
         """
         Create memory grid for Round 3 with theme-based cell assignment.
         AD-0 : 5 cellules par FINALISTE, d'après les thèmes qu'il a choisis.

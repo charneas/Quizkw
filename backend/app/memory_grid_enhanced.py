@@ -144,7 +144,8 @@ class MemoryGridEnhancer:
         Returns:
             list: Thèmes disponibles
         """
-        from app.models import Theme, PlayerRound3Stats
+        from app.models import Theme, PlayerRound3Stats, Question, Difficulty
+        from sqlalchemy import func
 
         taken_theme_ids = {
             tid
@@ -155,11 +156,28 @@ class MemoryGridEnhancer:
             for tid in (s.selected_theme_ids or [])
         }
 
-        available_themes = (
-            self.db.query(Theme).filter(~Theme.id.in_(taken_theme_ids)).all()
-            if taken_theme_ids
-            else self.db.query(Theme).all()
-        )
+        # Playtest 2026-08-15 : un finaliste reçoit 5 cases sur son thème —
+        # proposer un thème qui n'a pas au moins 5 questions HARD retombe sur
+        # des questions hors thème pour compléter (pick_question, BUG-302),
+        # ce qui casse le lien "thème choisi ↔ mes cases" que la phase de
+        # mémorisation est censée récompenser. Filtré automatiquement plutôt
+        # que codé en dur : un thème redevient proposable dès que son pool de
+        # questions HARD grandit suffisamment.
+        themes_with_enough_hard_questions = {
+            theme_id
+            for theme_id, hard_count in (
+                self.db.query(Question.theme_id, func.count(Question.id))
+                .filter(Question.difficulty == Difficulty.HARD, Question.theme_id.isnot(None))
+                .group_by(Question.theme_id)
+                .all()
+            )
+            if hard_count >= 5
+        }
+
+        query = self.db.query(Theme).filter(Theme.id.in_(themes_with_enough_hard_questions))
+        if taken_theme_ids:
+            query = query.filter(~Theme.id.in_(taken_theme_ids))
+        available_themes = query.all()
 
         if len(available_themes) <= count:
             return available_themes

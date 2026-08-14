@@ -38,7 +38,7 @@ def create_memory_grid(code: str, db: Session = Depends(get_db), _host: models.G
         return existing
 
     manager = MemoryGridManager(db)
-    memory_grid = manager.create_memory_grid(game.id, rows=7, cols=5)
+    memory_grid = manager.create_memory_grid(game.id, rows=5, cols=7)
 
     return memory_grid
 
@@ -231,7 +231,7 @@ def advance_to_phase3(code: str, db: Session = Depends(get_db), _host: models.Ga
 
 # Round 3 Enhanced Memory Grid Endpoints
 @router.post("/games/{code}/memory-grid/create-with-themes", response_model=schemas.MemoryGrid)
-def create_memory_grid_with_themes(code: str, rows: int = 7, cols: int = 5, db: Session = Depends(get_db), _host: models.GameSession = Depends(require_host)):
+def create_memory_grid_with_themes(code: str, rows: int = 5, cols: int = 7, db: Session = Depends(get_db), _host: models.GameSession = Depends(require_host)):
     """
     Create memory grid for Round 3 with theme-based cell assignment.
     Uses team.selected_theme_ids to assign 5 cells per team.

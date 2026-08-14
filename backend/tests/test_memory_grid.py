@@ -10,9 +10,20 @@ AD-5 : le manager ne commit pas — les tests committent eux-mêmes quand il fau
 AD-15 : grid_cells.points_awarded est la sentinelle d'idempotence.
 """
 import pytest
+from datetime import datetime, timedelta
 
-from app.memory_grid import MemoryGridManager, GridCell, GridCellStatus
+from app.memory_grid import MemoryGridManager, GridCell, GridCellStatus, MEMORIZE_DURATION_SECONDS
 from app.models import Question, PlayerRound3Stats, Difficulty
+
+
+def _start_round_past_memorize_phase(manager, game_session_id, grid_id, db_session):
+    """Playtest 2026-08-15 : reveal_cell refuse tant que la phase de
+    mémorisation (MEMORIZE_DURATION_SECONDS) n'est pas écoulée — on
+    recule created_at pour tester le jeu une fois cette phase terminée."""
+    round_obj = manager.start_memory_grid_round(game_session_id, grid_id)
+    round_obj.created_at = datetime.now() - timedelta(seconds=MEMORIZE_DURATION_SECONDS + 10)
+    db_session.commit()
+    return round_obj
 
 
 class TestMemoryGridManager:
@@ -134,7 +145,7 @@ class TestMemoryGridManager:
         grid = memory_grid_manager.create_memory_grid(
             game_session_id=sample_game_session.id, rows=7, cols=5
         )
-        round_obj = memory_grid_manager.start_memory_grid_round(sample_game_session.id, grid.id)
+        round_obj = _start_round_past_memorize_phase(memory_grid_manager, sample_game_session.id, grid.id, db_session)
         finalist = round3_finalists[0]
 
         cell = db_session.query(GridCell).filter(
@@ -158,7 +169,7 @@ class TestMemoryGridManager:
         grid = memory_grid_manager.create_memory_grid(
             game_session_id=sample_game_session.id, rows=7, cols=5
         )
-        round_obj = memory_grid_manager.start_memory_grid_round(sample_game_session.id, grid.id)
+        round_obj = _start_round_past_memorize_phase(memory_grid_manager, sample_game_session.id, grid.id, db_session)
         cell = db_session.query(GridCell).filter(GridCell.memory_grid_id == grid.id).first()
 
         with pytest.raises(ValueError) as exc_info:
@@ -177,7 +188,7 @@ class TestMemoryGridManager:
         grid = memory_grid_manager.create_memory_grid(
             game_session_id=sample_game_session.id, rows=7, cols=5
         )
-        round_obj = memory_grid_manager.start_memory_grid_round(sample_game_session.id, grid.id)
+        round_obj = _start_round_past_memorize_phase(memory_grid_manager, sample_game_session.id, grid.id, db_session)
 
         thief, victim = round3_finalists[0], round3_finalists[1]
         cell = db_session.query(GridCell).filter(
@@ -214,7 +225,7 @@ class TestMemoryGridManager:
         grid = memory_grid_manager.create_memory_grid(
             game_session_id=sample_game_session.id, rows=7, cols=5
         )
-        round_obj = memory_grid_manager.start_memory_grid_round(sample_game_session.id, grid.id)
+        round_obj = _start_round_past_memorize_phase(memory_grid_manager, sample_game_session.id, grid.id, db_session)
 
         owner = round3_finalists[2]
         cell = db_session.query(GridCell).filter(
@@ -240,7 +251,7 @@ class TestMemoryGridManager:
         grid = memory_grid_manager.create_memory_grid(
             game_session_id=sample_game_session.id, rows=7, cols=5
         )
-        round_obj = memory_grid_manager.start_memory_grid_round(sample_game_session.id, grid.id)
+        round_obj = _start_round_past_memorize_phase(memory_grid_manager, sample_game_session.id, grid.id, db_session)
         player = round3_finalists[0]
 
         cell = db_session.query(GridCell).filter(GridCell.memory_grid_id == grid.id).first()
@@ -267,7 +278,7 @@ class TestMemoryGridManager:
         grid = memory_grid_manager.create_memory_grid(
             game_session_id=sample_game_session.id, rows=7, cols=5
         )
-        round_obj = memory_grid_manager.start_memory_grid_round(sample_game_session.id, grid.id)
+        round_obj = _start_round_past_memorize_phase(memory_grid_manager, sample_game_session.id, grid.id, db_session)
         player = round3_finalists[0]
 
         cell = db_session.query(GridCell).filter(GridCell.memory_grid_id == grid.id).first()
@@ -288,7 +299,7 @@ class TestMemoryGridManager:
         grid = memory_grid_manager.create_memory_grid(
             game_session_id=sample_game_session.id, rows=7, cols=5
         )
-        round_obj = memory_grid_manager.start_memory_grid_round(sample_game_session.id, grid.id)
+        round_obj = _start_round_past_memorize_phase(memory_grid_manager, sample_game_session.id, grid.id, db_session)
         player = round3_finalists[0]
 
         cell = db_session.query(GridCell).filter(
@@ -346,7 +357,7 @@ class TestMemoryGridManager:
         grid = memory_grid_manager.create_memory_grid(
             game_session_id=sample_game_session.id, rows=7, cols=5
         )
-        round_obj = memory_grid_manager.start_memory_grid_round(sample_game_session.id, grid.id)
+        round_obj = _start_round_past_memorize_phase(memory_grid_manager, sample_game_session.id, grid.id, db_session)
         player = round3_finalists[0]
 
         cell = db_session.query(GridCell).filter(GridCell.memory_grid_id == grid.id).first()
@@ -385,7 +396,7 @@ class TestMemoryGridManager:
         grid = memory_grid_manager.create_memory_grid(
             game_session_id=sample_game_session.id, rows=7, cols=5
         )
-        round_obj = memory_grid_manager.start_memory_grid_round(sample_game_session.id, grid.id)
+        round_obj = _start_round_past_memorize_phase(memory_grid_manager, sample_game_session.id, grid.id, db_session)
         player = round3_finalists[0]
 
         cells = db_session.query(GridCell).filter(GridCell.memory_grid_id == grid.id).all()

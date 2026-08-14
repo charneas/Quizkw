@@ -231,6 +231,16 @@ class TestMemoryGridRound3API:
         start_response = self.client.post(f"/games/{self.game.code}/memory-grid/start", headers=self.host_headers)
         round_id = start_response.json()["round_id"]
 
+        # Playtest 2026-08-15 : reveal_cell refuse tant que la phase de
+        # mémorisation (MEMORIZE_DURATION_SECONDS) n'est pas écoulée — ces
+        # tests jouent immédiatement après le start, donc on recule
+        # created_at pour se placer après cette phase.
+        from app.memory_grid import MemoryGridRound, MEMORIZE_DURATION_SECONDS
+        from datetime import timedelta
+        round_obj = self.db_session.query(MemoryGridRound).filter(MemoryGridRound.id == round_id).first()
+        round_obj.created_at = datetime.now() - timedelta(seconds=MEMORIZE_DURATION_SECONDS + 10)
+        self.db_session.commit()
+
         return memory_grid_id, round_id
 
     def test_answer_cell_advances_turn(self):

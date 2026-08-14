@@ -102,6 +102,8 @@ export interface MemoryGridData {
   grid_size: number
   current_turn: number
   is_completed: boolean
+  round_id: number | null
+  memorize_seconds_remaining: number
 }
 
 export interface MemoryGridState {

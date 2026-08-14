@@ -19,6 +19,7 @@ import {
   selectPlayerThemes,
   createMemoryGridWithThemes,
   getMemoryGridStateByCode,
+  getHostToken,
 } from '../services/api'
 import type { GameSession, MemoryGridState, GridCell } from '../types'
 import type { AvailableTheme, PlayerSetupStatus } from '../services/api'
@@ -55,6 +56,10 @@ interface Standing {
 function MemoryGrid() {
   const { code } = useParams<{ code: string }>()
   const navigate = useNavigate()
+  // Chaque finaliste doit configurer son setup et jouer son tour depuis son
+  // PROPRE appareil — l'hôte ne fait qu'orchestrer (créer/démarrer la grille,
+  // appels host-gated côté serveur), il ne clique jamais à la place d'un joueur.
+  const isHost = code ? getHostToken(code) !== null : false
 
   const [game, setGame] = useState<GameSession | null>(null)
   const [gridState, setGridState] = useState<MemoryGridState | null>(null)
@@ -84,6 +89,13 @@ function MemoryGrid() {
   // Tout autre appareil (joueur éliminé, ou finaliste sur son propre device)
   // bascule en spectateur lecture seule au lieu d'échouer sur ces appels.
   const [isSpectator, setIsSpectator] = useState(false)
+  // Identité du finaliste utilisant CET appareil (null sur l'appareil hôte,
+  // ou tant qu'elle n'est pas résolue). Seul ce joueur peut configurer son
+  // propre setup et jouer quand c'est son tour, depuis son propre téléphone.
+  const [myPlayerId, setMyPlayerId] = useState<number | null>(null)
+  // Finaliste dont le setup personnel est terminé, en attente que l'hôte
+  // crée/démarre effectivement la grille (appels host-gated côté serveur).
+  const [waitingForGrid, setWaitingForGrid] = useState(false)
 
   // H.011 (BUG-302) : setup thème/couleur par finaliste avant que la grille
   // n'existe. Tant que setupPhase est vrai, aucune grille n'est créée.
@@ -103,6 +115,11 @@ function MemoryGrid() {
   const [pickerError, setPickerError] = useState('')
   const [pickerSubmitting, setPickerSubmitting] = useState(false)
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null)
+  // Playtest 2026-08-15 : phase de mémorisation avant le début du jeu — la
+  // grille complète (propriétaires des cases) reste visible un temps donné,
+  // décompté côté serveur (memorize_seconds_remaining), avant que les cases
+  // ne se cachent. Sans quoi "grille à MÉMORISER" n'avait aucun sens.
+  const [memorizeRemaining, setMemorizeRemaining] = useState<number | null>(null)
   // C-004 : effet visuel transitoire sur la cellule qui vient d'être jouée,
   // en plus de la modale de feedback existante. S'efface tout seul — ne doit
   // pas être dérivé de gridState pour ne pas se redéclencher à chaque poll.
@@ -141,14 +158,30 @@ function MemoryGrid() {
     return () => clearInterval(interval)
   }, [gridId, isCompleted])
 
-  // C-003 AC2/AC3 : le timer redémarre à chaque changement de joueur courant.
+  // Resynchronise le compte à rebours de mémorisation sur la valeur serveur
+  // (source de vérité) à chaque poll, puis le décompte localement à la
+  // seconde entre deux polls pour un affichage fluide.
   useEffect(() => {
-    if (currentPlayerId === null || isCompleted) {
+    if (gridState) setMemorizeRemaining(gridState.memory_grid.memorize_seconds_remaining)
+  }, [gridState])
+
+  useEffect(() => {
+    if (memorizeRemaining === null || memorizeRemaining <= 0) return
+    const timer = setTimeout(() => setMemorizeRemaining((prev) => (prev !== null ? Math.max(0, prev - 1) : null)), 1000)
+    return () => clearTimeout(timer)
+  }, [memorizeRemaining])
+
+  const isMemorizing = memorizeRemaining !== null && memorizeRemaining > 0
+
+  // C-003 AC2/AC3 : le timer redémarre à chaque changement de joueur courant.
+  // Ne démarre jamais pendant la phase de mémorisation.
+  useEffect(() => {
+    if (currentPlayerId === null || isCompleted || isMemorizing) {
       setTimeRemaining(null)
       return
     }
     setTimeRemaining(TURN_DURATION_SECONDS)
-  }, [currentPlayerId])
+  }, [currentPlayerId, isMemorizing])
 
   // C-003 AC4 : décompte du timer, un skip-turn déclenché une seule fois à 0.
   useEffect(() => {
@@ -234,7 +267,15 @@ function MemoryGrid() {
         return
       }
 
-      if (gameData.current_round !== 'manche_3') {
+      // Comme en Manches 1 et 2, l'hôte peut aussi être l'un des joueurs :
+      // isHost et « être ce finaliste » ne sont pas mutuellement exclusifs.
+      // Ce device configure/joue pour CE joueur (s'il en a un), et orchestre
+      // en plus la création/démarrage de la grille s'il porte le token hôte.
+      if (savedPlayerId !== null && finalists.includes(savedPlayerId)) {
+        setMyPlayerId(savedPlayerId)
+      }
+
+      if (isHost && gameData.current_round !== 'manche_3') {
         setInitStep('Manche 2 terminée — les 4 finalistes accèdent à la Manche 3...')
         await advanceToPhase3(code!)
       }
@@ -249,7 +290,14 @@ function MemoryGrid() {
         return
       }
 
-      await createGridAndStart()
+      if (isHost) {
+        await createGridAndStart()
+      } else {
+        // create-with-themes/start sont host-gated côté serveur : un appareil
+        // finaliste attend simplement que l'hôte les déclenche, puis rejoint
+        // la grille déjà prête via l'endpoint public par code.
+        setWaitingForGrid(true)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur initialisation grille')
     } finally {
@@ -267,12 +315,34 @@ function MemoryGrid() {
       const state = await getMemoryGridStateByCode(code!)
       setGridId(state.memory_grid.id)
       setGridState(state)
+      if (state.memory_grid.round_id) setRoundId(state.memory_grid.round_id)
       await refreshPlayers(state.memory_grid.id)
     } catch {
       // Pas encore de grille active — le polling de spectateur réessaiera.
     }
     setInitStep('')
   }
+
+  // Un finaliste dont le setup personnel est terminé attend que l'hôte crée
+  // et démarre la grille (host-gated), puis la rejoint dès qu'elle existe.
+  useEffect(() => {
+    if (!waitingForGrid || gridId) return
+    const poll = async () => {
+      try {
+        const state = await getMemoryGridStateByCode(code!)
+        setGridId(state.memory_grid.id)
+        setGridState(state)
+        if (state.memory_grid.round_id) setRoundId(state.memory_grid.round_id)
+        await refreshPlayers(state.memory_grid.id)
+        setWaitingForGrid(false)
+      } catch {
+        // L'hôte n'a pas encore créé/démarré la grille — on réessaiera.
+      }
+    }
+    poll()
+    const interval = setInterval(poll, POLL_INTERVAL_MS)
+    return () => clearInterval(interval)
+  }, [waitingForGrid, gridId, code])
 
   // Tant qu'un spectateur n'a pas encore de grille à suivre, on réessaie
   // périodiquement au lieu d'un polling en erreur silencieuse unique.
@@ -330,7 +400,12 @@ function MemoryGrid() {
         const statuses = await fetchSetupStatuses(finalistIds, gameSessionId)
         setSetupStatuses(statuses)
         if (Object.values(statuses).every((s) => s.setup_complete)) {
-          await createGridAndStart()
+          if (isHost) {
+            await createGridAndStart()
+          } else {
+            setSetupPhase(false)
+            setWaitingForGrid(true)
+          }
         }
       } catch (err) {
         console.error('Erreur refresh (setup):', err)
@@ -341,7 +416,9 @@ function MemoryGrid() {
   }, [setupPhase, gameSessionId, finalistIds])
 
   const openPicker = async (playerId: number) => {
-    if (!gameSessionId) return
+    // Chaque finaliste ne configure que SON propre setup, jamais celui d'un
+    // autre joueur — l'appareil hôte, lui, n'en configure aucun.
+    if (!gameSessionId || playerId !== myPlayerId) return
     setPickerError('')
     setPickerSelectedColor(null)
     setPickerSelectedThemeIds([])
@@ -389,7 +466,12 @@ function MemoryGrid() {
       closePicker()
 
       if (Object.values(statuses).every((s) => s.setup_complete)) {
-        await createGridAndStart()
+        if (isHost) {
+          await createGridAndStart()
+        } else {
+          setSetupPhase(false)
+          setWaitingForGrid(true)
+        }
       }
     } catch (err) {
       setPickerError(err instanceof Error ? err.message : 'Erreur lors de la sélection')
@@ -418,7 +500,10 @@ function MemoryGrid() {
     const seq = ++refreshSeq.current
     try {
       const state = await getMemoryGridState(gridId)
-      if (seq === refreshSeq.current) setGridState(state)
+      if (seq === refreshSeq.current) {
+        setGridState(state)
+        if (state.memory_grid.round_id) setRoundId(state.memory_grid.round_id)
+      }
     } catch (err) {
       console.error('Erreur refresh (state):', err)
     }
@@ -438,14 +523,14 @@ function MemoryGrid() {
   }
 
   const handleCellClick = async (cell: GridCell) => {
-    // BUG-401 (#32) : un spectateur (lecture seule) ne déclenche jamais
-    // d'action de jeu.
-    if (isSpectator || cell.status !== 'hidden' || !roundId || currentPlayerId === null) return
+    // Seul l'appareil du finaliste dont c'est le tour peut révéler une
+    // cellule — jamais l'hôte, jamais un autre finaliste (spectateur inclus).
+    if (isSpectator || cell.status !== 'hidden' || !roundId || myPlayerId === null || myPlayerId !== currentPlayerId) return
 
     try {
       await revealCell({
         round_id: roundId,
-        player_id: currentPlayerId,
+        player_id: myPlayerId,
         cell_id: cell.id,
       })
 
@@ -460,13 +545,13 @@ function MemoryGrid() {
 
   // AD-3 : on soumet la RÉPONSE du joueur ; le serveur seul juge.
   const handleSubmitAnswer = async () => {
-    if (isSpectator || !selectedCell || !roundId || currentPlayerId === null || submitting) return
+    if (isSpectator || !selectedCell || !roundId || myPlayerId === null || myPlayerId !== currentPlayerId || submitting) return
 
     setSubmitting(true)
     try {
       const result = await answerCell({
         round_id: roundId,
-        player_id: currentPlayerId,
+        player_id: myPlayerId,
         cell_id: selectedCell.id,
         player_answer: answerText,
       })
@@ -537,10 +622,15 @@ function MemoryGrid() {
                     {/* BUG-303/304 : jamais la couleur/les thèmes des autres avant la fin du setup — juste prêt/pas prêt. */}
                     <p className="text-xs text-text-muted">{ready ? '✅ Prêt' : '⏳ En attente'}</p>
                   </div>
-                  {!ready && (
+                  {!ready && id === myPlayerId && (
                     <button onClick={() => openPicker(id)} className="btn-secondary text-sm">
                       Configurer
                     </button>
+                  )}
+                  {!ready && id !== myPlayerId && (
+                    <p className="text-xs text-text-muted italic">
+                      {isHost ? 'Sur son propre appareil' : 'En attente...'}
+                    </p>
                   )}
                 </div>
               )
@@ -641,6 +731,19 @@ function MemoryGrid() {
     )
   }
 
+  // Setup personnel terminé côté finaliste, mais l'hôte n'a pas encore créé
+  // et démarré la grille (host-gated) : on l'attend, sans écran d'erreur.
+  if (waitingForGrid && !gridState) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="card text-center py-8 max-w-md">
+          <div className="animate-spin h-8 w-8 border-4 border-text border-t-transparent rounded-full mx-auto mb-4"></div>
+          <p className="text-text-muted">En attente que l'hôte lance la grille mémoire...</p>
+        </div>
+      </div>
+    )
+  }
+
   if (!game || !gridState) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
@@ -722,7 +825,55 @@ function MemoryGrid() {
           />
         </div>
 
-        {isCompleted ? (
+        {isMemorizing ? (
+          <div className="space-y-4">
+            <div className="card text-center py-4">
+              <p className="text-lg font-bold text-accent">🧠 Mémorisez la grille !</p>
+              <p className="text-sm text-text-muted mt-1">
+                Chaque case colorée appartient à son finaliste — retenez leur position avant qu'elles ne se cachent.
+              </p>
+              <p className={`text-2xl font-bold mt-2 ${memorizeRemaining! <= 10 ? 'text-danger animate-timer-pulse' : 'text-text'}`}>
+                ⏱ {memorizeRemaining}s
+              </p>
+              <div className="h-2 bg-border rounded-full overflow-hidden mt-2 max-w-md mx-auto">
+                <div
+                  className="h-full bg-brand transition-all duration-1000 ease-linear"
+                  style={{ width: `${((memorizeRemaining ?? 0) / 120) * 100}%` }}
+                />
+              </div>
+            </div>
+
+            <div className="card">
+              <h3 className="text-sm font-semibold text-text-muted mb-2">Finalistes</h3>
+              <div className="flex flex-wrap gap-3 mb-4">
+                {standings.map((s, idx) => {
+                  const color = FINALIST_COLORS[idx % FINALIST_COLORS.length]
+                  return (
+                    <span key={s.player_id} className={`px-3 py-1 rounded-full text-sm font-semibold ${color.bg} border ${color.border} ${color.text}`}>
+                      {s.player_name}
+                    </span>
+                  )
+                })}
+              </div>
+              <div
+                className="grid gap-2"
+                style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
+              >
+                {gridState.cells.map((cell) => {
+                  const color = colorFor(cell.assigned_player_id)
+                  return (
+                    <div
+                      key={cell.id}
+                      className={`aspect-square rounded-lg border-2 ${
+                        color ? `${color.bg} ${color.border}` : 'bg-surface-raised border-border'
+                      }`}
+                    />
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        ) : isCompleted ? (
           <div className="card text-center py-12">
             <div className="text-6xl mb-2 animate-bounce-once">🏆</div>
             <h2 className="text-4xl font-bold font-display text-accent mb-4 animate-fade-in">Partie terminée !</h2>
@@ -793,7 +944,11 @@ function MemoryGrid() {
                   {nameFor(currentPlayerId)}
                 </p>
                 <p className="text-xs text-text-muted mt-1">
-                  Cliquez sur une cellule cachée pour la révéler
+                  {myPlayerId !== null && myPlayerId === currentPlayerId
+                    ? 'Cliquez sur une cellule cachée pour la révéler'
+                    : isHost
+                      ? "Vous suivez la partie — le joueur agit depuis son propre appareil"
+                      : "En attente de votre tour..."}
                 </p>
                 {timeRemaining !== null && (
                   <div className="mt-3">
@@ -845,15 +1000,17 @@ function MemoryGrid() {
                 className="grid gap-2"
                 style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
               >
-                {gridState.cells.map((cell) => (
+                {gridState.cells.map((cell) => {
+                  const myTurn = myPlayerId !== null && myPlayerId === currentPlayerId
+                  return (
                   <button
                     key={cell.id}
                     onClick={() => handleCellClick(cell)}
-                    disabled={cell.status !== 'hidden' || !!selectedCell}
+                    disabled={cell.status !== 'hidden' || !!selectedCell || !myTurn}
                     className={`
                       aspect-square rounded-lg font-bold text-sm transition-all duration-200
                       ${getCellStyle(cell)}
-                      ${cell.status !== 'hidden' || selectedCell ? '' : 'active:scale-95'}
+                      ${cell.status !== 'hidden' || selectedCell || !myTurn ? '' : 'active:scale-95'}
                     `}
                     title={
                       // BUG-303 : ne pas fuiter le propriétaire au survol avant révélation.
@@ -864,7 +1021,8 @@ function MemoryGrid() {
                   >
                     {getCellContent(cell)}
                   </button>
-                ))}
+                  )
+                })}
               </div>
 
               <div className="flex gap-2">

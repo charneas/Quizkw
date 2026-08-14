@@ -216,6 +216,15 @@ function Round2() {
     return () => clearInterval(timer)
   }, [timeRemaining, answerResult])
 
+  // Temps écoulé sans réponse : soumission automatique d'une réponse vide
+  // (comptée fausse côté serveur) pour ne pas rester bloqué sur la question
+  // indéfiniment. Ne se déclenche qu'une fois (timeRemaining reste à 0 après).
+  useEffect(() => {
+    if (timeRemaining !== 0 || answerResult || !isMyTurn || !currentQuestion) return
+    handleAnswerSubmit('')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeRemaining])
+
   // Le classement intermédiaire (PlayerRound2Stats) n'a que player_id, pas de
   // nom — dérivé de qualifiedPlayers (déjà chargé) plutôt que d'ajouter un
   // appel réseau ou un champ backend supplémentaire.
