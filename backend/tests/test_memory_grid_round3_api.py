@@ -305,9 +305,11 @@ class TestMemoryGridRound3API:
         assert stale.status_code == 200
         assert stale.json()["current_turn"] == 1
 
-    def test_skip_turn_resets_revealed_cell_to_hidden(self):
-        """C-003 : une cellule révélée mais jamais répondue ne doit pas rester
-        exposée gratuitement au joueur suivant après un timeout."""
+    def test_skip_turn_marks_revealed_cell_permanently_lost(self):
+        """Playtest 2026-08-15 : une cellule révélée dont le temps de réponse
+        expire est définitivement perdue (comme une mauvaise réponse), pas
+        remise en jeu — personne ne doit pouvoir la re-choisir, ni la
+        "contrôler" sans y avoir répondu."""
         memory_grid_id, round_id = self._create_grid_and_round()
         first_player = self.finalists[0].id
 
@@ -322,7 +324,16 @@ class TestMemoryGridRound3API:
 
         self.db_session.expire_all()
         refreshed = self.db_session.query(GridCell).filter(GridCell.id == cell.id).first()
-        assert refreshed.status.value == "hidden"
+        assert refreshed.status.value == "answered"
+        assert refreshed.answered_by_player_id is None
+        assert refreshed.points_awarded == 0
+
+        # Ni le premier joueur ni un autre ne peuvent la re-choisir.
+        second_player = self.finalists[1].id
+        reveal_again = self.client.post("/memory-grid/reveal-cell", json={
+            "round_id": round_id, "player_id": second_player, "cell_id": cell.id,
+        })
+        assert reveal_again.status_code == 400
 
     def test_create_memory_grid_is_idempotent(self):
         """C-003 Scenario 6 : un rechargement de page ne doit pas recréer la grille."""

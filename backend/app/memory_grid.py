@@ -269,14 +269,16 @@ class MemoryGridManager:
         cell.status = GridCellStatus.ANSWERED
         cell.answered_by_player_id = player_id
 
-        # Barème : 2 de base, +1 si c'est sa propre cellule, +1 si elle est volée
+        # Barème (playtest 2026-08-15) : 1 point case neutre (grise), 2 points
+        # sur son propre thème, 3 points sur une case volée à un adversaire.
         points = 0
         if is_correct:
-            points = 2
-            if cell.assigned_player_id == player_id:
-                points += 1
-            elif cell.assigned_player_id:
-                points += 1
+            if cell.assigned_player_id is None:
+                points = 1
+            elif cell.assigned_player_id == player_id:
+                points = 2
+            else:
+                points = 3
 
         cell_type = "unassigned"
         if cell.assigned_player_id:

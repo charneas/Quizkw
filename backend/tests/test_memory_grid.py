@@ -221,7 +221,7 @@ class TestMemoryGridManager:
 
     def test_answer_cell_own_cell_points(self, memory_grid_manager, db_session, sample_game_session,
                                          round3_finalists, grid_questions):
-        """Répondre à sa propre cellule rapporte 3 points également."""
+        """Répondre à sa propre cellule (son thème) rapporte 2 points."""
         grid = memory_grid_manager.create_memory_grid(
             game_session_id=sample_game_session.id, rows=7, cols=5
         )
@@ -241,7 +241,7 @@ class TestMemoryGridManager:
         )
         db_session.commit()
 
-        assert result["points_awarded"] == 3
+        assert result["points_awarded"] == 2
         assert result["cell_type"] == "own"
 
     def test_answer_cell_wrong_answer_scores_nothing(self, memory_grid_manager, db_session,
@@ -316,7 +316,7 @@ class TestMemoryGridManager:
         db_session.commit()
 
         db_session.refresh(cell)
-        assert cell.points_awarded == 3
+        assert cell.points_awarded == 2
 
         # Premier rempart : le statut ANSWERED refuse déjà le rejeu
         with pytest.raises(ValueError):
@@ -340,7 +340,7 @@ class TestMemoryGridManager:
         stats = db_session.query(PlayerRound3Stats).filter(
             PlayerRound3Stats.player_id == player.id
         ).first()
-        assert stats.score == 3
+        assert stats.score == 2
 
     def test_finalists_are_the_top_four_of_round2(self, memory_grid_manager, sample_game_session,
                                                   round3_finalists):

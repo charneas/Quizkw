@@ -25,8 +25,10 @@ import type { GameSession, MemoryGridState, GridCell } from '../types'
 import type { AvailableTheme, PlayerSetupStatus } from '../services/api'
 import SpectatorView from '../components/SpectatorView'
 
-// C-003 AC2 : durée de tour, alignée sur le pattern déjà utilisé en Manche 2.
-const TURN_DURATION_SECONDS = 30
+// Playtest 2026-08-15 : le timer porte sur la RÉPONSE à la question révélée
+// (60s), pas sur le choix d'une case — il démarre quand la question apparaît
+// côté client, pas dès que c'est le tour du joueur.
+const TURN_DURATION_SECONDS = 60
 // C-003 AC4 : synchronisation par polling (décision d'architecture du 2026-07-24,
 // cf. epics-and-stories.md § C-003 AC4 — pas de WebSocket).
 const POLL_INTERVAL_MS = 2000
@@ -173,15 +175,17 @@ function MemoryGrid() {
 
   const isMemorizing = memorizeRemaining !== null && memorizeRemaining > 0
 
-  // C-003 AC2/AC3 : le timer redémarre à chaque changement de joueur courant.
-  // Ne démarre jamais pendant la phase de mémorisation.
+  // Playtest 2026-08-15 : le timer démarre quand la question apparaît
+  // effectivement sur le client (selectedCell renseigné après révélation),
+  // pas dès que c'est le tour du joueur — le temps pour choisir une case
+  // reste libre, seul le temps de réponse est chronométré.
   useEffect(() => {
-    if (currentPlayerId === null || isCompleted || isMemorizing) {
+    if (!selectedCell || isCompleted || isMemorizing) {
       setTimeRemaining(null)
       return
     }
     setTimeRemaining(TURN_DURATION_SECONDS)
-  }, [currentPlayerId, isMemorizing])
+  }, [selectedCell?.id, isMemorizing])
 
   // C-003 AC4 : décompte du timer, un skip-turn déclenché une seule fois à 0.
   useEffect(() => {
@@ -190,6 +194,11 @@ function MemoryGrid() {
       // BUG-401 (#32) : un spectateur ne pilote jamais le tour — laisse les
       // appareils actifs (host/finalistes) faire converger l'état, qu'il
       // suivra via le polling en lecture seule.
+      // Le temps de réponse est écoulé : referme la modale de question sur
+      // l'appareil du joueur concerné (la cellule redevient cachée côté
+      // serveur, inutile de continuer à afficher sa question localement).
+      setSelectedCell(null)
+      setAnswerText('')
       if (!isSpectator && gridId && currentTurn !== null) {
         skipTurn(gridId, currentTurn)
           .then(refreshState)
@@ -787,8 +796,10 @@ function MemoryGrid() {
 
   const getCellContent = (cell: GridCell) => {
     if (cell.status === 'matched') {
-      const name = nameFor(cell.matched_by_player_id)
-      return name ? initialFor(name) : '✓'
+      // Playtest 2026-08-15 : cellule perdue par expiration du temps de
+      // réponse (skip-turn) — personne ne l'a « gagnée ».
+      if (cell.matched_by_player_id === null) return '⏱'
+      return initialFor(nameFor(cell.matched_by_player_id))
     }
     if (cell.status === 'revealed') return '❓'
     return '?'
@@ -980,8 +991,9 @@ function MemoryGrid() {
                         +{answerFeedback.points} points !
                       </p>
                       <p className="text-sm text-text-muted">
-                        {answerFeedback.cellType === 'own' && '(Cellule propre — bonus +1)'}
-                        {answerFeedback.cellType === 'stolen' && '(Cellule volée — bonus +1)'}
+                        {answerFeedback.cellType === 'unassigned' && '(Case neutre — 1 pt)'}
+                        {answerFeedback.cellType === 'own' && '(Votre thème — 2 pts)'}
+                        {answerFeedback.cellType === 'stolen' && '(Case volée — 3 pts)'}
                       </p>
                     </>
                   ) : (
@@ -1050,12 +1062,28 @@ function MemoryGrid() {
                 <p className="text-text-muted mb-4">Question chargée...</p>
               )}
 
-              {selectedCell.assigned_player_id && (
-                <p className="text-sm text-text-muted mb-4">
-                  {selectedCell.assigned_player_id === currentPlayerId
-                    ? '🏠 Votre cellule ! (+1 bonus si bonne réponse)'
-                    : `⚔️ Cellule de ${nameFor(selectedCell.assigned_player_id)} (+1 bonus si volée)`}
-                </p>
+              <p className="text-sm text-text-muted mb-4">
+                {selectedCell.assigned_player_id === null
+                  ? '⬜ Case neutre (1 pt si bonne réponse)'
+                  : selectedCell.assigned_player_id === currentPlayerId
+                    ? '🏠 Votre thème ! (2 pts si bonne réponse)'
+                    : `⚔️ Cellule de ${nameFor(selectedCell.assigned_player_id)} (3 pts si volée)`}
+              </p>
+
+              {timeRemaining !== null && (
+                <div className="mb-4">
+                  <p className={`text-sm font-bold ${timeRemaining <= 10 ? 'text-danger animate-timer-pulse' : 'text-text'}`}>
+                    ⏱ {timeRemaining}s
+                  </p>
+                  <div className="h-2 bg-border rounded-full overflow-hidden mt-1">
+                    <div
+                      className={`h-full transition-all duration-1000 ease-linear ${
+                        timeRemaining <= 10 ? 'bg-danger' : timeRemaining <= 20 ? 'bg-brand-600' : 'bg-success'
+                      }`}
+                      style={{ width: `${(timeRemaining / TURN_DURATION_SECONDS) * 100}%` }}
+                    />
+                  </div>
+                </div>
               )}
 
               <p className="text-text-muted mb-2">

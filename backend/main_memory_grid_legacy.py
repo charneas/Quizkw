@@ -167,17 +167,21 @@ def skip_turn(memory_grid_id: int, expected_turn: int = None, db: Session = Depe
     if expected_turn is not None and memory_grid.current_turn != expected_turn:
         return {"memory_grid_id": memory_grid_id, "current_turn": memory_grid.current_turn}
 
-    # La cellule éventuellement révélée par le joueur dont le tour expire
-    # redevient cachée : sinon le joueur suivant hériterait d'une question
-    # déjà exposée gratuitement.
+    # Playtest 2026-08-15 : une cellule dont le temps de réponse (60s) expire
+    # est définitivement perdue — comme une mauvaise réponse — plutôt que
+    # remise en jeu cachée : sinon elle pourrait être re-choisie plus tard
+    # (par le même joueur ou un autre), ce qui n'a pas de sens pour une
+    # question déjà "grillée". Personne ne la contrôle (answered_by_player_id
+    # reste vide) : aucun point, aucune case comptée pour qui que ce soit.
     revealed_cell = db.query(GridCell).filter(
         GridCell.memory_grid_id == memory_grid_id,
         GridCell.status == GridCellStatus.REVEALED
     ).first()
     if revealed_cell:
-        revealed_cell.status = GridCellStatus.HIDDEN
+        revealed_cell.status = GridCellStatus.ANSWERED
 
     new_turn = manager.advance_turn(memory_grid_id)
+    manager.check_completion(memory_grid_id)
     db.commit()
 
     return {"memory_grid_id": memory_grid_id, "current_turn": new_turn}
