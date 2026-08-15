@@ -27,18 +27,18 @@ def _start_duel(test_client, game, theme, team1, team2):
         "theme_id": theme.id,
         "team1_id": team1.id,
         "team2_id": team2.id,
-    })
+    }, headers={"X-Host-Token": game.host_token})
     assert response.status_code == 200
     return response.json()["duel_id"]
 
 
-def _lose_duel_on_wrong_answer(test_client, duel_id, losing_team_id):
+def _lose_duel_on_wrong_answer(test_client, duel_id, losing_team):
     """team1 commence toujours (start_duel) — on le fait perdre direct."""
     response = test_client.post("/ping-pong/duel/answer", json={
         "duel_id": duel_id,
-        "team_id": losing_team_id,
+        "team_id": losing_team.id,
         "answer": "Cette réponse n'est pas dans la liste",
-    })
+    }, headers={"X-Team-Token": losing_team.team_token})
     assert response.status_code == 200
     assert response.json()["duel_continues"] is False
     return response.json()
@@ -51,7 +51,7 @@ def test_override_reverses_points_and_resumes_duel(test_client, db_session, samp
     duel_id = _start_duel(test_client, sample_game_session, theme, team1, team2)
 
     # team1 répond en premier (ordre fixé par start_duel) et perd — team2 gagne +2.
-    _lose_duel_on_wrong_answer(test_client, duel_id, team1.id)
+    _lose_duel_on_wrong_answer(test_client, duel_id, team1)
 
     db_session.expire_all()
     team2_after_loss = db_session.query(models.Team).filter(models.Team.id == team2.id).first()
@@ -93,7 +93,7 @@ def test_override_already_correct_turn_fails(test_client, db_session, sample_gam
         "duel_id": duel_id,
         "team_id": team1.id,
         "answer": "Paris",
-    })
+    }, headers={"X-Team-Token": team1.team_token})
     assert response.status_code == 200
     assert response.json()["is_correct"] is True
 
@@ -111,7 +111,7 @@ def test_override_tiebreak_duel_refused(test_client, db_session, sample_game_ses
     team2 = _make_team(db_session, sample_game_session, "Team B")
     theme = _make_theme(db_session, "Capitales", ["Paris"])
     duel_id = _start_duel(test_client, sample_game_session, theme, team1, team2)
-    _lose_duel_on_wrong_answer(test_client, duel_id, team1.id)
+    _lose_duel_on_wrong_answer(test_client, duel_id, team1)
 
     duel = db_session.query(models.PingPongDuel).filter(models.PingPongDuel.id == duel_id).first()
     duel.is_tiebreak = True
@@ -131,7 +131,7 @@ def test_override_requires_host_token(test_client, db_session, sample_game_sessi
     team2 = _make_team(db_session, sample_game_session, "Team B")
     theme = _make_theme(db_session, "Capitales", ["Paris"])
     duel_id = _start_duel(test_client, sample_game_session, theme, team1, team2)
-    _lose_duel_on_wrong_answer(test_client, duel_id, team1.id)
+    _lose_duel_on_wrong_answer(test_client, duel_id, team1)
 
     turn = db_session.query(models.PingPongTurn).filter(models.PingPongTurn.duel_id == duel_id).first()
 
@@ -154,7 +154,7 @@ def test_override_from_another_game_returns_404(test_client, db_session, sample_
     team2 = _make_team(db_session, other_game, "Team Y")
     theme = _make_theme(db_session, "Capitales", ["Paris"])
     duel_id = _start_duel(test_client, other_game, theme, team1, team2)
-    _lose_duel_on_wrong_answer(test_client, duel_id, team1.id)
+    _lose_duel_on_wrong_answer(test_client, duel_id, team1)
 
     turn = db_session.query(models.PingPongTurn).filter(models.PingPongTurn.duel_id == duel_id).first()
 

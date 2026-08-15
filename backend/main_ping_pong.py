@@ -1,10 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Optional
+
+from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app import models, schemas
 from app import manche1_orchestration
-from app.game_helpers import require_host
+from app.game_helpers import require_host, require_team_token, require_team_token_or_host
 
 router = APIRouter()
 
@@ -26,12 +28,19 @@ def get_random_ping_pong_theme(db: Session = Depends(get_db)):
     return theme
 
 @router.post("/ping-pong/duel/start", response_model=schemas.PingPongDuelResponse)
-def start_ping_pong_duel(request: schemas.StartPingPongDuelRequest, db: Session = Depends(get_db)):
+def start_ping_pong_duel(
+    request: schemas.StartPingPongDuelRequest,
+    db: Session = Depends(get_db),
+    x_team_token: Optional[str] = Header(default=None),
+    x_host_token: Optional[str] = Header(default=None),
+):
     """
     Démarrer un duel ping-pong entre 2 équipes.
     team1_id = équipe qui a tourné la roue (elle commence le duel).
     """
     from app.ping_pong_manager import PingPongManager
+
+    require_team_token_or_host(db, request.team1_id, x_team_token, x_host_token)
 
     manager = PingPongManager(db)
 
@@ -70,11 +79,17 @@ def start_ping_pong_duel(request: schemas.StartPingPongDuelRequest, db: Session 
     )
 
 @router.post("/ping-pong/duel/answer", response_model=schemas.SubmitPingPongAnswerResponse)
-def submit_ping_pong_duel_answer(request: schemas.SubmitPingPongAnswerRequest, db: Session = Depends(get_db)):
+def submit_ping_pong_duel_answer(
+    request: schemas.SubmitPingPongAnswerRequest,
+    db: Session = Depends(get_db),
+    x_team_token: Optional[str] = Header(default=None),
+):
     """
     Soumettre une réponse dans un duel ping-pong.
     """
     from app.ping_pong_manager import PingPongManager
+
+    require_team_token(db, request.team_id, x_team_token)
 
     manager = PingPongManager(db)
 

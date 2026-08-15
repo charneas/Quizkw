@@ -178,6 +178,7 @@ class TestSuddenDeath:
         response = self.client.post(
             f"/games/{self.game.code}/memory-grid/sudden-death/answer",
             json={"sudden_death_round_id": round_id, "player_id": winner.id, "player_answer": question.correct_answer},
+            headers={"X-Player-Token": winner.player_token},
         )
         assert response.status_code == 200
         data = response.json()
@@ -202,6 +203,7 @@ class TestSuddenDeath:
         wrong = self.client.post(
             f"/games/{self.game.code}/memory-grid/sudden-death/answer",
             json={"sudden_death_round_id": round_id, "player_id": loser.id, "player_answer": "reponse fausse"},
+            headers={"X-Player-Token": loser.player_token},
         )
         assert wrong.status_code == 200
         assert wrong.json()["is_correct"] is False
@@ -210,6 +212,7 @@ class TestSuddenDeath:
         right = self.client.post(
             f"/games/{self.game.code}/memory-grid/sudden-death/answer",
             json={"sudden_death_round_id": round_id, "player_id": winner.id, "player_answer": question.correct_answer},
+            headers={"X-Player-Token": winner.player_token},
         )
         assert right.status_code == 200
         assert right.json()["is_completed"] is True
@@ -223,6 +226,7 @@ class TestSuddenDeath:
             resp = self.client.post(
                 f"/games/{self.game.code}/memory-grid/sudden-death/answer",
                 json={"sudden_death_round_id": round_id, "player_id": player.id, "player_answer": "reponse fausse"},
+                headers={"X-Player-Token": player.player_token},
             )
             assert resp.status_code == 200
 

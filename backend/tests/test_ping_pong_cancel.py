@@ -31,7 +31,7 @@ def _start_duel(test_client, game, theme, team1, team2):
         "theme_id": theme.id,
         "team1_id": team1.id,
         "team2_id": team2.id,
-    })
+    }, headers={"X-Host-Token": game.host_token})
     assert response.status_code == 200
     return response.json()["duel_id"]
 
@@ -83,7 +83,7 @@ def test_teams_can_start_new_duel_after_cancellation(test_client, db_session, sa
         "theme_id": theme.id,
         "team1_id": team1.id,
         "team2_id": team3.id,
-    })
+    }, headers={"X-Host-Token": sample_game_session.host_token})
     assert response.status_code == 200
 
 

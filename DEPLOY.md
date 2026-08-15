@@ -70,6 +70,13 @@ SESSION_SECRET_KEY=<valeur-aleatoire-generee-par-deploiement>
 # variable, le reste du site fonctionne normalement — seule la génération de
 # contenu admin échoue.
 ANTHROPIC_API_KEY=<cle-api-anthropic>
+
+# Optionnel (revue de sécurité, 2026-08-15) : origines cross-origin autorisées
+# pour l'API, séparées par des virgules. Vide par défaut — le flux normal
+# (Vite en dev, Nginx en prod, section 6) est same-origin via proxy /api/ et
+# n'en a jamais besoin. Ne renseigner que si un frontend distinct doit
+# appeler l'API depuis un autre domaine.
+# CORS_ALLOWED_ORIGINS=https://exemple.com
 EOF
 ```
 

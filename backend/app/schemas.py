@@ -90,8 +90,10 @@ class Player(PlayerBase):
 
 class PlayerWithTeamToken(Player):
     """Réponse de join_team uniquement (BUG-101d) — voir TeamWithToken plus
-    bas pour l'explication de team_token."""
+    bas pour l'explication de team_token. player_token authentifie ensuite ce
+    joueur individuellement en Manche 2/3 (select-theme, /round2/.../answer)."""
     team_token: str
+    player_token: str
 
 class TeamBase(BaseModel):
     name: str

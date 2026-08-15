@@ -8,6 +8,7 @@ import os
 # inséré en clair dans le code).
 os.environ.setdefault("SESSION_SECRET_KEY", "test-secret-key-not-for-production")
 os.environ.setdefault("SESSION_COOKIE_SECURE", "false")  # TestClient n'est pas en HTTPS
+os.environ.setdefault("RATE_LIMIT_ENABLED", "false")  # voir app/rate_limit.py
 
 import pytest
 from sqlalchemy import create_engine

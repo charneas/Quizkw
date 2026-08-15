@@ -133,7 +133,11 @@ class TestSoloTeamsCompatibleWithWheelAndDuels:
         _create_team(test_client, code, "Solo B")
 
         with patch("main.random.randint", return_value=3):
-            response = test_client.post("/wheel/spin", json={"team_id": team["id"]})
+            response = test_client.post(
+                "/wheel/spin",
+                json={"team_id": team["id"]},
+                headers={"X-Host-Token": game["host_token"]},
+            )
 
         assert response.status_code == 200
         assert response.json()["effect_type"] == "malus"
@@ -157,6 +161,6 @@ class TestSoloTeamsCompatibleWithWheelAndDuels:
             "theme_id": theme.id,
             "team1_id": team_a["id"],
             "team2_id": team_b["id"],
-        })
+        }, headers={"X-Host-Token": game["host_token"]})
         assert response.status_code == 200
         assert response.json()["duel_id"] is not None

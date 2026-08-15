@@ -3,13 +3,14 @@ Router du domaine équipes/joueurs/tokens (Epic H, story H.015).
 """
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from sqlalchemy import or_, case, func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app import models, schemas
 from app.game_helpers import require_team_token
+from app.rate_limit import limiter
 
 router = APIRouter()
 
@@ -138,6 +139,7 @@ def join_team(code: str, team_id: int, player_create: schemas.PlayerCreate, db: 
         name=player.name,
         team_id=player.team_id,
         team_token=team.team_token,
+        player_token=player.player_token,
     )
 
 @router.post("/games/{code}/players/", response_model=schemas.Player)
@@ -181,7 +183,8 @@ def get_team_tokens(team_id: int, db: Session = Depends(get_db)):
     ]
 
 @router.post("/tokens/use")
-def use_token(data: dict, db: Session = Depends(get_db), x_team_token: Optional[str] = Header(default=None)):
+@limiter.limit("20/minute")
+def use_token(request: Request, data: dict, db: Session = Depends(get_db), x_team_token: Optional[str] = Header(default=None)):
     team_id = data.get("team_id")
     target_team_id = data.get("target_team_id")
     token_type = data.get("token_type", "").upper()  # Ex: "SWAP", "PENALTY", "BONUS"

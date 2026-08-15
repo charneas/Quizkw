@@ -32,7 +32,7 @@ def test_team_outside_duel_sees_spectator_duel(test_client, db_session, sample_g
         "theme_id": theme.id,
         "team1_id": team1.id,
         "team2_id": team2.id,
-    })
+    }, headers={"X-Host-Token": sample_game_session.host_token})
     assert start.status_code == 200
 
     resp = test_client.get(f"/game/{sample_game_session.code}/team/{bystander.id}/state")
@@ -56,7 +56,7 @@ def test_participant_team_never_gets_spectator_duel(test_client, db_session, sam
         "theme_id": theme.id,
         "team1_id": team1.id,
         "team2_id": team2.id,
-    })
+    }, headers={"X-Host-Token": sample_game_session.host_token})
     assert start.status_code == 200
 
     resp = test_client.get(f"/game/{sample_game_session.code}/team/{team1.id}/state")
@@ -83,7 +83,7 @@ def test_spectator_duel_reflects_completion_and_winner(test_client, db_session, 
         "theme_id": theme.id,
         "team1_id": team1.id,
         "team2_id": team2.id,
-    })
+    }, headers={"X-Host-Token": sample_game_session.host_token})
     duel_id = start.json()["duel_id"]
 
     duel = db_session.query(models.PingPongDuel).filter(models.PingPongDuel.id == duel_id).first()

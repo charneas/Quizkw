@@ -1,15 +1,16 @@
 import json
 import logging
 import random
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
 from app.database import get_db
 from app import models, schemas
 from app.round2_manager import Round2Manager
-from app.game_helpers import require_host, require_host_by_game_code
+from app.game_helpers import require_host, require_host_by_game_code, require_player_token
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +122,12 @@ def get_round2_themes(game_code: str, db: Session = Depends(get_db)):
     }
 
 @router.post("/round2/{game_code}/select-theme", response_model=schemas.ThemeSelectionResponse)
-def select_theme(game_code: str, theme_request: schemas.ThemeSelectionRequest, db: Session = Depends(get_db)):
+def select_theme(
+    game_code: str,
+    theme_request: schemas.ThemeSelectionRequest,
+    db: Session = Depends(get_db),
+    x_player_token: Optional[str] = Header(default=None),
+):
     """
     Select a theme for a player in Round 2
     """
@@ -135,10 +141,8 @@ def select_theme(game_code: str, theme_request: schemas.ThemeSelectionRequest, d
 
     manager = Round2Manager(db)
 
-    # Verify that the player exists
-    player = db.query(models.Player).filter(models.Player.id == theme_request.player_id).first()
-    if not player:
-        raise HTTPException(status_code=404, detail="Joueur non trouvé")
+    # Vérifie que le joueur existe ET que l'appelant est bien ce joueur.
+    player = require_player_token(db, theme_request.player_id, x_player_token)
 
     try:
         print(f"DEBUG: Starting select_theme for player_id={theme_request.player_id}, theme_id={theme_request.theme_id}")
@@ -265,13 +269,20 @@ def get_round2_question(game_code: str, player_id: int, db: Session = Depends(ge
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.post("/round2/{game_code}/answer", response_model=schemas.Round2AnswerResponse)
-def submit_round2_answer(game_code: str, answer_request: schemas.Round2AnswerRequest, db: Session = Depends(get_db)):
+def submit_round2_answer(
+    game_code: str,
+    answer_request: schemas.Round2AnswerRequest,
+    db: Session = Depends(get_db),
+    x_player_token: Optional[str] = Header(default=None),
+):
     """
     Submit an answer to a Round 2 question
     """
     game = db.query(models.GameSession).filter(models.GameSession.code == game_code).first()
     if not game:
         raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
+
+    require_player_token(db, answer_request.player_id, x_player_token)
 
     manager = Round2Manager(db)
 

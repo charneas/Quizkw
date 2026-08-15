@@ -27,7 +27,7 @@ class TestWheelSpinPersistence:
         _make_team(db_session, sample_game_session, "Team B")
 
         with patch("main.random.randint", return_value=3):
-            response = test_client.post("/wheel/spin", json={"team_id": team1.id})
+            response = test_client.post("/wheel/spin", json={"team_id": team1.id}, headers={"X-Team-Token": team1.team_token})
 
         assert response.status_code == 200
         data = response.json()
@@ -51,7 +51,7 @@ class TestWheelSpinPersistence:
         _make_team(db_session, sample_game_session, "Team B")
 
         with patch("main.random.randint", return_value=1):
-            response = test_client.post("/wheel/spin", json={"team_id": team1.id})
+            response = test_client.post("/wheel/spin", json={"team_id": team1.id}, headers={"X-Team-Token": team1.team_token})
 
         assert response.status_code == 200
         db_session.expire_all()
@@ -63,7 +63,7 @@ class TestWheelSpinPersistence:
         _make_team(db_session, sample_game_session, "Team B")
 
         with patch("main.random.randint", return_value=20):
-            response = test_client.post("/wheel/spin", json={"team_id": team1.id})
+            response = test_client.post("/wheel/spin", json={"team_id": team1.id}, headers={"X-Team-Token": team1.team_token})
 
         assert response.status_code == 200
         assert response.json() == {"effect_type": "bonus", "value": 3, "message": "Résultat 20: Bonus de 3 points!"}
@@ -78,7 +78,7 @@ class TestWheelSpinPersistence:
         _make_team(db_session, sample_game_session, "Team B")
 
         with patch("main.random.randint", return_value=8):
-            response = test_client.post("/wheel/spin", json={"team_id": team1.id})
+            response = test_client.post("/wheel/spin", json={"team_id": team1.id}, headers={"X-Team-Token": team1.team_token})
 
         assert response.status_code == 200
         data = response.json()
@@ -94,7 +94,7 @@ class TestWheelSpinPersistence:
         _make_team(db_session, sample_game_session, "Team B")
 
         with patch("main.random.randint", return_value=15):
-            response = test_client.post("/wheel/spin", json={"team_id": team1.id})
+            response = test_client.post("/wheel/spin", json={"team_id": team1.id}, headers={"X-Team-Token": team1.team_token})
 
         assert response.status_code == 200
         data = response.json()
@@ -115,7 +115,7 @@ class TestWheelSpinPersistence:
         team1 = _make_team(db_session, sample_game_session, "Solo Team", score=5)
 
         with patch("main.random.randint", return_value=15):
-            response = test_client.post("/wheel/spin", json={"team_id": team1.id})
+            response = test_client.post("/wheel/spin", json={"team_id": team1.id}, headers={"X-Team-Token": team1.team_token})
 
         assert response.status_code == 200
         data = response.json()
@@ -131,7 +131,7 @@ class TestWheelSpinPersistence:
         team2 = _make_team(db_session, sample_game_session, "Team B", score=5)
 
         with patch("main.random.randint", return_value=20):
-            spin_response = test_client.post("/wheel/spin", json={"team_id": team1.id})
+            spin_response = test_client.post("/wheel/spin", json={"team_id": team1.id}, headers={"X-Team-Token": team1.team_token})
         assert spin_response.status_code == 200
 
         # AC #2 : une AUTRE équipe (pas celle qui a tourné) voit l'événement.
@@ -144,9 +144,13 @@ class TestWheelSpinPersistence:
         assert event["target_team_id"] == team1.id
         assert event["target_team_name"] == "Team A"
 
-    def test_spin_unknown_team_returns_404(self, test_client, db_session, sample_game_session):
+    def test_spin_unknown_team_returns_403_without_valid_token(self, test_client, db_session, sample_game_session):
+        # BUG-101d-like : même 403 qu'un token invalide sur une équipe
+        # existante, pour ne pas laisser un appelant non authentifié
+        # distinguer "équipe inconnue" de "mauvais token" (anti-énumération,
+        # même principe que require_team_token).
         response = test_client.post("/wheel/spin", json={"team_id": 999999})
-        assert response.status_code == 404
+        assert response.status_code == 403
 
     def test_response_schema_has_no_extra_fields(self, test_client, db_session, sample_game_session):
         """AC #4 : régression de contrat — pas de champ ajouté à WheelSpinResponse."""
@@ -154,7 +158,7 @@ class TestWheelSpinPersistence:
         _make_team(db_session, sample_game_session, "Team B")
 
         with patch("main.random.randint", return_value=20):
-            response = test_client.post("/wheel/spin", json={"team_id": team1.id})
+            response = test_client.post("/wheel/spin", json={"team_id": team1.id}, headers={"X-Team-Token": team1.team_token})
 
         assert response.status_code == 200
         assert set(response.json().keys()) == {"effect_type", "value", "message"}

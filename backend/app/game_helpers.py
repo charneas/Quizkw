@@ -81,3 +81,48 @@ def require_team_token(db: Session, team_id, x_team_token: Optional[str]) -> mod
     if not team or not x_team_token or not secrets.compare_digest(x_team_token, team.team_token):
         raise HTTPException(status_code=403, detail="Action réservée aux membres de cette équipe")
     return team
+
+
+def require_player_token(db: Session, player_id, x_player_token: Optional[str]) -> models.Player:
+    """Analogue de require_team_token, à l'échelle d'un joueur individuel
+    (Manche 2/3). player_token est reçu par le joueur à son adhésion
+    (join_team) et connu de lui seul — contrairement à team_token, qui est
+    partagé entre coéquipiers.
+    """
+    if not isinstance(player_id, int):
+        raise HTTPException(status_code=400, detail="player_id requis")
+    player = db.query(models.Player).filter(models.Player.id == player_id).first()
+    if not player or not x_player_token or not secrets.compare_digest(x_player_token, player.player_token):
+        raise HTTPException(status_code=403, detail="Action réservée à ce joueur")
+    return player
+
+
+def require_team_token_or_host(
+    db: Session,
+    team_id,
+    x_team_token: Optional[str],
+    x_host_token: Optional[str],
+) -> models.Team:
+    """Comme require_team_token, mais accepte aussi le host_token de la partie.
+
+    Certaines actions (tour de roue, lancement de duel ping-pong) sont
+    déclenchées soit par l'équipe elle-même (mode hostless, un seul
+    appareil), soit par l'hôte pour le compte d'une équipe (HostGame.tsx,
+    appareil séparé qui ne connaît jamais le team_token des équipes) — les
+    deux flux sont légitimes, contrairement aux endpoints purement
+    self-service comme /answers/ ou /tokens/use.
+    """
+    if not isinstance(team_id, int):
+        raise HTTPException(status_code=400, detail="team_id requis")
+    team = db.query(models.Team).filter(models.Team.id == team_id).first()
+    if not team:
+        raise HTTPException(status_code=403, detail="Action réservée à l'hôte ou aux membres de cette équipe")
+
+    if x_team_token and secrets.compare_digest(x_team_token, team.team_token):
+        return team
+
+    game = db.query(models.GameSession).filter(models.GameSession.id == team.game_session_id).first()
+    if game and x_host_token and secrets.compare_digest(x_host_token, game.host_token):
+        return team
+
+    raise HTTPException(status_code=403, detail="Action réservée à l'hôte ou aux membres de cette équipe")

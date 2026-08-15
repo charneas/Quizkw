@@ -60,8 +60,8 @@ def test_concurrent_duel_starts_for_same_team_never_create_two_active_duels():
         setup_db.commit()
         setup_db.refresh(theme)
 
-        game_id, team1_id, team2_id, team3_id, theme_id = (
-            game.id, team1.id, team2.id, team3.id, theme.id
+        game_id, host_token, team1_id, team2_id, team3_id, theme_id = (
+            game.id, game.host_token, team1.id, team2.id, team3.id, theme.id
         )
         setup_db.close()
 
@@ -75,7 +75,7 @@ def test_concurrent_duel_starts_for_same_team_never_create_two_active_duels():
                 "theme_id": theme_id,
                 "team1_id": team_a,
                 "team2_id": team_b,
-            })
+            }, headers={"X-Host-Token": host_token})
             responses.append(resp)
 
         # team1 est commune aux deux tentatives : au plus une doit réussir.

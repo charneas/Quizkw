@@ -20,12 +20,12 @@ from app.database import Base, get_db
 from main import app as main_app
 
 
-def _submit(test_client, question_id, team_id, player_answer):
+def _submit(test_client, question_id, team_id, player_answer, team_token=None):
     return test_client.post("/answers/", json={
         "question_id": question_id,
         "team_id": team_id,
         "player_answer": player_answer,
-    })
+    }, headers={"X-Team-Token": team_token} if team_token else {})
 
 
 def test_last_answer_before_validation_wins(test_client, db_session, sample_game_session, sample_team, sample_question):
@@ -33,12 +33,12 @@ def test_last_answer_before_validation_wins(test_client, db_session, sample_game
     db_session.commit()
 
     # Joueur A répond faux, puis joueur B (même équipe) corrige avec la bonne réponse.
-    resp_a = _submit(test_client, sample_question.id, sample_team.id, "mauvaise réponse")
+    resp_a = _submit(test_client, sample_question.id, sample_team.id, "mauvaise réponse", sample_team.team_token)
     assert resp_a.status_code == 200
     assert resp_a.json()["pending_validation"] is True
     assert resp_a.json()["is_correct"] is None  # pas encore verrouillée : pas d'oracle
 
-    resp_b = _submit(test_client, sample_question.id, sample_team.id, sample_question.correct_answer)
+    resp_b = _submit(test_client, sample_question.id, sample_team.id, sample_question.correct_answer, sample_team.team_token)
     assert resp_b.status_code == 200
 
     # Une seule ligne Answer doit exister pour ce couple (question, équipe),
@@ -70,7 +70,7 @@ def test_validate_answers_exposes_player_answer_text(test_client, db_session, sa
     sample_game_session.current_question_id = sample_question.id
     db_session.commit()
 
-    _submit(test_client, sample_question.id, sample_team.id, "Une réponse loufoque")
+    _submit(test_client, sample_question.id, sample_team.id, "Une réponse loufoque", sample_team.team_token)
 
     validate_resp = test_client.post(
         f"/games/{sample_game_session.code}/validate-answers",
@@ -91,15 +91,15 @@ def test_validate_answers_exposes_player_answer_text(test_client, db_session, sa
 
 def test_empty_or_blank_answer_rejected(test_client, sample_game_session, sample_team, sample_question):
     sample_game_session.current_question_id = sample_question.id
-    assert _submit(test_client, sample_question.id, sample_team.id, "").status_code == 422
-    assert _submit(test_client, sample_question.id, sample_team.id, "   ").status_code == 422
+    assert _submit(test_client, sample_question.id, sample_team.id, "", sample_team.team_token).status_code == 422
+    assert _submit(test_client, sample_question.id, sample_team.id, "   ", sample_team.team_token).status_code == 422
 
 
 def test_answer_locked_after_host_validation(test_client, db_session, sample_game_session, sample_team, sample_question):
     sample_game_session.current_question_id = sample_question.id
     db_session.commit()
 
-    _submit(test_client, sample_question.id, sample_team.id, sample_question.correct_answer)
+    _submit(test_client, sample_question.id, sample_team.id, sample_question.correct_answer, sample_team.team_token)
 
     test_client.post(
         f"/games/{sample_game_session.code}/validate-answers",
@@ -111,7 +111,7 @@ def test_answer_locked_after_host_validation(test_client, db_session, sample_gam
     # Un joueur retardataire ne peut plus changer la réponse une fois validée ;
     # la réponse verrouillée révèle maintenant is_correct (plus d'oracle possible
     # puisqu'elle ne peut plus changer).
-    late_resp = _submit(test_client, sample_question.id, sample_team.id, "mauvaise réponse")
+    late_resp = _submit(test_client, sample_question.id, sample_team.id, "mauvaise réponse", sample_team.team_token)
     assert late_resp.status_code == 200
     assert late_resp.json()["is_correct"] is True
     assert late_resp.json()["pending_validation"] is False
@@ -181,7 +181,7 @@ def test_concurrent_submissions_never_duplicate_rows():
 
         game.current_question_id = question.id
         setup_db.commit()
-        team_id, question_id = team.id, question.id
+        team_id, team_token, question_id = team.id, team.team_token, question.id
         setup_db.close()
 
         responses = []
@@ -193,7 +193,7 @@ def test_concurrent_submissions_never_duplicate_rows():
                 "question_id": question_id,
                 "team_id": team_id,
                 "player_answer": player_answer,
-            })
+            }, headers={"X-Team-Token": team_token})
             responses.append(resp)
 
         t1 = threading.Thread(target=submit, args=("mauvaise réponse",))

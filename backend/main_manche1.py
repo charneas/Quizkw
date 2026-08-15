@@ -3,7 +3,9 @@ Router du domaine questions/roue/validation de Manche 1 (Epic H, story H.016).
 """
 import random
 
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Optional
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy import func
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
@@ -11,7 +13,8 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app import models, schemas
 from app import manche1_orchestration
-from app.game_helpers import require_host, award_points_with_bonus, wheel_effect_message
+from app.game_helpers import require_host, require_team_token, require_team_token_or_host, award_points_with_bonus, wheel_effect_message
+from app.rate_limit import limiter
 from app.score_utils import apply_team_score_delta
 
 router = APIRouter()
@@ -245,7 +248,13 @@ def get_answers_status(code: str, question_id: int = None, db: Session = Depends
     }
 
 @router.post("/answers/", response_model=schemas.AnswerResponse)
-def submit_answer(answer_create: schemas.AnswerCreate, db: Session = Depends(get_db)):
+@limiter.limit("30/minute")
+def submit_answer(
+    request: Request,
+    answer_create: schemas.AnswerCreate,
+    db: Session = Depends(get_db),
+    x_team_token: Optional[str] = Header(default=None),
+):
     """
     Soumettre une réponse à une question
     """
@@ -253,9 +262,7 @@ def submit_answer(answer_create: schemas.AnswerCreate, db: Session = Depends(get
     if not question:
         raise HTTPException(status_code=404, detail="Question non trouvée")
 
-    team = db.query(models.Team).filter(models.Team.id == answer_create.team_id).first()
-    if not team:
-        raise HTTPException(status_code=404, detail="Équipe non trouvée")
+    team = require_team_token(db, answer_create.team_id, x_team_token)
 
     is_correct = answer_create.player_answer.strip().lower() == question.correct_answer.strip().lower()
 
@@ -385,7 +392,14 @@ def validate_answers(code: str, db: Session = Depends(get_db), _host: models.Gam
     }
 
 @router.post("/wheel/spin", response_model=schemas.WheelSpinResponse)
-def spin_wheel(wheel_spin: schemas.WheelSpinRequest, db: Session = Depends(get_db)):
+@limiter.limit("20/minute")
+def spin_wheel(
+    request: Request,
+    wheel_spin: schemas.WheelSpinRequest,
+    db: Session = Depends(get_db),
+    x_team_token: Optional[str] = Header(default=None),
+    x_host_token: Optional[str] = Header(default=None),
+):
     """
     Tourner la roue de bonus/malus (tous les 5 tours selon les règles).
 
@@ -404,11 +418,7 @@ def spin_wheel(wheel_spin: schemas.WheelSpinRequest, db: Session = Depends(get_d
     # BUG-101 pour les jetons) — la vraie protection contre une perte de mise
     # à jour vient de apply_team_score_delta() plus bas (UPDATE atomique),
     # pas d'un verrou de ligne qui n'existe pas réellement.
-    team = db.query(models.Team).filter(
-        models.Team.id == wheel_spin.team_id
-    ).first()
-    if not team:
-        raise HTTPException(status_code=404, detail="Équipe introuvable")
+    team = require_team_token_or_host(db, wheel_spin.team_id, x_team_token, x_host_token)
 
     has_opponent = db.query(models.Team.id).filter(
         models.Team.game_session_id == team.game_session_id,

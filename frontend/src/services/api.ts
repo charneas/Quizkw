@@ -52,6 +52,26 @@ function teamHeaders(teamId: number): Record<string, string> {
   return token ? { 'X-Team-Token': token } : {}
 }
 
+// player_token est reçu par le joueur à son adhésion (joinTeam) et prouve
+// son identité individuelle en Manche 2/3 (select-theme, /round2/.../answer) —
+// contrairement à team_token, il n'est pas partagé entre coéquipiers.
+function playerTokenStorageKey(playerId: number) {
+  return `quizkw_player_token_${playerId}`
+}
+
+export function storePlayerToken(playerId: number, playerToken: string) {
+  localStorage.setItem(playerTokenStorageKey(playerId), playerToken)
+}
+
+export function getPlayerToken(playerId: number): string | null {
+  return localStorage.getItem(playerTokenStorageKey(playerId))
+}
+
+function playerHeaders(playerId: number): Record<string, string> {
+  const token = getPlayerToken(playerId)
+  return token ? { 'X-Player-Token': token } : {}
+}
+
 // BUG-501 (#33) : identité du joueur (id + nom), saisie une seule fois en
 // Manche 1 (joinTeam) et réutilisée en Manche 2/3 au lieu de la redemander.
 // Même clé que celle déjà utilisée par Round2.tsx pour restaurer sa propre
@@ -175,12 +195,15 @@ export async function createPlayer(gameCode: string, data: { name: string }) {
 }
 
 export async function joinTeam(gameCode: string, teamId: number, data: { name: string }) {
-  const player = await fetchApi<{ id: number; name: string; team_id: number; team_token?: string }>(`/games/${gameCode}/teams/${teamId}/players/`, {
+  const player = await fetchApi<{ id: number; name: string; team_id: number; team_token?: string; player_token?: string }>(`/games/${gameCode}/teams/${teamId}/players/`, {
     method: 'POST',
     body: JSON.stringify(data),
   })
   if (player?.team_token) {
     storeTeamToken(teamId, player.team_token)
+  }
+  if (player?.id && player?.player_token) {
+    storePlayerToken(player.id, player.player_token)
   }
   if (player?.id && player?.name) {
     storePlayerIdentity(gameCode, { id: player.id, name: player.name, team_id: player.team_id })
@@ -293,15 +316,21 @@ export async function submitAnswer(data: any) {
   return fetchApi<any>('/answers/', {
     method: 'POST',
     body: JSON.stringify(data),
+    headers: teamHeaders(data.team_id),
   })
 }
 
 // === Roue Bonus/Malus ===
 
-export async function spinWheel(teamId: number) {
+// gameCode est fourni côté HostGame.tsx (l'hôte tourne la roue pour le
+// compte d'une équipe dont il ne connaît jamais le team_token — appareil
+// séparé) ; côté Game.tsx (mode hostless single-device), seul teamHeaders
+// s'applique puisque gameCode n'est pas passé.
+export async function spinWheel(teamId: number, gameCode?: string) {
   return fetchApi<any>('/wheel/spin', {
     method: 'POST',
     body: JSON.stringify({ team_id: teamId }),
+    headers: { ...teamHeaders(teamId), ...(gameCode ? hostHeaders(gameCode) : {}) },
   })
 }
 
@@ -356,6 +385,7 @@ export async function selectPlayerColor(playerId: number, gameSessionId: number,
     {
       method: 'POST',
       body: JSON.stringify({ player_id: playerId, game_session_id: gameSessionId, color }),
+      headers: playerHeaders(playerId),
     }
   )
 }
@@ -366,6 +396,7 @@ export async function selectPlayerThemes(playerId: number, gameSessionId: number
     {
       method: 'POST',
       body: JSON.stringify({ player_id: playerId, game_session_id: gameSessionId, theme_ids: themeIds }),
+      headers: playerHeaders(playerId),
     }
   )
 }
@@ -405,6 +436,7 @@ export async function revealCell(data: SelectCellRequest) {
   return fetchApi<{ status: string; cell: unknown }>('/memory-grid/reveal-cell', {
     method: 'POST',
     body: JSON.stringify(data),
+    headers: playerHeaders(data.player_id),
   })
 }
 
@@ -412,6 +444,7 @@ export async function answerCell(data: AnswerCellRequest) {
   return fetchApi<AnswerCellResponse>('/memory-grid/answer-cell', {
     method: 'POST',
     body: JSON.stringify(data),
+    headers: playerHeaders(data.player_id),
   })
 }
 
@@ -476,6 +509,7 @@ export async function answerSuddenDeath(code: string, roundId: number, playerId:
     {
       method: 'POST',
       body: JSON.stringify({ sudden_death_round_id: roundId, player_id: playerId, player_answer: answer }),
+      headers: playerHeaders(playerId),
     }
   )
 }
@@ -523,6 +557,7 @@ export async function selectRound2Theme(gameCode: string, data: { player_id: num
   return fetchApi<any>(`/round2/${gameCode}/select-theme`, {
     method: 'POST',
     body: JSON.stringify(data),
+    headers: playerHeaders(data.player_id),
   })
 }
 export { selectRound2Theme as selectTheme }
@@ -536,6 +571,7 @@ export async function submitRound2Answer(gameCode: string, data: { player_id: nu
   return fetchApi<any>(`/round2/${gameCode}/answer`, {
     method: 'POST',
     body: JSON.stringify(data),
+    headers: playerHeaders(data.player_id),
   })
 }
 export { submitRound2Answer as submitAnswerRound2 }
@@ -639,12 +675,14 @@ export async function getTeamState(gameCode: string, teamId: number) {
   }>(`/game/${gameCode}/team/${teamId}/state`)
 }
 
+// gameCode : même raison que spinWheel — l'hôte lance le duel pour le
+// compte de team1 sans connaître son team_token (appareil séparé).
 export async function startPingPongDuel(data: {
   game_session_id: number
   theme_id: number
   team1_id: number
   team2_id: number
-}) {
+}, gameCode?: string) {
   return fetchApi<{
     duel_id: number
     theme: {
@@ -665,6 +703,7 @@ export async function startPingPongDuel(data: {
   }>('/ping-pong/duel/start', {
     method: 'POST',
     body: JSON.stringify(data),
+    headers: { ...teamHeaders(data.team1_id), ...(gameCode ? hostHeaders(gameCode) : {}) },
   })
 }
 
@@ -685,6 +724,7 @@ export async function submitPingPongDuelAnswer(data: {
   }>('/ping-pong/duel/answer', {
     method: 'POST',
     body: JSON.stringify(data),
+    headers: teamHeaders(data.team_id),
   })
 }
 

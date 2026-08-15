@@ -11,7 +11,7 @@ session admin valide via le guard partagé `require_admin_session`. Seules
 import json
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import case, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.auth import hash_password, require_admin_session, sign_session, verify_password, COOKIE_NAME, SESSION_COOKIE_SECURE
 from app.database import get_db
 from app import models, schemas
+from app.rate_limit import limiter
 from app.schemas_admin import (
     ThemeUpdate, QuestionUpdate,
     ThemeDeleteWarning, ThemeDeleteResponse, QuestionDeleteResponse,
@@ -36,7 +37,8 @@ auth_router = APIRouter(prefix="/admin", tags=["Admin"])
 
 
 @auth_router.post("/login")
-def login(payload: schemas.AdminLoginRequest, response: Response, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def login(request: Request, payload: schemas.AdminLoginRequest, response: Response, db: Session = Depends(get_db)):
     admin = db.query(models.Admin).filter(models.Admin.email == payload.email).first()
     # AC #4 : message générique identique, que l'email soit inconnu ou le mot
     # de passe incorrect — ne jamais révéler si le compte existe (AD-6/NFR1).

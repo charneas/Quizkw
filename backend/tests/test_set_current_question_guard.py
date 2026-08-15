@@ -38,7 +38,7 @@ def test_set_current_question_rejected_while_duel_active(
         "theme_id": theme.id,
         "team1_id": team1.id,
         "team2_id": team2.id,
-    })
+    }, headers=host_headers)
     assert duel.status_code == 200
 
     response = test_client.post(
@@ -67,7 +67,7 @@ def test_set_current_question_allowed_after_duel_completed_normally(
         "theme_id": theme.id,
         "team1_id": team1.id,
         "team2_id": team2.id,
-    })
+    }, headers=host_headers)
     duel_id = duel_response.json()["duel_id"]
 
     duel = db_session.query(models.PingPongDuel).filter(models.PingPongDuel.id == duel_id).first()
@@ -96,7 +96,7 @@ def test_set_current_question_allowed_after_duel_cancelled(
         "theme_id": theme.id,
         "team1_id": team1.id,
         "team2_id": team2.id,
-    })
+    }, headers=host_headers)
     duel_id = duel_response.json()["duel_id"]
 
     cancel = test_client.post(

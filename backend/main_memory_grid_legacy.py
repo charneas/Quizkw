@@ -1,13 +1,13 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app import models, schemas
 from app.memory_grid import MemoryGridManager, MemoryGrid, GridCell, MemoryGridRound, GridCellStatus, SuddenDeathRound
-from app.game_helpers import require_host
+from app.game_helpers import require_host, require_player_token
 
 logger = logging.getLogger(__name__)
 
@@ -95,10 +95,15 @@ def get_memory_grid_state(memory_grid_id: int, db: Session = Depends(get_db)):
     return grid_state
 
 @router.post("/memory-grid/reveal-cell")
-def reveal_cell(reveal_request: schemas.SelectCellRequest, db: Session = Depends(get_db)):
+def reveal_cell(
+    reveal_request: schemas.SelectCellRequest,
+    db: Session = Depends(get_db),
+    x_player_token: Optional[str] = Header(default=None),
+):
     """
     Révéler une cellule dans la grille mémoire
     """
+    require_player_token(db, reveal_request.player_id, x_player_token)
     manager = MemoryGridManager(db)
     # AD-5 : l'endpoint possède la transaction. AD-6 : LookupError -> 404, ValueError -> 400.
     try:
@@ -116,13 +121,18 @@ def reveal_cell(reveal_request: schemas.SelectCellRequest, db: Session = Depends
     return result
 
 @router.post("/memory-grid/answer-cell")
-def answer_cell(answer_request: schemas.AnswerCellRequest, db: Session = Depends(get_db)):
+def answer_cell(
+    answer_request: schemas.AnswerCellRequest,
+    db: Session = Depends(get_db),
+    x_player_token: Optional[str] = Header(default=None),
+):
     """
     Répondre à une cellule révélée dans la grille mémoire.
 
     AD-3 : le corps porte la RÉPONSE du joueur, pas un verdict de correction.
     Le serveur compare lui-même à la bonne réponse.
     """
+    require_player_token(db, answer_request.player_id, x_player_token)
     manager = MemoryGridManager(db)
     try:
         result = manager.answer_cell(
@@ -381,15 +391,23 @@ def start_sudden_death(code: str, db: Session = Depends(get_db), _host: models.G
 
 
 @router.post("/games/{code}/memory-grid/sudden-death/answer", response_model=schemas.SuddenDeathAnswerResponse)
-def answer_sudden_death(code: str, request: schemas.SuddenDeathAnswerRequest, db: Session = Depends(get_db)):
+def answer_sudden_death(
+    code: str,
+    request: schemas.SuddenDeathAnswerRequest,
+    db: Session = Depends(get_db),
+    x_player_token: Optional[str] = Header(default=None),
+):
     """
-    Story L.001 : soumission de réponse en mort subite. Pas de garde host —
-    la Manche 3 est un écran partagé sans identité par appareil (cf.
-    project-context.md, "Reconnection is server-derived").
+    Story L.001 : soumission de réponse en mort subite. La Manche 3 est
+    passée en multiscreen (2026-08-14, remplace l'ancienne note "écran
+    partagé" de project-context.md) : chaque finaliste authentifie son
+    action avec son propre player_token, comme en Manche 2.
     """
     game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
     if not game:
         raise HTTPException(status_code=404, detail="Game session not found")
+
+    require_player_token(db, request.player_id, x_player_token)
 
     from app.memory_grid_enhanced import MemoryGridEnhancer
 

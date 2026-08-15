@@ -3,7 +3,7 @@ Router du domaine session/host lifecycle (Epic H, story H.014).
 """
 import secrets
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -12,6 +12,7 @@ from app import models, schemas
 from app import manche1_orchestration
 from app import team_state_service
 from app.game_helpers import generate_session_code, require_host
+from app.rate_limit import limiter
 
 router = APIRouter()
 
@@ -25,7 +26,8 @@ def health_check():
     return {"status": "healthy"}
 
 @router.post("/games/", response_model=schemas.GameSessionResponse)
-def create_game(game_create: schemas.GameSessionCreate, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def create_game(request: Request, game_create: schemas.GameSessionCreate, db: Session = Depends(get_db)):
     """
     Créer une nouvelle session de jeu
     """

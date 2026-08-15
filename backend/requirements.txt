@@ -10,6 +10,7 @@ anthropic==0.107.0
 httpx==0.28.1
 bcrypt==5.0.0
 itsdangerous==2.2.0
+slowapi==0.1.10
 # pandas + openpyxl : requis uniquement par import_excel_questions.py (script
 # d'import ponctuel, pas utilisé par l'API elle-même) — présents dans le venv
 # testé mais absents à tort de ce fichier avant ce commit.

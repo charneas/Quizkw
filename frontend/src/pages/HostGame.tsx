@@ -225,7 +225,7 @@ function HostGame() {
     const team = game.teams[teamIdx]
 
     try {
-      const result = await spinWheel(team.id)
+      const result = await spinWheel(team.id, game.code)
       setWheelResult(result)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur roue')
@@ -272,7 +272,7 @@ function HostGame() {
         theme_id: theme.id,
         team1_id: team1.id,
         team2_id: team2.id,
-      })
+      }, game.code)
 
       setPingPongDuel(duel)
       setPingPongTheme(theme)

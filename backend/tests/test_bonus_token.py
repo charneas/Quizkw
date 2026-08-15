@@ -32,7 +32,7 @@ def test_bonus_token_doubles_awarded_points(test_client, db_session, sample_game
         "question_id": sample_question.id,
         "team_id": sample_team.id,
         "player_answer": sample_question.correct_answer,
-    })
+    }, headers={"X-Team-Token": sample_team.team_token})
     assert answer_resp.status_code == 200
 
     validate_resp = test_client.post(
@@ -65,7 +65,7 @@ def test_bonus_token_consumed_even_on_wrong_answer(test_client, db_session, samp
         "question_id": sample_question.id,
         "team_id": sample_team.id,
         "player_answer": "wrong answer",
-    })
+    }, headers={"X-Team-Token": sample_team.team_token})
 
     test_client.post(
         f"/games/{sample_game_session.code}/validate-answers",

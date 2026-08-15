@@ -1,11 +1,14 @@
 """
 Extensions d'endpoints pour Memory Grid - Round 3
 """
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Optional
+
+from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app import models, schemas
+from app.game_helpers import require_player_token
 from app.memory_grid import MemoryGridManager, MemoryGrid, GridCell, MemoryGridRound
 from app.memory_grid_enhanced import MemoryGridEnhancer, PlayerColor
 from app.schemas_extended import (
@@ -22,12 +25,17 @@ router = APIRouter(prefix="/memory-grid", tags=["Memory Grid Round 3"])
 # Round 3 Memory Grid Enhanced Endpoints
 
 @router.post("/color/select", response_model=ColorSelectionResponse)
-def select_player_color(request: ColorSelectionRequest, db: Session = Depends(get_db)):
+def select_player_color(
+    request: ColorSelectionRequest,
+    db: Session = Depends(get_db),
+    x_player_token: Optional[str] = Header(default=None),
+):
     """
     Sélectionner une couleur unique pour un joueur dans Round 3.
     """
+    require_player_token(db, request.player_id, x_player_token)
     enhancer = MemoryGridEnhancer(db)
-    
+
     try:
         result = enhancer.select_player_color(
             player_id=request.player_id,
@@ -44,12 +52,17 @@ def select_player_color(request: ColorSelectionRequest, db: Session = Depends(ge
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.post("/theme/select", response_model=ThemeSelectionResponse)
-def select_player_themes(request: ThemeSelectionRequest, db: Session = Depends(get_db)):
+def select_player_themes(
+    request: ThemeSelectionRequest,
+    db: Session = Depends(get_db),
+    x_player_token: Optional[str] = Header(default=None),
+):
     """
     Sélectionner 3 thèmes uniques pour un joueur dans Round 3.
     """
+    require_player_token(db, request.player_id, x_player_token)
     enhancer = MemoryGridEnhancer(db)
-    
+
     try:
         result = enhancer.select_themes_for_player(
             player_id=request.player_id,

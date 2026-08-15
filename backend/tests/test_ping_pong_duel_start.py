@@ -35,7 +35,7 @@ def test_starting_duel_fails_if_team_already_has_active_duel(test_client, db_ses
         "theme_id": theme.id,
         "team1_id": team1.id,
         "team2_id": team2.id,
-    })
+    }, headers={"X-Host-Token": sample_game_session.host_token})
     assert first.status_code == 200
 
     # team1 est déjà engagée dans un duel actif : un nouveau duel la
@@ -45,7 +45,7 @@ def test_starting_duel_fails_if_team_already_has_active_duel(test_client, db_ses
         "theme_id": theme.id,
         "team1_id": team3.id,
         "team2_id": team1.id,
-    })
+    }, headers={"X-Host-Token": sample_game_session.host_token})
     assert second.status_code == 400
 
     duels = db_session.query(models.PingPongDuel).filter(
@@ -65,7 +65,7 @@ def test_starting_duel_allowed_again_once_previous_duel_completed(test_client, d
         "theme_id": theme.id,
         "team1_id": team1.id,
         "team2_id": team2.id,
-    })
+    }, headers={"X-Host-Token": sample_game_session.host_token})
     duel_id = first.json()["duel_id"]
 
     duel = db_session.query(models.PingPongDuel).filter(models.PingPongDuel.id == duel_id).first()
@@ -77,7 +77,7 @@ def test_starting_duel_allowed_again_once_previous_duel_completed(test_client, d
         "theme_id": theme.id,
         "team1_id": team1.id,
         "team2_id": team3.id,
-    })
+    }, headers={"X-Host-Token": sample_game_session.host_token})
     assert second.status_code == 200
 
 

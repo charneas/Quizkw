@@ -1,4 +1,5 @@
 import logging
+import os
 import random  # noqa: F401 -- monkeypatché par les tests via `main.random.randint`
 # (test_wheel_auto_trigger.py, test_wheel_spin_persistence.py) ; le module
 # `random` étant partagé (sys.modules), patcher main.random affecte aussi
@@ -6,9 +7,13 @@ import random  # noqa: F401 -- monkeypatché par les tests via `main.random.rand
 # n'appelle plus random directement depuis H.019.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from app.database import engine
 from app.models import Base
+from app.rate_limit import limiter
 from main_extended import router
 from main_admin import router as admin_router, auth_router as admin_auth_router
 from main_content_gen import router as content_gen_router, player_router as content_flag_router
@@ -39,10 +44,32 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Configure CORS to allow requests from the frontend
+# Rate limiting (revue de sécurité, 2026-08-15) : aucune protection n'existait
+# auparavant, combiné aux actions non authentifiées trouvées lors du même
+# audit (roue, réponses...) cela permettait un DoS/triche par spam trivial.
+# default_limits s'applique à toutes les routes sans changement de code ;
+# certains endpoints à fort enjeu (roue, réponses, jetons) ont en plus une
+# limite plus stricte via @limiter.limit (voir leurs routers).
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
+
+# CORS : en dev (Vite, vite.config.ts) comme en prod (Nginx, DEPLOY.md §6),
+# le frontend appelle l'API via un proxy same-origin sous /api/ — aucune
+# requête cross-origin n'est légitimement nécessaire. `allow_origins=["*"]`
+# combiné à `allow_credentials=True` était donc à la fois inutile et
+# dangereux (n'importe quel site tiers pouvait faire des requêtes
+# authentifiées par cookie admin_session). CORS_ALLOWED_ORIGINS permet
+# d'ajouter explicitement une origine (ex. un frontend hébergé séparément)
+# si un besoin cross-origin réel apparaît.
+_cors_allowed_origins = [
+    origin.strip()
+    for origin in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Replace with frontend URL in production
+    allow_origins=_cors_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

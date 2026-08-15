@@ -246,6 +246,7 @@ class TestMemoryGridRound3API:
     def test_answer_cell_advances_turn(self):
         memory_grid_id, round_id = self._create_grid_and_round()
         first_player = self.finalists[0].id
+        first_player_headers = {"X-Player-Token": self.finalists[0].player_token}
 
         cell = self.db_session.query(GridCell).filter(
             GridCell.memory_grid_id == memory_grid_id
@@ -254,11 +255,11 @@ class TestMemoryGridRound3API:
 
         self.client.post("/memory-grid/reveal-cell", json={
             "round_id": round_id, "player_id": first_player, "cell_id": cell.id,
-        })
+        }, headers=first_player_headers)
         self.client.post("/memory-grid/answer-cell", json={
             "round_id": round_id, "player_id": first_player, "cell_id": cell.id,
             "player_answer": question.correct_answer,
-        })
+        }, headers=first_player_headers)
 
         turn_response = self.client.get(f"/memory-grid/{memory_grid_id}/current-player-turn")
         assert turn_response.json()["current_player_id"] != first_player
@@ -318,7 +319,7 @@ class TestMemoryGridRound3API:
         ).first()
         self.client.post("/memory-grid/reveal-cell", json={
             "round_id": round_id, "player_id": first_player, "cell_id": cell.id,
-        })
+        }, headers={"X-Player-Token": self.finalists[0].player_token})
 
         self.client.post(f"/memory-grid/{memory_grid_id}/skip-turn")
 
@@ -332,7 +333,7 @@ class TestMemoryGridRound3API:
         second_player = self.finalists[1].id
         reveal_again = self.client.post("/memory-grid/reveal-cell", json={
             "round_id": round_id, "player_id": second_player, "cell_id": cell.id,
-        })
+        }, headers={"X-Player-Token": self.finalists[1].player_token})
         assert reveal_again.status_code == 400
 
     def test_create_memory_grid_is_idempotent(self):
