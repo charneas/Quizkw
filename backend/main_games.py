@@ -3,7 +3,9 @@ Router du domaine session/host lifecycle (Epic H, story H.014).
 """
 import secrets
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from typing import Optional
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -11,7 +13,7 @@ from app.database import get_db
 from app import models, schemas
 from app import manche1_orchestration
 from app import team_state_service
-from app.game_helpers import generate_session_code, require_host
+from app.game_helpers import generate_session_code, require_host, require_team_token
 from app.rate_limit import limiter
 
 router = APIRouter()
@@ -108,7 +110,16 @@ def start_game(code: str, db: Session = Depends(get_db), _host: models.GameSessi
     return {"message": "Jeu démarré avec succès", "teams": len(teams)}
 
 @router.get("/game/{code}/team/{team_id}/state")
-def get_team_specific_state(code: str, team_id: int, db: Session = Depends(get_db)):
+def get_team_specific_state(
+    code: str,
+    team_id: int,
+    db: Session = Depends(get_db),
+    x_team_token: Optional[str] = Header(default=None),
+):
+    # Revue de sécurité H3 (2026-08-15) : cet état contient des données
+    # privées à l'équipe (réponse en cours de saisie non encore verrouillée)
+    # — n'importe quel spectateur connaissant team_id pouvait sinon la lire.
+    require_team_token(db, team_id, x_team_token)
     return team_state_service.get_team_specific_state(db, code, team_id)
 
 @router.post("/games/{code}/register-host")

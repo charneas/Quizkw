@@ -164,10 +164,14 @@ def create_player(code: str, player_create: schemas.PlayerCreate, db: Session = 
     return player
 
 @router.get("/teams/{team_id}/tokens")
-def get_team_tokens(team_id: int, db: Session = Depends(get_db)):
+def get_team_tokens(team_id: int, db: Session = Depends(get_db), x_team_token: Optional[str] = Header(default=None)):
     """
     Récupérer les jetons disponibles pour une équipe
+
+    Revue de sécurité H4 (2026-08-15) : exposait les jetons de n'importe
+    quelle équipe (info utile pour anticiper un SWAP/PENALTY adverse).
     """
+    require_team_token(db, team_id, x_team_token)
     tokens = db.query(models.Token).filter(
         models.Token.team_id == team_id,
         models.Token.is_used == False

@@ -82,7 +82,7 @@ def test_validate_answers_exposes_player_answer_text(test_client, db_session, sa
 
     # Côté équipe (TeamScreen), le même texte doit ressortir via l'état d'équipe
     # une fois la question courante effacée par validate-answers (BUG #50).
-    state_resp = test_client.get(f"/game/{sample_game_session.code}/team/{sample_team.id}/state")
+    state_resp = test_client.get(f"/game/{sample_game_session.code}/team/{sample_team.id}/state", headers={"X-Team-Token": sample_team.team_token})
     assert state_resp.status_code == 200
     validation_result = state_resp.json()["validation_result"]
     team_entry = next(t for t in validation_result["teams"] if t["team_name"] == sample_team.name)

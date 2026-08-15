@@ -35,7 +35,7 @@ def test_team_outside_duel_sees_spectator_duel(test_client, db_session, sample_g
     }, headers={"X-Host-Token": sample_game_session.host_token})
     assert start.status_code == 200
 
-    resp = test_client.get(f"/game/{sample_game_session.code}/team/{bystander.id}/state")
+    resp = test_client.get(f"/game/{sample_game_session.code}/team/{bystander.id}/state", headers={"X-Team-Token": bystander.team_token})
     assert resp.status_code == 200
     data = resp.json()
 
@@ -59,7 +59,7 @@ def test_participant_team_never_gets_spectator_duel(test_client, db_session, sam
     }, headers={"X-Host-Token": sample_game_session.host_token})
     assert start.status_code == 200
 
-    resp = test_client.get(f"/game/{sample_game_session.code}/team/{team1.id}/state")
+    resp = test_client.get(f"/game/{sample_game_session.code}/team/{team1.id}/state", headers={"X-Team-Token": team1.team_token})
     data = resp.json()
 
     assert data["active_duel"] is not None
@@ -67,7 +67,7 @@ def test_participant_team_never_gets_spectator_duel(test_client, db_session, sam
 
 
 def test_no_active_duel_means_spectator_duel_is_null(test_client, db_session, sample_game_session, sample_team):
-    resp = test_client.get(f"/game/{sample_game_session.code}/team/{sample_team.id}/state")
+    resp = test_client.get(f"/game/{sample_game_session.code}/team/{sample_team.id}/state", headers={"X-Team-Token": sample_team.team_token})
     assert resp.status_code == 200
     assert resp.json()["spectator_duel"] is None
 
@@ -91,7 +91,7 @@ def test_spectator_duel_reflects_completion_and_winner(test_client, db_session, 
     duel.winner_team_id = team1.id
     db_session.commit()
 
-    resp = test_client.get(f"/game/{sample_game_session.code}/team/{bystander.id}/state")
+    resp = test_client.get(f"/game/{sample_game_session.code}/team/{bystander.id}/state", headers={"X-Team-Token": bystander.team_token})
     data = resp.json()
     assert data["spectator_duel"]["is_completed"] is True
     assert data["spectator_duel"]["winner_team_id"] == team1.id

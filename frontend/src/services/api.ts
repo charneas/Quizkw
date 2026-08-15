@@ -237,7 +237,7 @@ export async function getRound2QualifiedPlayers(gameCode: string) {
 // === Jetons (Tokens) ===
 
 export async function getTeamTokens(teamId: number) {
-  const data = await fetchApi<any>(`/teams/${teamId}/tokens`)
+  const data = await fetchApi<any>(`/teams/${teamId}/tokens`, { headers: teamHeaders(teamId) })
   if (data && data.tokens) {
     return data.tokens
   }
@@ -672,7 +672,7 @@ export async function getTeamState(gameCode: string, teamId: number) {
       target_team_name: string
       message: string
     } | null
-  }>(`/game/${gameCode}/team/${teamId}/state`)
+  }>(`/game/${gameCode}/team/${teamId}/state`, { headers: teamHeaders(teamId) })
 }
 
 // gameCode : même raison que spinWheel — l'hôte lance le duel pour le

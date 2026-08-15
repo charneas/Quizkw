@@ -297,7 +297,7 @@ def test_other_teams_available_without_current_question(test_client, db_session,
 
     assert sample_game_session.current_question_id is None
 
-    resp = test_client.get(f"/game/{sample_game_session.code}/team/{team1.id}/state")
+    resp = test_client.get(f"/game/{sample_game_session.code}/team/{team1.id}/state", headers={"X-Team-Token": team1.team_token})
     assert resp.status_code == 200
     other_teams = resp.json()["other_teams"]
     assert len(other_teams) == 1
