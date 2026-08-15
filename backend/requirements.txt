@@ -10,6 +10,11 @@ anthropic==0.107.0
 httpx==0.28.1
 bcrypt==5.0.0
 itsdangerous==2.2.0
+# pandas + openpyxl : requis uniquement par import_excel_questions.py (script
+# d'import ponctuel, pas utilisé par l'API elle-même) — présents dans le venv
+# testé mais absents à tort de ce fichier avant ce commit.
+pandas==3.0.3
+openpyxl==3.1.5
 # gunicorn : serveur de production réel (DEPLOY.md), Linux uniquement (dépend de fcntl à
 # l'exécution) — s'installe sans erreur sur Windows (wheel pur Python) mais ne peut pas y
 # être exécuté. Épinglé ici pour que le déploiement Linux installe la version testée.

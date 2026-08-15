@@ -9,6 +9,10 @@ python-dotenv==1.0.0
 psycopg2-binary==2.9.9
 bcrypt==5.0.0
 itsdangerous==2.2.0
+# anthropic : tests/conftest.py importe main.py en entier (`from main import
+# app`), qui charge main_content_gen -> app/content_generator.py -> anthropic.
+# Absent, la suite pytest plante dès la collecte des tests.
+anthropic==0.107.0
 
 # Outils de test
 pytest==7.4.4

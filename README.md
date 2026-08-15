@@ -11,11 +11,6 @@ finale à 4 joueurs) avec un backend FastAPI et un frontend React.
 - **Frontend** : React 18, TypeScript, Vite, TailwindCSS, React Router.
 - **Tests** : pytest (backend), Playwright (E2E frontend).
 
-> Les versions déclarées dans `backend/requirements.txt` sont désynchronisées
-> du venv réellement installé (voir story H-004 dans le backlog BMad) —
-> reconstruire le venv depuis ce fichier peut ne pas correspondre à ce qui
-> tourne en développement.
-
 ## Installation
 
 ### Backend
