@@ -97,9 +97,13 @@ backend/quizkw.db
 # étaient exclues ici, ce qui rendait la règle inapplicable par construction.
 backend/alembic/versions/__pycache__/
 
-# BMad
+# AI assistant tooling (sans lien avec le code applicatif ou le déploiement)
 _bmad-output/
 _bmad-implementation/
+_bmad/
+.claude/
+.clinerules
+CLAUDE.md
 
 # Debug/Test scripts (temporary)
 analyze_issues.py
