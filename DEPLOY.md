@@ -64,6 +64,9 @@ DATABASE_URL=sqlite:///./quizkw.db
 SESSION_SECRET_KEY=<valeur-aleatoire-generee-par-deploiement>
 # SESSION_COOKIE_SECURE=true est le défaut (cookie envoyé uniquement en HTTPS,
 # cohérent avec la section 7 ci-dessous) ; ne le mettre à false qu'en dev local HTTP.
+# SESSION_MAX_AGE_SECONDS=604800 (7 jours) est le défaut (revue de sécurité M2,
+# 2026-08-15) : durée de validité du cookie de session admin avant expiration
+# forcée, même volé. Ajustable sans redéployer le code.
 
 # Requis depuis l'Epic F (génération semi-automatique de contenu admin) : clé
 # API Anthropic utilisée par l'endpoint de génération de questions. Sans cette
@@ -196,11 +199,12 @@ server {
     ssl_certificate     /etc/letsencrypt/live/<SERVEUR>/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/<SERVEUR>/privkey.pem;
 
-    # max-age volontairement court (1h) tant que le certificat n'a pas été
-    # vérifié en conditions réelles (cf. H-006) : un HSTS à 1 an poserait un
-    # verrou navigateur d'un an si le certificat échoue après mise en prod.
-    # Augmenter progressivement une fois le premier déploiement HTTPS validé.
-    add_header Strict-Transport-Security "max-age=3600" always;
+    # Revue de sécurité M1 (2026-08-15) : HTTPS stable et validé depuis le
+    # 2026-07-29 (Epic F-ext-2) — max-age relevé à 30 jours comme premier
+    # palier réel (la valeur "max-age=3600" documentée ici avant cette date
+    # n'avait en fait jamais été appliquée à la config live). Augmenter vers
+    # 6 mois-1 an une fois ce palier observé sans incident.
+    add_header Strict-Transport-Security "max-age=2592000; includeSubDomains" always;
 
     # Frontend - fichiers statiques
     root <CHEMIN_APP>/frontend/dist;

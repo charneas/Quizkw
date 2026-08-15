@@ -122,22 +122,6 @@ def get_team_specific_state(
     require_team_token(db, team_id, x_team_token)
     return team_state_service.get_team_specific_state(db, code, team_id)
 
-@router.post("/games/{code}/register-host")
-def register_host(code: str, db: Session = Depends(get_db)):
-    """
-    Enregistre qu'un hôte est connecté à cette session.
-    Quand un hôte est présent, la validation des réponses est manuelle (par l'hôte).
-    Sans hôte, les réponses sont auto-validées quand toutes les équipes ont répondu.
-    """
-    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
-    if not game:
-        raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
-
-    game.has_host = True
-    db.commit()
-
-    return {"message": "Hôte enregistré", "has_host": True}
-
 @router.post("/games/{code}/next-question")
 def next_question(code: str, db: Session = Depends(get_db), _host: models.GameSession = Depends(require_host)):
     """

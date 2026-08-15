@@ -6,7 +6,7 @@ import os
 
 import bcrypt
 from fastapi import Cookie, HTTPException
-from itsdangerous import BadSignature, URLSafeSerializer
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 try:
     SESSION_SECRET_KEY = os.environ["SESSION_SECRET_KEY"]
@@ -23,7 +23,14 @@ COOKIE_NAME = "admin_session"
 # HTTP simple via SESSION_COOKIE_SECURE=false.
 SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "true").lower() != "false"
 
-_serializer = URLSafeSerializer(SESSION_SECRET_KEY, salt="admin-session")
+# Revue de sécurité M2 (2026-08-15) : le cookie n'expirait jamais (signature
+# stateless sans horodatage) — volé une fois (XSS, poste partagé), il restait
+# valide indéfiniment. URLSafeTimedSerializer embarque un timestamp signé,
+# vérifié via max_age à la lecture (SignatureExpired). 7 jours par défaut,
+# ajustable sans redéployer le code.
+SESSION_MAX_AGE_SECONDS = int(os.getenv("SESSION_MAX_AGE_SECONDS", str(7 * 24 * 3600)))
+
+_serializer = URLSafeTimedSerializer(SESSION_SECRET_KEY, salt="admin-session")
 
 
 def hash_password(password: str) -> str:
@@ -39,14 +46,14 @@ def sign_session(admin_id: int) -> str:
 
 
 def require_admin_session(admin_session: str | None = Cookie(default=None)) -> int:
-    """Dépendance FastAPI partagée : lève 401 si le cookie est absent ou
-    invalide, sinon retourne l'id de l'admin authentifié. Pas de vérification
-    d'expiration (AD-17 : pas d'expiration v1) ni de recherche en base
-    (le cookie stateless signé est la seule source de vérité)."""
+    """Dépendance FastAPI partagée : lève 401 si le cookie est absent, invalide
+    ou expiré (SESSION_MAX_AGE_SECONDS, voir M2 ci-dessus), sinon retourne
+    l'id de l'admin authentifié. Pas de recherche en base : le cookie signé
+    reste la seule source de vérité, seule sa fraîcheur est désormais bornée."""
     if admin_session is None:
         raise HTTPException(status_code=401, detail="Authentification requise")
     try:
-        payload = _serializer.loads(admin_session)
-    except BadSignature:
+        payload = _serializer.loads(admin_session, max_age=SESSION_MAX_AGE_SECONDS)
+    except (BadSignature, SignatureExpired):
         raise HTTPException(status_code=401, detail="Authentification requise")
     return payload["admin_id"]

@@ -16,7 +16,7 @@ from sqlalchemy import case, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.auth import hash_password, require_admin_session, sign_session, verify_password, COOKIE_NAME, SESSION_COOKIE_SECURE
+from app.auth import hash_password, require_admin_session, sign_session, verify_password, COOKIE_NAME, SESSION_COOKIE_SECURE, SESSION_MAX_AGE_SECONDS
 from app.database import get_db
 from app import models, schemas
 from app.rate_limit import limiter
@@ -51,6 +51,7 @@ def login(request: Request, payload: schemas.AdminLoginRequest, response: Respon
         httponly=True,
         samesite="strict",
         secure=SESSION_COOKIE_SECURE,
+        max_age=SESSION_MAX_AGE_SECONDS,
     )
     return {"message": "Connexion réussie."}
 
