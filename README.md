@@ -61,7 +61,7 @@ npx playwright test
 | Manche | Statut | Notes |
 |---|---|---|
 | 1 — Quiz collectif par équipes | Jouable | Jetons (swap/pénalité/bonus), roue de bonus/malus tous les 5 tours, duels ping-pong |
-| 2 — Tournoi individuel 16→8→4 | Backend fonctionnel, parcours UI réel incomplet | Voir le backlog (story de qualification Manche 1→2) |
+| 2 — Tournoi individuel 16→8→4 | Jouable, retours playtest corrigés | Tour par rôle avec spectateurs, qualification Manche 1→2 fiabilisée (H-007), tests E2E (`frontend/tests/round2.spec.ts`) |
 | 3 — Grille mémoire (finale, 4 joueurs) | Jouable, testée en E2E réel | Grille 7×5, individuelle depuis la réécriture AD-0 (2026-07-25) |
 
 Le suivi détaillé du backlog (epics, stories, statut) est géré via BMad Method
@@ -75,8 +75,9 @@ Voir [`DEPLOY.md`](DEPLOY.md).
 
 ```
 Quizkw/
-├── backend/     # API FastAPI (voir backend/README.md)
-├── frontend/    # Application React
-├── DEPLOY.md    # Guide de déploiement production
-└── README.md    # Ce fichier
+├── backend/         # API FastAPI (voir backend/README.md)
+├── frontend/        # Application React
+├── docs/archive/    # Notes de session et TODO historiques (périmés, conservés pour référence)
+├── DEPLOY.md        # Guide de déploiement production
+└── README.md        # Ce fichier
 ```

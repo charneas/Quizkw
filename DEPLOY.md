@@ -64,6 +64,12 @@ DATABASE_URL=sqlite:///./quizkw.db
 SESSION_SECRET_KEY=<valeur-aleatoire-generee-par-deploiement>
 # SESSION_COOKIE_SECURE=true est le défaut (cookie envoyé uniquement en HTTPS,
 # cohérent avec la section 7 ci-dessous) ; ne le mettre à false qu'en dev local HTTP.
+
+# Requis depuis l'Epic F (génération semi-automatique de contenu admin) : clé
+# API Anthropic utilisée par l'endpoint de génération de questions. Sans cette
+# variable, le reste du site fonctionne normalement — seule la génération de
+# contenu admin échoue.
+ANTHROPIC_API_KEY=<cle-api-anthropic>
 EOF
 ```
 

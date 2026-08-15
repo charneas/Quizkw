@@ -1,6 +1,9 @@
 # Quizkw Backend
 
-Backend FastAPI pour le jeu de quiz Quizkw avec règles complexes.
+Backend FastAPI pour le jeu de quiz Quizkw : trois manches (quiz collectif,
+tournoi individuel, grille mémoire), duels ping-pong, roue de bonus/malus,
+interface admin (thèmes, questions, génération de contenu, propositions
+publiques).
 
 ## Structure du projet
 
@@ -8,14 +11,27 @@ Backend FastAPI pour le jeu de quiz Quizkw avec règles complexes.
 backend/
 ├── app/
 │   ├── database.py          # Configuration de la base de données
-│   ├── models.py            # Modèles SQLAlchemy
-│   ├── schemas.py           # Schémas Pydantic
-│   └── api/                 # Endpoints API (à venir)
-├── alembic/                 # Migrations de base de données (à venir)
-├── requirements.txt         # Dépendances Python
-├── seed.py                 # Script de peuplement de la base de données
-├── main.py                 # Application FastAPI principale
-└── README.md               # Ce fichier
+│   ├── models.py             # Modèles SQLAlchemy
+│   ├── schemas.py            # Schémas Pydantic
+│   ├── round2_manager.py     # Logique métier Manche 2
+│   └── memory_grid.py        # Logique métier Manche 3 (grille mémoire)
+├── alembic/                  # Migrations de base de données
+├── tests/                    # Tests pytest
+├── main.py                   # Point d'entrée FastAPI, assemble les routers ci-dessous
+├── main_games.py             # Endpoints sessions de jeu
+├── main_teams.py             # Endpoints équipes / joueurs
+├── main_manche1.py           # Endpoints Manche 1 (quiz collectif, jetons, roue)
+├── main_round2.py            # Endpoints Manche 2 (tournoi individuel)
+├── main_ping_pong.py         # Endpoints duels ping-pong
+├── main_memory_grid_legacy.py # Endpoints Manche 3 (grille mémoire)
+├── main_admin.py             # Auth + CRUD admin (thèmes, questions)
+├── main_content_gen.py       # Génération semi-automatique de contenu (LLM)
+├── main_propositions.py      # Propositions publiques de questions
+├── main_extended.py          # Endpoints complémentaires / compatibilité
+├── seed.py / seed_admin.py   # Scripts de peuplement de la base
+├── requirements.txt          # Dépendances Python (prod)
+├── requirements-dev.txt      # Dépendances de développement (tests, coverage)
+└── README.md                 # Ce fichier
 ```
 
 ## Installation
@@ -39,6 +55,11 @@ pip install -r requirements.txt
 echo "DATABASE_URL=sqlite:///./quizkw.db" > .env
 ```
 
+4. **Appliquer les migrations :**
+```bash
+alembic upgrade head
+```
+
 ## Utilisation
 
 ### Lancer l'API
@@ -46,9 +67,6 @@ echo "DATABASE_URL=sqlite:///./quizkw.db" > .env
 ```bash
 # Développement avec auto-reload
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
-
-# Ou exécuter directement
-python main.py
 ```
 
 L'API sera disponible sur : http://localhost:8000
@@ -61,129 +79,77 @@ L'API sera disponible sur : http://localhost:8000
 ### Peupler la base de données
 
 ```bash
-python seed.py
+python seed.py         # Questions, thèmes, session de démo
+python seed_admin.py   # Compte admin
 ```
 
-Ce script créera :
-- 7 questions de test avec différentes difficultés
-- Une session de jeu avec 3 équipes de 2 joueurs
-- 3 jetons par équipe (SWAP, pénalité, bonus)
+## API — routers principaux
 
-## API Endpoints
+Chaque fichier `main_*.py` est un `APIRouter` FastAPI monté dans `main.py`.
+Voir `/docs` pour la liste exhaustive et à jour des endpoints.
 
-### Gestion des jeux
-- `POST /games/` - Créer une nouvelle session
-- `GET /games/{code}` - Récupérer une session
-- `POST /games/{code}/teams/` - Créer une équipe
-- `POST /games/{code}/start` - Démarrer le jeu
-- `POST /games/{code}/advance-to-phase3` - Passer à la phase 3 (manche finale)
-
-### Questions et réponses
-- `GET /questions/random` - Obtenir une question aléatoire
-- `POST /answers/` - Soumettre une réponse
-
-### Fonctionnalités avancées
-- `POST /tokens/use` - Utiliser un jeton
-- `POST /wheel/spin` - Tourner la roue de bonus/malus
-
-### Phase 3 - Grille Mémoire (Manche Finale)
-- `POST /games/{code}/memory-grid/create` - Créer une grille mémoire 7x5
-- `POST /games/{code}/memory-grid/start` - Démarrer un tour de grille mémoire
-- `GET /memory-grid/{memory_grid_id}/state` - Obtenir l'état de la grille
-- `POST /memory-grid/reveal-cell` - Révéler une cellule dans la grille
-- `POST /memory-grid/answer-cell` - Répondre à une cellule révélée
+- **Sessions / équipes** (`main_games.py`, `main_teams.py`) : création de
+  partie, jointure, équipes, joueurs.
+- **Manche 1** (`main_manche1.py`) : quiz collectif par équipes, jetons
+  (SWAP/pénalité/bonus), roue de bonus/malus tous les 5 tours.
+- **Manche 2** (`main_round2.py`, `app/round2_manager.py`) : tournoi
+  individuel 16→8→4.
+- **Ping-pong** (`main_ping_pong.py`) : duels 1v1 déclenchés en cours de
+  Manche 1.
+- **Manche 3** (`main_memory_grid_legacy.py`, `app/memory_grid.py`) : grille
+  mémoire 7×5 finale à 4 joueurs.
+- **Admin** (`main_admin.py`) : authentification par cookie de session
+  (`SESSION_SECRET_KEY`), CRUD thèmes/questions.
+- **Génération de contenu** (`main_content_gen.py`) : génération
+  semi-automatique de questions via LLM, signalement de contenu.
+- **Propositions publiques** (`main_propositions.py`) : soumission externe de
+  questions, workflow de validation admin.
 
 ## Règles implémentées
 
-### Manche 1
-- ✅ Groupes de 2 ou 3 joueurs selon nombre total
-- ✅ 3 jetons par équipe (SWAP, pénalité, bonus)
-- ✅ Système de points (2/4/6 selon difficulté)
-- ✅ Roue de bonus/malus (tous les 5 tours)
-
-### À venir
-- Manche 2 (individuelle avec choix de thème)
-- Manche 3 (finale avec grille mémoire)
+Les trois manches (quiz collectif, tournoi individuel, grille mémoire finale)
+ainsi que les duels ping-pong et la roue de bonus/malus sont jouables de bout
+en bout. Voir le tableau « État du jeu » dans [`../README.md`](../README.md)
+pour le détail par manche, et `_bmad-output/` (non versionné) pour le
+backlog détaillé.
 
 ## Configuration
 
 ### Variables d'environnement
+
 - `DATABASE_URL` : URL de connexion à la base de données
   - Développement : `sqlite:///./quizkw.db`
-  - Production : `postgresql://user:pass@host/dbname`
+  - Production : `postgresql://user:pass@host/dbname` (voir `../DEPLOY.md`)
+- `SESSION_SECRET_KEY` : secret de signature du cookie de session admin
+  (`/admin/*`). Obligatoire en production, générer une valeur aléatoire par
+  déploiement (ex. `openssl rand -hex 32`).
+- `SESSION_COOKIE_SECURE` : `true` par défaut (cookie envoyé uniquement en
+  HTTPS) ; ne le passer à `false` qu'en dev local HTTP.
 
 ### Base de données
-- SQLite pour le développement
-- PostgreSQL recommandé pour la production
-- Migrations avec Alembic (à implémenter)
 
-### Test de fumée PostgreSQL
+- SQLite par défaut (dev et prod actuelle).
+- PostgreSQL supporté, pas encore utilisé en prod — voir `../DEPLOY.md`
+  section 8 et `README.md` (racine) pour l'avertissement sur la
+  désynchronisation `requirements.txt` / venv installé.
+- Migrations gérées avec Alembic (`alembic/versions/`).
 
-La suite de tests principale (`pytest tests/`) tourne exclusivement sur
-SQLite en mémoire. Un bug de migration réel (type enum redéclaré) ne s'est
-manifesté que sous PostgreSQL — un test dédié comble cet angle mort.
+## Tests
 
-**⚠️ Ce test exécute `alembic downgrade base` (destructeur, vide le schéma)
-avant `upgrade head`. Ne jamais pointer `POSTGRES_TEST_URL` vers une base
-contenant de vraies données.** Par sécurité, le test refuse de s'exécuter
-(skip explicite) si l'hôte ou le nom de la base ne contient pas `test`.
+```bash
+python -m pip install -r requirements-dev.txt
+pytest                              # suite complète (SQLite en mémoire)
+pytest --cov=app --cov-report=term-missing
+```
 
-1. Démarrer un PostgreSQL jetable, par exemple avec Docker :
-   ```bash
-   docker run --rm -e POSTGRES_PASSWORD=test -e POSTGRES_DB=quizkw_test -p 5432:5432 postgres
-   ```
-2. Positionner `POSTGRES_TEST_URL` (nom de base contenant `test`) et lancer le test :
-   ```bash
-   export POSTGRES_TEST_URL="postgresql://postgres:test@localhost:5432/quizkw_test"
-   pytest tests/test_migration_smoke_postgres.py -v
-   ```
-3. Si `POSTGRES_TEST_URL` n'est pas positionnée, si la connexion échoue, ou
-   si l'URL ne contient pas `test` dans l'hôte/la base, le test se marque
-   `skipped` (pas d'échec, pas de faux positif) — c'est le comportement
-   attendu sur une machine sans PostgreSQL jetable disponible.
-
-À exécuter avant de committer toute migration Alembic modifiant le schéma.
-
-## Développement
-
-### Structure des données
-Les modèles reflètent fidèlement les règles du jeu :
-- **GameSession** : Session de jeu avec code unique
-- **Team** : Équipes avec score et joueurs
-- **Player** : Joueurs individuels
-- **Question** : Questions avec difficulté et catégorie
-- **Token** : Jetons utilisables par les équipes
-- **Answer** : Réponses enregistrées
-
-### Tests
-Le script `seed.py` permet de tester rapidement l'API avec des données réalistes.
+Un test de fumée dédié (`tests/test_migration_smoke_postgres.py`) valide les
+migrations Alembic sous PostgreSQL (angle mort de la suite principale, qui
+tourne exclusivement sur SQLite). Voir les commentaires en tête de ce fichier
+de test pour la procédure — il exécute `alembic downgrade base` (destructeur)
+et refuse de s'exécuter si `POSTGRES_TEST_URL` ne pointe pas vers une base de
+test.
 
 ## Déploiement
 
-### Production
-```bash
-# Avec Gunicorn (recommandé)
-gunicorn -w 4 -k uvicorn.workers.UvicornWorker main:app
-
-# Avec Docker (à créer)
-docker build -t quizkw-backend .
-docker run -p 8000:8000 quizkw-backend
-```
-
-### Sécurité
-- CORS configuré pour le développement (`*`)
-- À restreindre en production
-- Validation des données avec Pydantic
-- Gestion d'erreurs avec HTTPException
-
-## Prochaines étapes
-
-1. Implémenter les manches 2 et 3
-2. Ajouter WebSockets pour le temps réel
-3. Créer l'interface React
-4. Ajouter l'authentification
-5. Déployer en production
-
-## Support
-
-Pour toute question, consulter la documentation automatique ou ouvrir une issue.
+Voir [`../DEPLOY.md`](../DEPLOY.md) pour le guide de déploiement production
+complet (Gunicorn + Nginx + Let's Encrypt).
