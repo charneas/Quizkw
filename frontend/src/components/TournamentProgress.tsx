@@ -41,7 +41,10 @@ function TournamentProgressComponent({ progress, currentPlayerId }: TournamentPr
       case '8_qualified':
         return `${Math.ceil(total / 2)} qualifiés`
       case '4_finalists':
-        return `${Math.ceil(total / 4)} finalistes`
+        // Bug playtest 2026-08-16 : le nombre de finalistes est fixe (AD-0,
+        // 4 finalistes quel que soit l'effectif de départ) — ce n'était pas
+        // total/4 arrondi, qui donnait "2 finalistes" pour 5 joueurs.
+        return '4 finalistes'
       default:
         return phase
     }

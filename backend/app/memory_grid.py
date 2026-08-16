@@ -226,6 +226,18 @@ class MemoryGridManager:
         if cell.status == GridCellStatus.ANSWERED:
             raise ValueError("Cette cellule a déjà reçu une réponse")
 
+        # Bug playtest 2026-08-16 : chaque finaliste a droit à 5 questions
+        # au total (n'importe quelle case), jamais plus — sans ce garde un
+        # joueur pouvait continuer à révéler des cases après son quota
+        # pendant que d'autres finalistes étaient encore en dessous du leur.
+        already_answered = self.db.query(GridCell).filter(
+            GridCell.memory_grid_id == cell.memory_grid_id,
+            GridCell.answered_by_player_id == player_id,
+            GridCell.status == GridCellStatus.ANSWERED,
+        ).count()
+        if already_answered >= self.CELLS_PER_PLAYER:
+            raise ValueError("Vous avez déjà joué vos 5 questions")
+
         round_obj.current_player_id = player_id
         cell.status = GridCellStatus.REVEALED
         self.db.flush()
@@ -347,7 +359,22 @@ class MemoryGridManager:
         cells = self.db.query(GridCell).filter(
             GridCell.memory_grid_id == memory_grid_id
         ).order_by(GridCell.row, GridCell.col).all()
-        
+
+        # Bug playtest 2026-08-16 : la couleur choisie par chaque finaliste
+        # pendant le setup (PlayerRound3Stats.color) n'était jamais renvoyée
+        # pendant la partie — le frontend recalculait une couleur par
+        # position dans un tableau, qui changeait selon l'ordre reçu (d'où
+        # "la couleur change après un refresh"). La couleur est un attribut
+        # du joueur pour cette manche, pas une position d'affichage.
+        from app.models import PlayerRound3Stats
+        player_colors = {
+            s.player_id: s.color
+            for s in self.db.query(PlayerRound3Stats).filter(
+                PlayerRound3Stats.game_session_id == memory_grid.game_session_id
+            ).all()
+            if s.color
+        }
+
         # Map status: backend 'answered' → frontend 'matched'
         def map_status(status):
             if status == GridCellStatus.ANSWERED:
@@ -402,6 +429,7 @@ class MemoryGridManager:
                 'memorize_seconds_remaining': memorize_seconds_remaining,
             },
             'cells': cells_data,
+            'player_colors': player_colors,
         }
     
     def advance_turn(self, memory_grid_id):
@@ -425,17 +453,34 @@ class MemoryGridManager:
 
         cells = self.db.query(GridCell).filter(GridCell.memory_grid_id == memory_grid_id).all()
 
-        # Check if all cells are answered
-        all_answered = all(cell.status == GridCellStatus.ANSWERED for cell in cells)
+        # Bug playtest 2026-08-16 : chaque finaliste a droit à 5 questions
+        # (n'importe quelle case du plateau — propre thème, volée à un
+        # adversaire ou neutre, toutes jouables) puis on passe au score.
+        # Auparavant la partie exigeait que les 35 cellules de la grille
+        # 7×5 soient toutes répondues, forçant à jouer bien plus que 5
+        # questions chacun.
+        finalists = self.get_finalists_from_round2(memory_grid.game_session_id)
+        answered_per_player = {}
+        for cell in cells:
+            if cell.status == GridCellStatus.ANSWERED and cell.answered_by_player_id:
+                answered_per_player[cell.answered_by_player_id] = (
+                    answered_per_player.get(cell.answered_by_player_id, 0) + 1
+                )
 
-        if all_answered:
+        all_players_done = bool(finalists) and all(
+            answered_per_player.get(player_id, 0) >= self.CELLS_PER_PLAYER
+            for player_id in finalists
+        )
+
+        if all_players_done:
             memory_grid.is_completed = True
             self.db.flush()
 
-        return all_answered
+        return all_players_done
     
     # Round 3 Enhanced Methods
     FINALIST_COUNT = 4
+    CELLS_PER_PLAYER = 5  # AD-0 : 5 questions par finaliste, pas plus
 
     def get_finalists_from_round2(self, game_session_id):
         """Les 4 finalistes de la Manche 3, classés par score de Manche 2.
@@ -516,7 +561,14 @@ class MemoryGridManager:
                     f"Le finaliste {player_id} doit choisir exactement 3 thèmes, "
                     f"{len(theme_ids) if isinstance(theme_ids, list) else 'format invalide'} trouvé(s)"
                 )
-            finalist_themes[player_id] = theme_ids
+
+            # Bug playtest 2026-08-16 : un seul des 3 thèmes soumis devient le
+            # thème du finaliste pour la grille — tiré au hasard côté serveur,
+            # jamais les 3. Persisté pour rester stable si la grille est
+            # recréée/relue plus tard (pas retiré au sort à chaque appel).
+            if stats.chosen_theme_id is None:
+                stats.chosen_theme_id = random.choice(theme_ids)
+            finalist_themes[player_id] = [stats.chosen_theme_id]
 
         # Get difficult questions (difficulty = HARD only for Round 3)
         difficult_questions = self.db.query(Question).filter(

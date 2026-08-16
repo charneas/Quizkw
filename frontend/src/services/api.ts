@@ -408,6 +408,7 @@ export interface PlayerSetupStatus {
   selected_color: string | null
   selected_themes: number[] | null
   setup_complete: boolean
+  current_turn_player_id: number | null
 }
 
 export async function getPlayerSetupStatus(playerId: number, gameSessionId: number) {
@@ -721,6 +722,8 @@ export async function submitPingPongDuelAnswer(data: {
     winner_team_name: string | null
     next_turn_team_id: number | null
     message: string
+    theme_changed: boolean
+    new_theme: { id: number; title: string; description: string | null; correct_answers: string[]; min_answers_to_win: number } | null
   }>('/ping-pong/duel/answer', {
     method: 'POST',
     body: JSON.stringify(data),

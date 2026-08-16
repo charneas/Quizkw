@@ -41,7 +41,69 @@ class MemoryGridEnhancer:
     
     def __init__(self, db):
         self.db = db
-    
+
+    def _setup_turn_order(self, game_session_id):
+        """Ordre de configuration des finalistes : classement Manche 2 (score
+        desc), le même ordre que celui utilisé pour désigner les finalistes
+        (round2_manager.advance_to_finalists)."""
+        from app.models import PlayerRound2Stats, QualificationStatus
+        from sqlalchemy import desc
+
+        finalists = self.db.query(PlayerRound2Stats).filter(
+            PlayerRound2Stats.game_session_id == game_session_id,
+            PlayerRound2Stats.qualification_status == QualificationStatus.FINALIST,
+        ).order_by(desc(PlayerRound2Stats.score)).all()
+        return [f.player_id for f in finalists]
+
+    def current_setup_turn_player_id(self, game_session_id):
+        """Le premier finaliste (dans l'ordre de classement) dont le setup
+        n'est pas encore complet — None si tout le monde a fini ou s'il n'y a
+        pas de finalistes."""
+        from app.models import PlayerRound3Stats
+
+        for player_id in self._setup_turn_order(game_session_id):
+            stats = self.db.query(PlayerRound3Stats).filter(
+                PlayerRound3Stats.game_session_id == game_session_id,
+                PlayerRound3Stats.player_id == player_id,
+            ).first()
+            color_selected = bool(stats and stats.color)
+            themes_selected = bool(stats and stats.selected_theme_ids and len(stats.selected_theme_ids) == 3)
+            if not (color_selected and themes_selected):
+                return player_id
+        return None
+
+    def _require_setup_turn(self, player_id, game_session_id):
+        """Bug playtest 2026-08-16 : le choix couleur/thèmes en finale doit se
+        faire à tour de rôle (ordre du classement Manche 2), sinon deux
+        finalistes peuvent choisir en même temps et se marcher dessus sur les
+        thèmes/couleurs disponibles.
+
+        Fail-closed par construction : si `player_id` n'est pas un finaliste
+        de cette session (absent de l'ordre de tour), `current` ne pourra
+        jamais lui être égal et l'appel sera rejeté (trouvé en revue de code).
+
+        Second garde, pour le cas où la liste de finalistes est encore vide
+        (finalistes pas encore déterminés, ou race avec advance_to_finalists) :
+        `current` vaudrait alors None et laisserait passer n'importe quel
+        appel sans aucune restriction de tour — on rejette explicitement
+        plutôt que d'ouvrir la porte (également trouvé en revue de code).
+
+        `current` vaut aussi None une fois TOUS les finalistes prêts (plus
+        personne à qui donner la main) : sans garde, un finaliste déjà prêt
+        pourrait alors re-soumettre couleur/thèmes après coup, dans la
+        fenêtre avant que la grille ne soit effectivement créée (trouvé en
+        revue de code) — on rejette ce cas aussi."""
+        turn_order = self._setup_turn_order(game_session_id)
+        if not turn_order:
+            raise ValueError("Aucun finaliste déterminé pour cette session")
+        current = self.current_setup_turn_player_id(game_session_id)
+        if current is None:
+            raise ValueError("Configuration déjà terminée pour tous les finalistes")
+        if current != player_id:
+            raise ValueError(
+                f"Ce n'est pas votre tour — en attente du joueur {current}"
+            )
+
     def select_player_color(self, player_id, game_session_id, color):
         """
         Permet à un joueur de sélectionner une couleur unique.
@@ -60,6 +122,8 @@ class MemoryGridEnhancer:
         player = self.db.query(Player).filter(Player.id == player_id).first()
         if not player:
             raise LookupError(f"Player {player_id} not found")
+
+        self._require_setup_turn(player_id, game_session_id)
 
         # La couleur est désormais RÉELLEMENT persistée, sur PlayerRound3Stats
         # (AD-0). Cette méthode retournait auparavant un succès simulé sans rien
@@ -88,6 +152,8 @@ class MemoryGridEnhancer:
         player = self.db.query(Player).filter(Player.id == player_id).first()
         if not player:
             raise LookupError(f"Player {player_id} not found")
+
+        self._require_setup_turn(player_id, game_session_id)
 
         if len(theme_ids) != 3:
             raise ValueError("Exactly 3 themes must be selected")

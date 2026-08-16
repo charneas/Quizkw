@@ -462,6 +462,14 @@ function Round2() {
     if (isAnsweringQuestion && !window.confirm('Une question est en cours — quitter maintenant coupera votre réponse. Continuer ?')) {
       return
     }
+    // `game.current_round` ne bascule sur manche_3 qu'au démarrage effectif
+    // de la grille mémoire par l'hôte (cf. main_memory_grid_legacy.py) — il
+    // reste sur manche_2 pendant toute la phase "4 finalistes". Sans ce
+    // garde, le bouton renvoyait vers cette même page (no-op).
+    if (tournamentProgress?.phase === '4_finalists') {
+      navigate(`/game/${code}/memory-grid`)
+      return
+    }
     navigate(getCurrentRoundPath(code!, game?.current_round))
   }
 

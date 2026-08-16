@@ -160,3 +160,4 @@ class PlayerSetupStatusResponse(BaseModel):
     selected_color: Optional[PlayerColorEnum] = None
     selected_themes: Optional[List[int]] = None
     setup_complete: bool
+    current_turn_player_id: Optional[int] = None

@@ -109,6 +109,10 @@ export interface MemoryGridData {
 export interface MemoryGridState {
   memory_grid: MemoryGridData
   cells: GridCell[]
+  // Bug playtest 2026-08-16 : couleur choisie par chaque finaliste pendant
+  // le setup — attribut du joueur pour cette manche, pas une position
+  // d'affichage recalculée côté client.
+  player_colors: Record<number, string>
 }
 
 // AD-13 : réponse de POST /games/:code/memory-grid/create telle que le serveur

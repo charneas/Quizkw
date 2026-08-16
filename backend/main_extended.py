@@ -202,13 +202,16 @@ def get_player_setup_status(player_id: int, game_session_id: int, db: Session = 
     color_selected = selected_color is not None
     themes_selected = bool(selected_themes) and len(selected_themes) == 3
 
+    enhancer = MemoryGridEnhancer(db)
+
     return PlayerSetupStatusResponse(
         player_id=player_id,
         color_selected=color_selected,
         themes_selected=themes_selected,
         selected_color=selected_color,
         selected_themes=selected_themes,
-        setup_complete=color_selected and themes_selected
+        setup_complete=color_selected and themes_selected,
+        current_turn_player_id=enhancer.current_setup_turn_player_id(game_session_id)
     )
 
 @router.get("/{memory_grid_id}/detailed-state", response_model=MemoryGridDetailedStateResponse)

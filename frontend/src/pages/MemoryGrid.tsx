@@ -42,6 +42,25 @@ const FINALIST_COLORS = [
   { bg: 'bg-yellow-600/40', border: 'border-yellow-400', text: 'text-yellow-300' },
 ]
 
+// Bug playtest 2026-08-16 : la couleur d'un finaliste doit être CELLE qu'il
+// a choisie pendant le setup (PlayerRound3Stats.color, cf. PlayerColorEnum
+// côté backend — 12 valeurs), pas une couleur recalculée par position dans
+// un tableau qui changeait selon l'ordre reçu après un refresh.
+const PLAYER_COLOR_STYLES: Record<string, { bg: string; border: string; text: string }> = {
+  red: { bg: 'bg-red-600/40', border: 'border-red-400', text: 'text-red-300' },
+  blue: { bg: 'bg-blue-600/40', border: 'border-blue-400', text: 'text-blue-300' },
+  green: { bg: 'bg-green-600/40', border: 'border-green-400', text: 'text-green-300' },
+  yellow: { bg: 'bg-yellow-600/40', border: 'border-yellow-400', text: 'text-yellow-300' },
+  purple: { bg: 'bg-purple-600/40', border: 'border-purple-400', text: 'text-purple-300' },
+  orange: { bg: 'bg-orange-600/40', border: 'border-orange-400', text: 'text-orange-300' },
+  pink: { bg: 'bg-pink-600/40', border: 'border-pink-400', text: 'text-pink-300' },
+  cyan: { bg: 'bg-cyan-600/40', border: 'border-cyan-400', text: 'text-cyan-300' },
+  teal: { bg: 'bg-teal-600/40', border: 'border-teal-400', text: 'text-teal-300' },
+  brown: { bg: 'bg-amber-800/40', border: 'border-amber-700', text: 'text-amber-600' },
+  gray: { bg: 'bg-gray-600/40', border: 'border-gray-400', text: 'text-gray-300' },
+  black: { bg: 'bg-neutral-900/60', border: 'border-neutral-500', text: 'text-neutral-300' },
+}
+
 // 35 cellules fixes (grille 7x5, cf. create_memory_grid(rows=7, cols=5)).
 const TOTAL_GRID_CELLS = 35
 
@@ -139,10 +158,14 @@ function MemoryGrid() {
   // sujette à une course entre deux requêtes quasi simultanées).
   const initStarted = useRef(false)
 
-  const totalCells = gridState?.cells.length || 0
   const matchedCells = gridState?.cells.filter((c) => c.status === 'matched').length || 0
-  const progress = totalCells > 0 ? Math.round((matchedCells / totalCells) * 100) : 0
-  const isCompleted = gridState?.memory_grid.is_completed || progress === 100
+  // Bug playtest 2026-08-16 : la partie s'arrête après 5 questions par
+  // finaliste (n'importe quelle case), pas après avoir vidé toute la grille
+  // 7×5 (35 cases) — la barre de progression suit désormais ce vrai total
+  // (5 × nombre de finalistes), pas le nombre brut de cellules de la grille.
+  const totalQuestions = (finalistIds.length || FINALIST_COLORS.length) * 5
+  const progress = totalQuestions > 0 ? Math.round((matchedCells / totalQuestions) * 100) : 0
+  const isCompleted = gridState?.memory_grid.is_completed || (totalQuestions > 0 && matchedCells >= totalQuestions)
 
   useEffect(() => {
     if (code && !initStarted.current) {
@@ -220,9 +243,15 @@ function MemoryGrid() {
     return () => clearTimeout(timer)
   }, [timeRemaining, gridId])
 
-  // Couleur d'un finaliste, d'après son rang au classement
+  // Bug playtest 2026-08-16 : couleur réellement choisie par le finaliste
+  // (attribut stable du joueur pour cette manche), plus une couleur
+  // recalculée par rang — repli sur l'ancien comportement par index
+  // uniquement si aucune couleur n'a été enregistrée (ne devrait plus
+  // arriver une fois le setup passé).
   const colorFor = (playerId: number | null) => {
     if (playerId === null) return null
+    const chosen = gridState?.player_colors?.[playerId]
+    if (chosen && PLAYER_COLOR_STYLES[chosen]) return PLAYER_COLOR_STYLES[chosen]
     const index = standings.findIndex((s) => s.player_id === playerId)
     if (index === -1) return null
     return FINALIST_COLORS[index % FINALIST_COLORS.length]
@@ -625,31 +654,46 @@ function MemoryGrid() {
             Chaque finaliste choisit sa couleur et 3 thèmes avant que la grille ne soit constituée.
           </p>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-            {finalistIds.map((id) => {
-              const status = setupStatuses[id]
-              const ready = status?.setup_complete ?? false
-              return (
-                <div key={id} className={`card flex items-center justify-between ${ready ? 'border-success' : ''}`}>
-                  <div>
-                    <p className="font-bold">{finalistNames[id] ?? `Joueur ${id}`}</p>
-                    {/* BUG-303/304 : jamais la couleur/les thèmes des autres avant la fin du setup — juste prêt/pas prêt. */}
-                    <p className="text-xs text-text-muted">{ready ? '✅ Prêt' : '⏳ En attente'}</p>
-                  </div>
-                  {!ready && id === myPlayerId && (
-                    <button onClick={() => openPicker(id)} className="btn-secondary text-sm">
-                      Configurer
-                    </button>
-                  )}
-                  {!ready && id !== myPlayerId && (
-                    <p className="text-xs text-text-muted italic">
-                      {isHost ? 'Sur son propre appareil' : 'En attente...'}
-                    </p>
-                  )}
-                </div>
-              )
-            })}
-          </div>
+          {(() => {
+            // Bug playtest 2026-08-16 : le tour par rôle (ordre du classement
+            // Manche 2) est désormais imposé côté serveur — on le reflète ici
+            // pour ne proposer "Configurer" qu'au bon joueur.
+            const currentTurnPlayerId =
+              Object.values(setupStatuses).find((s) => s.current_turn_player_id != null)
+                ?.current_turn_player_id ?? null
+            return (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                {finalistIds.map((id) => {
+                  const status = setupStatuses[id]
+                  const ready = status?.setup_complete ?? false
+                  const isMyTurn = currentTurnPlayerId === id
+                  return (
+                    <div key={id} className={`card flex items-center justify-between ${ready ? 'border-success' : ''}`}>
+                      <div>
+                        <p className="font-bold">{finalistNames[id] ?? `Joueur ${id}`}</p>
+                        {/* BUG-303/304 : jamais la couleur/les thèmes des autres avant la fin du setup — juste prêt/pas prêt. */}
+                        <p className="text-xs text-text-muted">
+                          {ready ? '✅ Prêt' : isMyTurn ? '🎯 À son tour' : '⏳ En attente'}
+                        </p>
+                      </div>
+                      {!ready && isMyTurn && id === myPlayerId && (
+                        <button onClick={() => openPicker(id)} className="btn-secondary text-sm">
+                          Configurer
+                        </button>
+                      )}
+                      {!ready && !(isMyTurn && id === myPlayerId) && (
+                        <p className="text-xs text-text-muted italic">
+                          {id === myPlayerId
+                            ? 'En attente de votre tour...'
+                            : isHost ? 'Sur son propre appareil' : 'En attente...'}
+                        </p>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })()}
 
           {configuringPlayerId !== null && (
             <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
@@ -818,12 +862,43 @@ function MemoryGrid() {
             <p className="text-sm text-text-muted">👁️ Vous suivez la partie en spectateur — lecture seule.</p>
           </div>
         )}
+
+        {/* Bug playtest 2026-08-16 : ni le spectateur (éliminé) ni les AUTRES
+            finalistes (qualifiés mais pas leur tour) ne voyaient la question
+            que le joueur actif est en train de résoudre — selectedCell (qui
+            alimente le modal de question plus bas) n'est renseigné que sur
+            l'appareil du joueur qui a lui-même révélé la case. On dérive la
+            même info en lecture seule depuis gridState, qui contient déjà le
+            texte de la question dès que son statut n'est plus "hidden" (voir
+            get_grid_state côté backend) — pour quiconque n'a pas la main
+            (spectateur OU finaliste dont ce n'est pas le tour). */}
+        {myPlayerId !== currentPlayerId && (() => {
+          const revealedCell = gridState.cells.find((c) => c.status === 'revealed')
+          if (!revealedCell) return null
+          return (
+            <div className="card mb-4">
+              <h3 className="text-sm font-semibold text-text-muted mb-2">
+                Question en cours — {nameFor(currentPlayerId)}
+              </h3>
+              {revealedCell.question ? (
+                <>
+                  <p className="text-lg text-text mb-1">{revealedCell.question.text}</p>
+                  <p className="text-xs text-text-muted">
+                    {revealedCell.question.category} • {revealedCell.question.points} pts
+                  </p>
+                </>
+              ) : (
+                <p className="text-text-muted">Question chargée...</p>
+              )}
+            </div>
+          )
+        })()}
         <div className="flex items-center justify-between mb-4">
           <div>
             <h1 className="text-2xl font-bold font-display">🧠 Manche 3 — Grille Mémoire</h1>
             <p className="text-text-muted text-sm">
               Code: <span className="font-mono font-bold text-brand">{game.code}</span>
-              {' • '}Progression: {matchedCells}/{totalCells} ({progress}%)
+              {' • '}Progression: {matchedCells}/{totalQuestions} ({progress}%)
               {' • '}4 finalistes
             </p>
           </div>
@@ -863,7 +938,7 @@ function MemoryGrid() {
               <h3 className="text-sm font-semibold text-text-muted mb-2">Finalistes</h3>
               <div className="flex flex-wrap gap-3 mb-4">
                 {standings.map((s, idx) => {
-                  const color = FINALIST_COLORS[idx % FINALIST_COLORS.length]
+                  const color = colorFor(s.player_id) ?? FINALIST_COLORS[idx % FINALIST_COLORS.length]
                   return (
                     <span key={s.player_id} className={`px-3 py-1 rounded-full text-sm font-semibold ${color.bg} border ${color.border} ${color.text}`}>
                       {s.player_name}
@@ -898,10 +973,11 @@ function MemoryGrid() {
               {standings.map((s, idx) => {
                 const cellsControlled = (s.stolen_cells ?? 0) + (s.own_theme_cells ?? 0) + (s.unassigned_cells ?? 0)
                 const controlPercent = Math.round((cellsControlled / TOTAL_GRID_CELLS) * 100)
+                const color = colorFor(s.player_id) ?? FINALIST_COLORS[idx % FINALIST_COLORS.length]
                 return (
                   <div key={s.player_id} className="card py-2 px-4 text-left">
                     <div className="flex justify-between items-center">
-                      <span className={FINALIST_COLORS[idx % FINALIST_COLORS.length].text}>
+                      <span className={color.text}>
                         {idx === 0 ? '🏆 ' : `${idx + 1}. `}
                         {s.player_name}
                       </span>
@@ -927,7 +1003,7 @@ function MemoryGrid() {
               <div className="card">
                 <h3 className="text-sm font-semibold text-text-muted mb-2">Finalistes</h3>
                 {standings.map((s, idx) => {
-                  const color = FINALIST_COLORS[idx % FINALIST_COLORS.length]
+                  const color = colorFor(s.player_id) ?? FINALIST_COLORS[idx % FINALIST_COLORS.length]
                   const isTurn = s.player_id === currentPlayerId
                   return (
                     <div

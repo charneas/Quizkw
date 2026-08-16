@@ -1,5 +1,6 @@
 import logging
 import random
+from datetime import datetime, timedelta
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -8,6 +9,13 @@ from app import models
 from app.score_utils import apply_team_score_delta
 
 logger = logging.getLogger(__name__)
+
+# Bug playtest 2026-08-16 : un duel Ping-Pong abandonné (navigateur fermé,
+# équipe qui ne revient jamais) ne doit pas bloquer next-question pour
+# toujours — passé ce délai, on le traite comme fantôme plutôt que "en
+# cours" (BUG-101c : la fin de Manche 1 tolère déjà ce cas pour le duel de
+# départage, cf. test_manche1_end_qualifies_without_crashing_if_tiebreak_duel_unavailable).
+PENDING_DUEL_STALE_AFTER = timedelta(minutes=10)
 
 
 def _roll_wheel_effect(has_opponent: bool):
@@ -98,6 +106,24 @@ def _pending_tiebreak_duel(db: Session, game: models.GameSession) -> Optional[mo
         models.PingPongDuel.game_session_id == game.id,
         models.PingPongDuel.is_tiebreak == True,
         models.PingPongDuel.is_completed == False,
+    ).first()
+
+
+def _pending_ping_pong_duel(db: Session, game: models.GameSession) -> Optional[models.PingPongDuel]:
+    """Bug playtest 2026-08-16 : un duel Ping-Pong déclenché par la roue en
+    cours de Manche 1 (pas seulement le duel de départage de fin de manche)
+    ne doit pas non plus laisser next-question lancer une nouvelle question
+    pendant qu'il reste en cours — sinon la question suivante écrase
+    l'attention des équipes en plein duel.
+
+    Exclut les duels trop anciens (PENDING_DUEL_STALE_AFTER) : un duel
+    abandonné ne doit jamais bloquer next-question indéfiniment, seul un
+    duel réellement en train d'être joué doit le faire."""
+    cutoff = datetime.utcnow() - PENDING_DUEL_STALE_AFTER
+    return db.query(models.PingPongDuel).filter(
+        models.PingPongDuel.game_session_id == game.id,
+        models.PingPongDuel.is_completed == False,
+        models.PingPongDuel.created_at >= cutoff,
     ).first()
 
 

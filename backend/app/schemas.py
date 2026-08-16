@@ -645,6 +645,11 @@ class SubmitPingPongAnswerResponse(BaseModel):
     winner_team_name: Optional[str] = None
     next_turn_team_id: Optional[int] = None
     message: str
+    # Bug playtest 2026-08-16 : quand la liste de réponses du thème est
+    # épuisée, le duel change de thème au lieu de faire perdre l'équipe
+    # suivante par manque de réponses disponibles.
+    theme_changed: bool = False
+    new_theme: Optional[PingPongTheme] = None
 
 class PingPongDuelResultsResponse(BaseModel):
     duel_id: int

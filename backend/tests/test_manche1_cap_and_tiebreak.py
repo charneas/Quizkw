@@ -3,6 +3,8 @@ questions). Elle est maintenant plafonnée à 20 questions ; à la 20e, elle se
 termine et qualifie les équipes pour la Manche 2. Si le classement laisse une
 égalité gênante sur la dernière place qualificative, un duel ping-pong de
 départage tranche avant la qualification (au lieu d'un tri arbitraire)."""
+from datetime import datetime, timedelta
+
 import main
 from app import models
 
@@ -126,10 +128,15 @@ def test_manche1_end_qualifies_without_crashing_if_tiebreak_duel_unavailable(tes
 
     # T4 a déjà un duel actif non lié au départage (ex. duel abandonné en
     # cours de partie) : le duel de départage T4/T5 ne peut plus démarrer.
+    # created_at daté dans le passé pour représenter un vrai abandon (navigateur
+    # fermé, etc.) — sans ça, next-question (bug playtest 2026-08-16 : bloque
+    # tant qu'un duel Ping-Pong reste ouvert) le traiterait comme un duel en
+    # cours et empêcherait la Manche 1 d'atteindre son cap de questions.
     stuck_duel = models.PingPongDuel(
         game_session_id=sample_game_session.id, theme_id=theme.id,
         team1_id=t4.id, team2_id=t1.id,
         current_turn_team_id=t4.id, is_completed=False, answers_used=[],
+        created_at=datetime.utcnow() - timedelta(minutes=30),
     )
     db_session.add(stuck_duel)
     db_session.commit()

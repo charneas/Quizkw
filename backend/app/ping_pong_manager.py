@@ -1,9 +1,21 @@
+import unicodedata
+
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_, select, literal, exists
 from datetime import datetime
 from typing import Dict, Optional, List
 from . import models, schemas
 from .score_utils import apply_team_score_delta
+
+
+def _fold_accents(s: str) -> str:
+    """Bug playtest 2026-08-16 : "elephant" tapé sans accent était refusé
+    pour "Éléphant" — décompose les caractères accentués (NFKD) et retire
+    les diacritiques, sans toucher à la casse ni aux espaces (déjà gérés par
+    l'appelant via strip/lower)."""
+    return "".join(
+        c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c)
+    )
 
 
 def _levenshtein_distance(a: str, b: str) -> int:
@@ -42,11 +54,21 @@ def answer_matches_with_tolerance(normalized_answer: str, correct_answers_lower:
     """
     if normalized_answer in correct_answers_lower:
         return True
+
+    # Bug playtest 2026-08-16 : tolérance aux accents manquants/en trop, en
+    # plus de la tolérance aux fautes de frappe ci-dessous — comparaison sur
+    # des versions sans diacritiques, la casse/les espaces étant déjà gérés
+    # par l'appelant (strip + lower) avant d'arriver ici.
+    folded_answer = _fold_accents(normalized_answer)
+    folded_correct = [_fold_accents(c) for c in correct_answers_lower]
+    if folded_answer in folded_correct:
+        return True
+
     if len(normalized_answer) <= 3:
         return False
     return any(
-        len(correct) > 3 and _levenshtein_distance(normalized_answer, correct) == 1
-        for correct in correct_answers_lower
+        len(correct) > 3 and _levenshtein_distance(folded_answer, correct) == 1
+        for correct in folded_correct
     )
 
 
@@ -354,12 +376,46 @@ class PingPongManager:
         # Changer le tour vers l'autre équipe
         duel.current_turn_team_id = other_team_id
 
+        # Bug playtest 2026-08-16 : la liste de réponses du thème vient
+        # d'être vidée par cette bonne réponse — sans changement de thème,
+        # la prochaine équipe n'aurait plus aucune réponse valide à donner
+        # et perdrait automatiquement, alors qu'elle a joué correctement.
+        # On bascule sur un nouveau thème (jamais utilisé dans CE duel) et
+        # on repart à zéro sur answers_used, le duel continue normalement.
+        theme_changed = False
+        new_theme = None
+        if len(updated_answers) >= len(correct_answers_lower):
+            used_theme_ids = list(duel.used_theme_ids or [])
+            used_theme_ids.append(duel.theme_id)
+            candidate = (
+                self.db.query(models.PingPongTheme)
+                .filter(~models.PingPongTheme.id.in_(used_theme_ids))
+                .order_by(func.random())
+                .first()
+            )
+            if candidate:
+                duel.used_theme_ids = used_theme_ids
+                duel.theme_id = candidate.id
+                duel.answers_used = []
+                theme_changed = True
+                new_theme = candidate
+            # Si aucun thème n'est disponible (tous épuisés), on laisse le
+            # duel continuer sur l'actuel plutôt que de planter — cas limite
+            # non atteignable en pratique avec le catalogue de thèmes actuel.
+
         self.db.commit()
         self.db.refresh(duel)
 
         other_team = (
             self.db.query(models.Team).filter(models.Team.id == other_team_id).first()
         )
+
+        message = f"Bonne réponse ! Au tour de {other_team.name if other_team else 'autre équipe'}"
+        if theme_changed and new_theme:
+            message = (
+                f"Bonne réponse ! Thème épuisé, changement pour « {new_theme.title} ». "
+                f"Au tour de {other_team.name if other_team else 'autre équipe'}"
+            )
 
         return {
             "is_correct": True,
@@ -369,7 +425,9 @@ class PingPongManager:
             "winner_team_id": None,
             "winner_team_name": None,
             "next_turn_team_id": other_team_id,
-            "message": f"Bonne réponse ! Au tour de {other_team.name if other_team else 'autre équipe'}",
+            "message": message,
+            "theme_changed": theme_changed,
+            "new_theme": new_theme,
         }
 
     def get_duel_state(self, duel_id: int) -> Dict:

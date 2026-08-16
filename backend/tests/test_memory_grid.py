@@ -392,21 +392,26 @@ class TestMemoryGridManager:
     def test_check_completion_marks_grid_completed(self, memory_grid_manager, db_session,
                                                     sample_game_session, round3_finalists,
                                                     grid_questions):
-        """C-003 : toutes les cellules répondues -> is_completed devient vrai."""
+        """Bug playtest 2026-08-16 : chaque finaliste a droit à 5 questions
+        (CELLS_PER_PLAYER), pas besoin de vider les 35 cellules de la grille
+        — is_completed devient vrai dès que TOUS les finalistes ont répondu
+        à leurs 5 questions chacun."""
         grid = memory_grid_manager.create_memory_grid(
             game_session_id=sample_game_session.id, rows=7, cols=5
         )
         round_obj = _start_round_past_memorize_phase(memory_grid_manager, sample_game_session.id, grid.id, db_session)
-        player = round3_finalists[0]
 
         cells = db_session.query(GridCell).filter(GridCell.memory_grid_id == grid.id).all()
-        for cell in cells:
-            memory_grid_manager.reveal_cell(round_obj.id, player.id, cell.id)
-            question = db_session.query(Question).filter(Question.id == cell.question_id).first()
-            memory_grid_manager.answer_cell(
-                round_id=round_obj.id, player_id=player.id, cell_id=cell.id,
-                player_answer=question.correct_answer,
-            )
+        cell_iter = iter(cells)
+        for player in round3_finalists:
+            for _ in range(memory_grid_manager.CELLS_PER_PLAYER):
+                cell = next(cell_iter)
+                memory_grid_manager.reveal_cell(round_obj.id, player.id, cell.id)
+                question = db_session.query(Question).filter(Question.id == cell.question_id).first()
+                memory_grid_manager.answer_cell(
+                    round_id=round_obj.id, player_id=player.id, cell_id=cell.id,
+                    player_answer=question.correct_answer,
+                )
         db_session.commit()
 
         assert memory_grid_manager.check_completion(grid.id) is True

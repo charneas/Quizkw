@@ -134,13 +134,21 @@ def next_question(code: str, db: Session = Depends(get_db), _host: models.GameSe
     if not game:
         raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
 
-    if game.current_round == models.RoundType.MANCHE_1 and manche1_orchestration._pending_tiebreak_duel(db, game):
-        # Un duel de départage de fin de Manche 1 est en cours : on ne
-        # touche à rien tant qu'il n'est pas résolu (voir submit_ping_pong_duel_answer).
-        return {
-            "message": "Un duel de départage est en cours, patientez.",
-            "question_id": None,
-        }
+    if game.current_round == models.RoundType.MANCHE_1:
+        pending_duel = manche1_orchestration._pending_ping_pong_duel(db, game)
+        if pending_duel:
+            # Bug playtest 2026-08-16 : plus seulement le duel de départage
+            # de fin de Manche 1 — AUCUNE nouvelle question ne doit être
+            # lancée tant qu'un duel Ping-Pong (départage ou déclenché par
+            # la roue en cours de partie) reste en cours. _pending_ping_pong_duel
+            # exclut déjà les duels trop anciens (abandonnés) pour ne jamais
+            # bloquer indéfiniment (BUG-101c).
+            message = (
+                "Un duel de départage est en cours, patientez."
+                if pending_duel.is_tiebreak
+                else "Un duel Ping-Pong est en cours, patientez."
+            )
+            return {"message": message, "question_id": None}
 
     game.questions_played = (game.questions_played or 0) + 1
     db.commit()

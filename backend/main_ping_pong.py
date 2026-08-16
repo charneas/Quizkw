@@ -124,6 +124,8 @@ def submit_ping_pong_duel_answer(
         winner_team_name=result["winner_team_name"],
         next_turn_team_id=result["next_turn_team_id"],
         message=result["message"],
+        theme_changed=result.get("theme_changed", False),
+        new_theme=result.get("new_theme"),
     )
 
 @router.get("/ping-pong/duel/{duel_id}")

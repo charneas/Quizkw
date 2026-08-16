@@ -257,7 +257,11 @@ class PlayerRound3Stats(Base):
     score = Column(Integer, default=0, nullable=False)
     cells_claimed = Column(Integer, default=0, nullable=False)
     color = Column(String, nullable=True)  # couleur du finaliste sur la grille
-    selected_theme_ids = Column(JSON, nullable=True)  # 3 thèmes choisis par le finaliste
+    selected_theme_ids = Column(JSON, nullable=True)  # 3 thèmes soumis par le finaliste
+    # Bug playtest 2026-08-16 : sur les 3 thèmes soumis, le serveur en tire UN
+    # seul au hasard — c'est celui-là, et lui seul, qui sert de thème du
+    # finaliste pour la grille (les 2 autres ne sont jamais utilisés).
+    chosen_theme_id = Column(Integer, ForeignKey("themes.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relations
@@ -289,6 +293,10 @@ class PingPongDuel(Base):
     answers_used = Column(JSON, default=list)  # Liste des réponses déjà données (pour éviter les doublons)
     is_tiebreak = Column(Boolean, default=False, nullable=False)  # départage de qualification fin de Manche 1
     is_cancelled = Column(Boolean, default=False, nullable=False)  # BUG-101g : annulé par le host, pas de vainqueur
+    # Bug playtest 2026-08-16 : thèmes déjà épuisés dans CE duel (toutes les
+    # réponses valides trouvées) — sert à ne jamais retomber sur le même
+    # thème quand submit_answer bascule automatiquement vers un nouveau.
+    used_theme_ids = Column(JSON, default=list, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relations
