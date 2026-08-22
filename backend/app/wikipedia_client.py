@@ -30,7 +30,7 @@ def get_wikipedia_extract(topic: str, timeout: float = 10.0) -> str:
         response = httpx.get(
             url,
             timeout=timeout,
-            headers={"User-Agent": "Quizkw-content-generator/1.0 (https://quizclimb.duckdns.org; contact: charneas@gmail.com)"},
+            headers={"User-Agent": "Quizkw-content-generator/1.0 (https://quizclimb.fr; contact: charneas@gmail.com)"},
         )
         if response.status_code == 404:
             raise LookupError(f"Sujet Wikipedia introuvable : '{topic}'")
