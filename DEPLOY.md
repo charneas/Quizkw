@@ -74,6 +74,17 @@ SESSION_SECRET_KEY=<valeur-aleatoire-generee-par-deploiement>
 # contenu admin échoue.
 ANTHROPIC_API_KEY=<cle-api-anthropic>
 
+# Requis depuis l'Epic O (AD-19/AD-22, connexion Discord facultative) : identifiants
+# OAuth de l'application Discord (portail développeur Discord), URL de callback
+# exacte enregistrée côté Discord, et secret de signature dédié au cookie de
+# session Discord — jamais la même valeur que SESSION_SECRET_KEY (AD-22 : domaines
+# de confiance strictement séparés). Sans ces variables, le reste du site
+# fonctionne normalement en mode invité — seule la connexion Discord échoue.
+DISCORD_CLIENT_ID=<client-id-application-discord>
+DISCORD_CLIENT_SECRET=<client-secret-application-discord>
+DISCORD_REDIRECT_URI=https://<domaine-prod>/api/auth/discord/callback
+DISCORD_SESSION_SECRET_KEY=<valeur-aleatoire-generee-par-deploiement>
+
 # Optionnel (revue de sécurité, 2026-08-15) : origines cross-origin autorisées
 # pour l'API, séparées par des virgules. Vide par défaut — le flux normal
 # (Vite en dev, Nginx en prod, section 6) est same-origin via proxy /api/ et

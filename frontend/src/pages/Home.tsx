@@ -1,7 +1,14 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { createGame, storeHostToken } from '../services/api'
 import { pluralJoueurs } from '../utils/pluralize'
+
+// Story O.1.1 : état "connecté" minimal — le callback OAuth redirige vers
+// `/?discord=connected`, lu une fois au montage puis mémorisé en localStorage
+// pour survivre à un rechargement de l'accueil. Le rendu complet pseudo+avatar
+// (`profil-button-connected`) est le périmètre de la Story O.1.2 ; ce flag ne
+// sert ici qu'à distinguer visuellement "Connexion" de "connecté" sur l'accueil.
+const DISCORD_CONNECTED_STORAGE_KEY = 'quizkw_discord_connected'
 
 const PLAYERS_PER_TEAM_OPTIONS = [
   { value: 1, label: '1 joueur' },
@@ -23,6 +30,21 @@ function Home() {
   const [isCreating, setIsCreating] = useState(false)
   const [error, setError] = useState('')
   const [showCreate, setShowCreate] = useState(false)
+  const [isDiscordConnected, setIsDiscordConnected] = useState(
+    () => localStorage.getItem(DISCORD_CONNECTED_STORAGE_KEY) === 'true'
+  )
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('discord') === 'connected') {
+      localStorage.setItem(DISCORD_CONNECTED_STORAGE_KEY, 'true')
+      setIsDiscordConnected(true)
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+  }, [])
+
+  const handleDiscordLogin = () => {
+    window.location.href = '/api/auth/discord/login'
+  }
 
   const handleCreateGame = async () => {
     setIsCreating(true)
@@ -51,6 +73,23 @@ function Home() {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
+      {!isDiscordConnected ? (
+        <div className="fixed top-4 right-16 z-40 flex flex-col items-end gap-1 max-w-[200px]">
+          <button
+            onClick={handleDiscordLogin}
+            className="min-h-[44px] px-4 rounded bg-[#5865F2] text-white font-medium hover:scale-105 transition-transform"
+          >
+            Connexion
+          </button>
+          <p className="text-xs text-text-muted text-right">
+            Quizkw conserve ton identifiant, ton pseudo et ton avatar Discord — tu peux les supprimer à tout moment depuis ton Profil.
+          </p>
+        </div>
+      ) : (
+        <div className="fixed top-4 right-16 z-40 min-h-[44px] px-4 flex items-center rounded-lg bg-[#5865F2]/20 border border-[#5865F2] text-text font-medium">
+          Connecté
+        </div>
+      )}
       <div className="max-w-md w-full space-y-8">
         {/* Hero — seul endroit de l'app avec une texture/dégradé décoratif (DESIGN.md) */}
         <div className="text-center relative py-4">

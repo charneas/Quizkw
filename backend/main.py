@@ -24,6 +24,7 @@ from main_manche1 import router as manche1_router
 from main_round2 import router as round2_router
 from main_ping_pong import router as ping_pong_router
 from main_memory_grid_legacy import router as memory_grid_router
+from main_auth_discord import router as discord_auth_router
 
 # E-002 : journalisation minimale au niveau module (voir la spine § Deferred —
 # pas d'infrastructure d'observabilité, seulement logging.getLogger standard
@@ -103,6 +104,9 @@ app.include_router(round2_router)
 app.include_router(ping_pong_router)
 # Include memory grid (Manche 3) endpoints (Epic H, story H.019)
 app.include_router(memory_grid_router)
+# Include Discord SSO login/callback (Epic O, story O.1.1) — unauthenticated by
+# design (obtaining the cookie), same treatment as admin_auth_router (AD-22)
+app.include_router(discord_auth_router)
 
 
 if __name__ == "__main__":

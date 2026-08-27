@@ -9,6 +9,12 @@ import os
 os.environ.setdefault("SESSION_SECRET_KEY", "test-secret-key-not-for-production")
 os.environ.setdefault("SESSION_COOKIE_SECURE", "false")  # TestClient n'est pas en HTTPS
 os.environ.setdefault("RATE_LIMIT_ENABLED", "false")  # voir app/rate_limit.py
+# AD-22 (Epic O, Story O.1.1) : mêmes exigences "requis sans défaut inline" que
+# SESSION_SECRET_KEY, mais secret/valeurs dédiés au flux Discord.
+os.environ.setdefault("DISCORD_CLIENT_ID", "test-discord-client-id")
+os.environ.setdefault("DISCORD_CLIENT_SECRET", "test-discord-client-secret")
+os.environ.setdefault("DISCORD_REDIRECT_URI", "http://testserver/api/auth/discord/callback")
+os.environ.setdefault("DISCORD_SESSION_SECRET_KEY", "test-discord-secret-key-not-for-production")
 
 import pytest
 from sqlalchemy import create_engine

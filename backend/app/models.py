@@ -213,6 +213,21 @@ class Admin(Base):
     hashed_password = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+class Account(Base):
+    """Compte joueur optionnel lié à Discord (AD-19) : identité distincte de
+    Player, résolue-ou-créée par `discord_id` via `account_manager.py`, jamais
+    en check-then-insert applicatif — la contrainte unique DB est la sentinelle
+    d'idempotence face à deux logins concurrents. Aucune adresse email, aucune
+    autre donnée de profil (FR7)."""
+    __tablename__ = "accounts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    discord_id = Column(String, nullable=False, unique=True, index=True)
+    pseudo = Column(String, nullable=False)
+    avatar = Column(String, nullable=True)  # Discord peut ne renvoyer aucun hash d'avatar
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class PlayerRound2Stats(Base):
     __tablename__ = "player_round2_stats"
     __table_args__ = (
