@@ -160,6 +160,20 @@ export async function logoutDiscord(): Promise<boolean> {
   }
 }
 
+// === Suppression de compte (Epic O, Story O.3.1, RGPD) ===
+
+// Même logique que logoutDiscord : ne renvoie `true` que sur confirmation
+// serveur (200), pour ne jamais faire disparaître le compte côté client sur
+// un 429/5xx transitoire alors que le Compte existe toujours en base.
+export async function deleteAccount(): Promise<boolean> {
+  try {
+    const response = await fetch(`${API_BASE}/account`, { method: 'DELETE', credentials: 'include' })
+    return response.ok
+  } catch {
+    return false
+  }
+}
+
 // === Statistiques du Compte (Epic O, Story O.2.2, AD-20) ===
 
 export interface AccountThemeStat {

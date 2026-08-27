@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
-import { fetchDiscordAccount, logoutDiscord, type DiscordAccount } from '../services/api'
+import { deleteAccount, fetchDiscordAccount, logoutDiscord, type DiscordAccount } from '../services/api'
 
 // Revue de code (Story O.2.1) : Home.tsx et AccountButton.tsx interrogeaient
 // chacun GET /auth/discord/me indépendamment, avec leur propre state — un
@@ -10,11 +10,13 @@ import { fetchDiscordAccount, logoutDiscord, type DiscordAccount } from '../serv
 interface DiscordAccountContextValue {
   account: DiscordAccount | null
   logout: () => Promise<boolean>
+  deleteAccount: () => Promise<boolean>
 }
 
 const DiscordAccountContext = createContext<DiscordAccountContextValue>({
   account: null,
   logout: async () => false,
+  deleteAccount: async () => false,
 })
 
 export function DiscordAccountProvider({ children }: { children: ReactNode }) {
@@ -41,8 +43,16 @@ export function DiscordAccountProvider({ children }: { children: ReactNode }) {
     return success
   }
 
+  // Story O.3.1 : même garde que logout — le compte local ne disparaît que
+  // si le serveur a réellement confirmé la suppression.
+  const removeAccount = async () => {
+    const success = await deleteAccount()
+    if (success) setAccount(null)
+    return success
+  }
+
   return (
-    <DiscordAccountContext.Provider value={{ account, logout }}>
+    <DiscordAccountContext.Provider value={{ account, logout, deleteAccount: removeAccount }}>
       {children}
     </DiscordAccountContext.Provider>
   )

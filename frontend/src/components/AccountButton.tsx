@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useDiscordAccount } from '../contexts/DiscordAccountContext'
 import ProfilOverlay from './ProfilOverlay'
+import ConfirmModal from './ConfirmModal'
 
 // Story O.1.2 : état "connecté" rendu globalement (comme ThemeToggle), sur
 // tous les écrans — remplace le badge local à Home.tsx posé par O.1.1. Ne
@@ -13,9 +14,12 @@ import ProfilOverlay from './ProfilOverlay'
 // composants restent synchronisés (un logout ici fait immédiatement
 // réapparaître le bouton "Connexion" de Home.tsx, sans double requête réseau).
 function AccountButton() {
-  const { account, logout } = useDiscordAccount()
+  const { account, logout, deleteAccount } = useDiscordAccount()
   const [menuOpen, setMenuOpen] = useState(false)
   const [isProfilOpen, setIsProfilOpen] = useState(false)
+  // Story O.3.1 : réutilise le pattern PENALTY (ConfirmModal) — la modale
+  // de confirmation s'affiche avant toute suppression effective.
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const triggerButtonRef = useRef<HTMLButtonElement>(null)
 
@@ -37,6 +41,14 @@ function AccountButton() {
     // toujours côté serveur.
     const success = await logout()
     if (success) setMenuOpen(false)
+  }
+
+  // Même garde que handleLogout : ne ferme la confirmation que sur succès
+  // serveur confirmé, sinon le joueur croirait son compte supprimé alors
+  // qu'il existe toujours.
+  const handleDeleteAccount = async () => {
+    const success = await deleteAccount()
+    if (success) setIsDeleteConfirmOpen(false)
   }
 
   if (!account) return null
@@ -73,6 +85,15 @@ function AccountButton() {
           >
             Se déconnecter
           </button>
+          <button
+            onClick={() => {
+              setMenuOpen(false)
+              setIsDeleteConfirmOpen(true)
+            }}
+            className="w-full text-left px-4 py-2 min-h-[44px] text-sm text-danger hover:bg-brand-muted/20 transition-colors"
+          >
+            Supprimer mon compte
+          </button>
         </div>
       )}
 
@@ -80,6 +101,16 @@ function AccountButton() {
         <ProfilOverlay
           onClose={() => setIsProfilOpen(false)}
           triggerRef={triggerButtonRef}
+        />
+      )}
+
+      {isDeleteConfirmOpen && (
+        <ConfirmModal
+          title="Supprimer ton compte ?"
+          message="Cette action est définitive. Tes statistiques resteront anonymes dans les moyennes globales, mais ton compte et ton historique personnel disparaissent immédiatement."
+          confirmLabel="Supprimer définitivement"
+          onConfirm={handleDeleteAccount}
+          onCancel={() => setIsDeleteConfirmOpen(false)}
         />
       )}
     </div>
