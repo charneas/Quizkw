@@ -21,18 +21,21 @@ from urllib.parse import urlencode
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from itsdangerous import URLSafeSerializer
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.account_manager import resolve_or_create_account
+from app import models
+from app.account_manager import DISCORD_COOKIE_NAME, resolve_account_from_request, resolve_or_create_account
 from app.database import get_db
 from app.rate_limit import limiter
 
 logger = logging.getLogger(__name__)
 
-COOKIE_NAME = "discord_session"
+# Story O.2.1 : nom de cookie promu dans account_manager.py (partagé avec
+# main_teams.py) — réutilisé ici tel quel plutôt que redéfini une deuxième fois.
+COOKIE_NAME = DISCORD_COOKIE_NAME
 STATE_COOKIE_NAME = "discord_oauth_state"
 # AD-22 : cookie envoyé uniquement sur HTTPS, même logique que SESSION_COOKIE_SECURE (AD-17).
 DISCORD_SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "true").lower() != "false"
@@ -86,6 +89,31 @@ def _serializer(session_secret_key: str) -> URLSafeSerializer:
 
 def sign_discord_session(discord_id: str, session_secret_key: str) -> str:
     return _serializer(session_secret_key).dumps({"discord_id": discord_id})
+
+
+def _avatar_url(discord_id: str, avatar_hash: str | None) -> str:
+    """Construit l'URL CDN Discord affichable par `profil-button-connected`
+    (DESIGN.md) — `Account.avatar` ne stocke qu'un hash, jamais une URL
+    complète. Sans avatar personnalisé, Discord retombe sur un avatar par
+    défaut indexé par l'identifiant (formule officielle Discord)."""
+    if avatar_hash:
+        return f"https://cdn.discordapp.com/avatars/{discord_id}/{avatar_hash}.png"
+    default_index = (int(discord_id) >> 22) % 6
+    return f"https://cdn.discordapp.com/embed/avatars/{default_index}.png"
+
+
+def _current_account(request: Request, db: Session) -> models.Account | None:
+    """Résout l'Account courant à partir du cookie de session Discord, sans
+    jamais en créer un nouveau (contrairement au callback OAuth) : une lecture
+    seule (Task 1, Story O.1.2). Délègue entièrement à
+    `account_manager.resolve_account_from_request` (Story O.2.1/O.2.2, revue
+    de code) — une seule requête DB, partagée avec `join_team`/`create_player`
+    (qui n'ont besoin que de l'id) plutôt que deux requêtes séparées relisant
+    la même ligne. Signature invalide, cookie absent, secret non configuré, ou
+    Account supprimé entre-temps (AD-21) sont tous traités uniformément comme
+    "non connecté" (401), jamais comme une erreur serveur — contrairement à
+    l'ancien `_require_discord_config()` qui levait une 503."""
+    return resolve_account_from_request(request, db)
 
 
 @router.get("/login")
@@ -194,3 +222,36 @@ def discord_callback(request: Request, db: Session = Depends(get_db)):
         max_age=DISCORD_SESSION_COOKIE_MAX_AGE_SECONDS,
     )
     return redirect
+
+
+@router.get("/me")
+@limiter.limit("60/minute")
+def discord_me(request: Request, db: Session = Depends(get_db)):
+    """Lecture d'identité pour l'affichage global du bouton connecté (Story
+    O.1.2, AC #7) : re-résout l'Account depuis le cookie à chaque appel (AD-22,
+    jamais un account_id mis en cache), sans jamais en créer un — une lecture
+    seule, contrairement au callback OAuth."""
+    account = _current_account(request, db)
+    if account is None:
+        raise HTTPException(status_code=401, detail="Non connecté.")
+    return {
+        "pseudo": account.pseudo,
+        "avatar": _avatar_url(account.discord_id, account.avatar),
+    }
+
+
+@router.post("/logout")
+@limiter.limit("60/minute")
+def discord_logout(request: Request):
+    """Efface le cookie de session Discord (AC #3/#4, Story O.1.2). Stateless
+    (AD-22) : aucune session serveur à invalider, un appel sans cookie reste un
+    no-op réussi — même traitement que POST /admin/logout
+    (backend/main_admin.py:59-64)."""
+    response = JSONResponse({"message": "Déconnexion réussie."})
+    response.delete_cookie(
+        key=COOKIE_NAME,
+        httponly=True,
+        samesite="strict",
+        secure=DISCORD_SESSION_COOKIE_SECURE,
+    )
+    return response

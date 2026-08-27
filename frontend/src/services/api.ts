@@ -130,6 +130,64 @@ async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> 
   return response.json()
 }
 
+// === Compte Discord (Epic O, Story O.1.2) ===
+
+export interface DiscordAccount {
+  pseudo: string
+  avatar: string
+}
+
+// Ne réutilise pas fetchApi : un 401 ("non connecté") est un résultat normal
+// ici, pas une erreur à jeter — AccountButton l'interroge au montage de
+// chaque page pour savoir quoi afficher (AD-22 : jamais un état mis en cache,
+// toujours re-résolu depuis le cookie côté serveur).
+export async function fetchDiscordAccount(): Promise<DiscordAccount | null> {
+  const response = await fetch(`${API_BASE}/auth/discord/me`, { credentials: 'include' })
+  if (!response.ok) return null
+  return response.json()
+}
+
+// Renvoie `true` seulement si le serveur a confirmé la déconnexion (200) —
+// un appelant qui l'ignorerait effacerait l'état local même sur un 429/5xx
+// transitoire, désynchronisé du cookie réellement toujours posé côté serveur
+// (trouvé en revue de code).
+export async function logoutDiscord(): Promise<boolean> {
+  try {
+    const response = await fetch(`${API_BASE}/auth/discord/logout`, { method: 'POST', credentials: 'include' })
+    return response.ok
+  } catch {
+    return false
+  }
+}
+
+// === Statistiques du Compte (Epic O, Story O.2.2, AD-20) ===
+
+export interface AccountThemeStat {
+  theme_id: number
+  theme_name: string
+  personal_correct: number
+  personal_total: number
+  global_correct: number
+  global_total: number
+  insufficient_data: boolean
+}
+
+export interface AccountStats {
+  general: {
+    personal_correct: number
+    personal_total: number
+    global_correct: number
+    global_total: number
+  }
+  themes: AccountThemeStat[]
+}
+
+export async function fetchAccountStats(): Promise<AccountStats | null> {
+  const response = await fetch(`${API_BASE}/account/stats`, { credentials: 'include' })
+  if (!response.ok) return null
+  return response.json()
+}
+
 // === Sessions de jeu ===
 
 export async function createGame(data: any) {

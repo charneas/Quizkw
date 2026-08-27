@@ -12,7 +12,23 @@ AD-5 : le manager ne commit pas ; les tests committent.
 import pytest
 
 from app.memory_grid import MemoryGridManager, GridCell
-from app.models import PlayerRound3Stats, Question, Difficulty
+from app.models import PlayerRound3Stats, Question, Difficulty, Theme, ThemeCategory
+
+
+@pytest.fixture
+def round3_themes(db_session):
+    """12 vrais Theme, pour satisfaire la validation ajoutée à
+    select_player_themes (revue de code, Story O.2.2) — un theme_id soumis
+    doit désormais référencer une ligne Theme réelle."""
+    themes = [
+        Theme(name=f"Thème Manche 3 {i}", category=ThemeCategory.SERIOUS, difficulty_level=5)
+        for i in range(12)
+    ]
+    db_session.add_all(themes)
+    db_session.commit()
+    for theme in themes:
+        db_session.refresh(theme)
+    return themes
 
 
 class TestFinalistSelection:
@@ -132,11 +148,12 @@ class TestPlayerThemes:
     """AD-0 : chaque finaliste choisit ses 3 thèmes."""
 
     def test_select_three_themes_persists(self, memory_grid_manager, db_session,
-                                          sample_game_session, round3_finalists):
+                                          sample_game_session, round3_finalists, round3_themes):
         player = round3_finalists[0]
+        theme_ids = [round3_themes[0].id, round3_themes[1].id, round3_themes[2].id]
 
         result = memory_grid_manager.select_player_themes(
-            sample_game_session.id, player.id, [1, 2, 3]
+            sample_game_session.id, player.id, theme_ids
         )
         db_session.commit()
 
@@ -145,7 +162,7 @@ class TestPlayerThemes:
         stats = db_session.query(PlayerRound3Stats).filter(
             PlayerRound3Stats.player_id == player.id
         ).first()
-        assert stats.selected_theme_ids == [1, 2, 3]
+        assert stats.selected_theme_ids == theme_ids
 
     @pytest.mark.parametrize("theme_ids", [[1, 2], [1, 2, 3, 4], []])
     def test_theme_count_must_be_exactly_three(self, memory_grid_manager, sample_game_session,
@@ -182,7 +199,8 @@ class TestGridWithThemes:
         assert "thèmes" in str(exc_info.value)
 
     def test_creates_grid_assigning_five_cells_per_finalist(self, memory_grid_manager, db_session,
-                                                            sample_game_session, round3_finalists):
+                                                            sample_game_session, round3_finalists,
+                                                            round3_themes):
         self._seed_hard_questions(db_session)
 
         # BUG-302 : les thèmes sont désormais exclusifs entre finalistes
@@ -190,7 +208,8 @@ class TestGridWithThemes:
         # donc choisir un triplet distinct.
         for i, player in enumerate(round3_finalists):
             memory_grid_manager.select_player_themes(
-                sample_game_session.id, player.id, [i * 3 + 1, i * 3 + 2, i * 3 + 3]
+                sample_game_session.id, player.id,
+                [round3_themes[i * 3].id, round3_themes[i * 3 + 1].id, round3_themes[i * 3 + 2].id]
             )
         db_session.commit()
 
@@ -205,12 +224,14 @@ class TestGridWithThemes:
             assert len(owned) == 5
 
     def test_insufficient_hard_questions_raises(self, memory_grid_manager, db_session,
-                                                sample_game_session, round3_finalists):
+                                                sample_game_session, round3_finalists,
+                                                round3_themes):
         self._seed_hard_questions(db_session, count=5)
 
         for i, player in enumerate(round3_finalists):
             memory_grid_manager.select_player_themes(
-                sample_game_session.id, player.id, [i * 3 + 1, i * 3 + 2, i * 3 + 3]
+                sample_game_session.id, player.id,
+                [round3_themes[i * 3].id, round3_themes[i * 3 + 1].id, round3_themes[i * 3 + 2].id]
             )
         db_session.commit()
 

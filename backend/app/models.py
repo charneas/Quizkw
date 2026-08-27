@@ -103,6 +103,10 @@ class Player(Base):
     name = Column(String, nullable=False)
     team_id = Column(Integer, ForeignKey("teams.id"), nullable=True)
     player_token = Column(String, nullable=False, default=lambda: secrets.token_urlsafe(24))
+    # AD-19/AD-21 (Epic O, Story O.2.1) : écrit une seule fois à la création du
+    # Player (join_team/create_player), jamais relu/réécrit ensuite. ON DELETE
+    # SET NULL porté par la DDL elle-même, jamais un CASCADE (AD-21).
+    account_id = Column(Integer, ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True)
 
     # Relations
     team = relationship("Team", back_populates="players")

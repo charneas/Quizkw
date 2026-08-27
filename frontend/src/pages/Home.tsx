@@ -2,13 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { createGame, storeHostToken } from '../services/api'
 import { pluralJoueurs } from '../utils/pluralize'
-
-// Story O.1.1 : état "connecté" minimal — le callback OAuth redirige vers
-// `/?discord=connected`, lu une fois au montage puis mémorisé en localStorage
-// pour survivre à un rechargement de l'accueil. Le rendu complet pseudo+avatar
-// (`profil-button-connected`) est le périmètre de la Story O.1.2 ; ce flag ne
-// sert ici qu'à distinguer visuellement "Connexion" de "connecté" sur l'accueil.
-const DISCORD_CONNECTED_STORAGE_KEY = 'quizkw_discord_connected'
+import { useDiscordAccount } from '../contexts/DiscordAccountContext'
 
 const PLAYERS_PER_TEAM_OPTIONS = [
   { value: 1, label: '1 joueur' },
@@ -30,14 +24,19 @@ function Home() {
   const [isCreating, setIsCreating] = useState(false)
   const [error, setError] = useState('')
   const [showCreate, setShowCreate] = useState(false)
-  const [isDiscordConnected, setIsDiscordConnected] = useState(
-    () => localStorage.getItem(DISCORD_CONNECTED_STORAGE_KEY) === 'true'
-  )
+  // Story O.2.1 (revue de code) : le compte connecté vient désormais de
+  // DiscordAccountContext, partagé avec AccountButton (App.tsx) — une seule
+  // requête réseau, un seul état, plus de désynchronisation possible entre
+  // les deux composants après un logout.
+  const { account } = useDiscordAccount()
+  const isDiscordConnected = account !== null
 
   useEffect(() => {
+    // Le callback OAuth redirige vers `/?discord=connected` (backend, inchangé
+    // par cette story) — plus rien ne lit ce paramètre pour décider de l'état
+    // connecté (porté par le contexte), mais il faut encore le retirer de la
+    // barre d'adresse.
     if (new URLSearchParams(window.location.search).get('discord') === 'connected') {
-      localStorage.setItem(DISCORD_CONNECTED_STORAGE_KEY, 'true')
-      setIsDiscordConnected(true)
       window.history.replaceState({}, '', window.location.pathname)
     }
   }, [])
@@ -73,7 +72,7 @@ function Home() {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
-      {!isDiscordConnected ? (
+      {!isDiscordConnected && (
         <div className="fixed top-4 right-16 z-40 flex flex-col items-end gap-1 max-w-[200px]">
           <button
             onClick={handleDiscordLogin}
@@ -84,10 +83,6 @@ function Home() {
           <p className="text-xs text-text-muted text-right">
             Quizkw conserve ton identifiant, ton pseudo et ton avatar Discord — tu peux les supprimer à tout moment depuis ton Profil.
           </p>
-        </div>
-      ) : (
-        <div className="fixed top-4 right-16 z-40 min-h-[44px] px-4 flex items-center rounded-lg bg-[#5865F2]/20 border border-[#5865F2] text-text font-medium">
-          Connecté
         </div>
       )}
       <div className="max-w-md w-full space-y-8">

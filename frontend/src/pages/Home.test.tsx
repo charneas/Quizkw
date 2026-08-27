@@ -1,34 +1,43 @@
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import Home from './Home'
 import Game from './Game'
+import AccountButton from '../components/AccountButton'
 import * as api from '../services/api'
+import { DiscordAccountProvider } from '../contexts/DiscordAccountContext'
 
 function renderHome(initialPath = '/') {
   return render(
-    <MemoryRouter initialEntries={[initialPath]}>
-      <Routes>
-        <Route path="/" element={<Home />} />
-      </Routes>
-    </MemoryRouter>
+    <DiscordAccountProvider>
+      <MemoryRouter initialEntries={[initialPath]}>
+        <Routes>
+          <Route path="/" element={<Home />} />
+        </Routes>
+      </MemoryRouter>
+    </DiscordAccountProvider>
   )
 }
 
 describe('Home — bouton Connexion Discord (Story O.1.1)', () => {
   beforeEach(() => {
     localStorage.clear()
+    vi.spyOn(api, 'fetchDiscordAccount').mockResolvedValue(null)
   })
 
-  it('affiche le bouton Connexion et le texte RGPD quand non connecté', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('affiche le bouton Connexion et le texte RGPD quand non connecté', async () => {
     renderHome()
-    expect(screen.getByRole('button', { name: 'Connexion' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Connexion' })).toBeInTheDocument()
     expect(
       screen.getByText(/Quizkw conserve ton identifiant, ton pseudo et ton avatar Discord/)
     ).toBeInTheDocument()
   })
 
-  it('navigue en plein navigateur vers /api/auth/discord/login au clic', () => {
+  it('navigue en plein navigateur vers /api/auth/discord/login au clic', async () => {
     renderHome()
     const originalLocation = window.location
     try {
@@ -36,7 +45,7 @@ describe('Home — bouton Connexion Discord (Story O.1.1)', () => {
       delete window.location
       window.location = { ...originalLocation, href: '' } as Location
 
-      fireEvent.click(screen.getByRole('button', { name: 'Connexion' }))
+      fireEvent.click(await screen.findByRole('button', { name: 'Connexion' }))
       expect(window.location.href).toBe('/api/auth/discord/login')
     } finally {
       // Restauration systématique, même si l'assertion ci-dessus échoue --
@@ -46,24 +55,55 @@ describe('Home — bouton Connexion Discord (Story O.1.1)', () => {
     }
   })
 
-  it('affiche l\'état connecté après retour du callback (?discord=connected) et le mémorise', () => {
-    // Home.tsx lit window.location.search (redirection plein-navigateur réelle
-    // depuis le backend), pas la route virtuelle de MemoryRouter.
+  it("masque le bouton Connexion quand un compte Discord est déjà connecté (Story O.1.2)", async () => {
+    vi.spyOn(api, 'fetchDiscordAccount').mockResolvedValue({ pseudo: 'Test', avatar: 'https://cdn.discordapp.com/embed/avatars/0.png' })
+    renderHome()
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Connexion' })).not.toBeInTheDocument())
+  })
+
+  it('retire ?discord=connected de la barre d\'adresse au montage (Story O.1.2)', async () => {
+    // Revue de code : ce nettoyage avait disparu avec le retrait du flag
+    // localStorage d'O.1.1, laissant le paramètre en permanence dans l'URL.
     window.history.pushState({}, '', '/?discord=connected')
     try {
       renderHome()
-      expect(screen.getByText('Connecté')).toBeInTheDocument()
-      expect(screen.queryByRole('button', { name: 'Connexion' })).not.toBeInTheDocument()
-      expect(localStorage.getItem('quizkw_discord_connected')).toBe('true')
+      await waitFor(() => expect(window.location.search).toBe(''))
     } finally {
       window.history.pushState({}, '', '/')
     }
   })
+})
 
-  it('reste connecté après un rechargement (flag localStorage)', () => {
-    localStorage.setItem('quizkw_discord_connected', 'true')
-    renderHome()
-    expect(screen.getByText('Connecté')).toBeInTheDocument()
+describe('Home + AccountButton — état partagé (Story O.2.1, revue de code)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('la déconnexion via AccountButton fait réapparaître le bouton Connexion de Home sans reload', async () => {
+    vi.spyOn(api, 'fetchDiscordAccount').mockResolvedValue({
+      pseudo: 'Test',
+      avatar: 'https://cdn.discordapp.com/embed/avatars/0.png',
+    })
+    vi.spyOn(api, 'logoutDiscord').mockResolvedValue(true)
+
+    render(
+      <DiscordAccountProvider>
+        <MemoryRouter initialEntries={['/']}>
+          <AccountButton />
+          <Routes>
+            <Route path="/" element={<Home />} />
+          </Routes>
+        </MemoryRouter>
+      </DiscordAccountProvider>
+    )
+
+    const accountButton = await screen.findByRole('button', { name: /Test/ })
+    expect(screen.queryByRole('button', { name: 'Connexion' })).not.toBeInTheDocument()
+
+    fireEvent.click(accountButton)
+    fireEvent.click(await screen.findByRole('button', { name: 'Se déconnecter' }))
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Connexion' })).toBeInTheDocument())
   })
 })
 

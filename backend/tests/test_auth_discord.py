@@ -264,6 +264,146 @@ def test_discord_routes_return_503_without_crashing_app_when_unconfigured(test_c
                 os.environ[k] = v
 
 
+def test_discord_me_without_cookie_returns_401(test_client):
+    resp = test_client.get("/auth/discord/me")
+    assert resp.status_code == 401
+
+
+def test_discord_me_with_valid_cookie_returns_pseudo_and_avatar(test_client, db_session):
+    state = _login_and_get_state(test_client)
+    user_data = {"id": "321", "username": "MePlayer", "avatar": "myhash"}
+    with patch("main_auth_discord.httpx.Client", return_value=_mock_httpx_client(user_data)):
+        test_client.get(f"/auth/discord/callback?code=fake-code&state={state}", follow_redirects=False)
+
+    resp = test_client.get("/auth/discord/me")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["pseudo"] == "MePlayer"
+    assert data["avatar"] == "https://cdn.discordapp.com/avatars/321/myhash.png"
+
+
+def test_discord_me_does_not_overwrite_existing_pseudo_avatar(test_client, db_session):
+    # Régression directe sur le piège identifié en Dev Notes : /me ne doit
+    # jamais appeler resolve_or_create_account avec des valeurs vides, ce qui
+    # écraserait silencieusement le pseudo/avatar réels en base.
+    state = _login_and_get_state(test_client)
+    user_data = {"id": "654", "username": "RealPseudo", "avatar": "realhash"}
+    with patch("main_auth_discord.httpx.Client", return_value=_mock_httpx_client(user_data)):
+        test_client.get(f"/auth/discord/callback?code=fake-code&state={state}", follow_redirects=False)
+
+    test_client.get("/auth/discord/me")
+    test_client.get("/auth/discord/me")
+
+    account = db_session.query(models.Account).filter(models.Account.discord_id == "654").first()
+    assert account.pseudo == "RealPseudo"
+    assert account.avatar == "realhash"
+
+
+def test_discord_me_with_tampered_cookie_returns_401_not_500(test_client):
+    test_client.cookies.set("discord_session", "tampered.invalid.signature")
+    resp = test_client.get("/auth/discord/me")
+    assert resp.status_code == 401
+
+
+def test_discord_me_without_discord_config_returns_401_not_503(test_client, db_session):
+    # Revue de code (Story O.2.1) : /me levait auparavant une 503 dès que la
+    # config Discord manquait, même avec un cookie valide en signature — en
+    # contradiction avec le principe "config Discord absente = invité, jamais
+    # une erreur" déjà appliqué par join_team/create_player. Doit converger
+    # vers le même traitement : 401, jamais 503.
+    state = _login_and_get_state(test_client)
+    user_data = {"id": "555", "username": "ConfigDropped", "avatar": None}
+    with patch("main_auth_discord.httpx.Client", return_value=_mock_httpx_client(user_data)):
+        test_client.get(f"/auth/discord/callback?code=fake-code&state={state}", follow_redirects=False)
+
+    discord_vars = ["DISCORD_CLIENT_ID", "DISCORD_CLIENT_SECRET", "DISCORD_REDIRECT_URI", "DISCORD_SESSION_SECRET_KEY"]
+    original = {k: os.environ.get(k) for k in discord_vars}
+    try:
+        for k in discord_vars:
+            os.environ.pop(k, None)
+        resp = test_client.get("/auth/discord/me")
+        assert resp.status_code == 401
+    finally:
+        for k, v in original.items():
+            if v is not None:
+                os.environ[k] = v
+
+
+def test_discord_me_returns_default_avatar_when_no_avatar_hash(test_client, db_session):
+    state = _login_and_get_state(test_client)
+    user_data = {"id": "789", "username": "NoAvatar", "avatar": None}
+    with patch("main_auth_discord.httpx.Client", return_value=_mock_httpx_client(user_data)):
+        test_client.get(f"/auth/discord/callback?code=fake-code&state={state}", follow_redirects=False)
+
+    resp = test_client.get("/auth/discord/me")
+    assert resp.status_code == 200
+    assert resp.json()["avatar"] == "https://cdn.discordapp.com/embed/avatars/0.png"
+
+
+def test_discord_me_after_account_deleted_returns_401_without_recreating(test_client, db_session):
+    state = _login_and_get_state(test_client)
+    user_data = {"id": "111", "username": "SoonDeleted", "avatar": None}
+    with patch("main_auth_discord.httpx.Client", return_value=_mock_httpx_client(user_data)):
+        test_client.get(f"/auth/discord/callback?code=fake-code&state={state}", follow_redirects=False)
+
+    account = db_session.query(models.Account).filter(models.Account.discord_id == "111").first()
+    db_session.delete(account)
+    db_session.commit()
+
+    resp = test_client.get("/auth/discord/me")
+    assert resp.status_code == 401
+    assert db_session.query(models.Account).filter(models.Account.discord_id == "111").first() is None
+
+
+def test_discord_logout_clears_cookie(test_client, db_session):
+    state = _login_and_get_state(test_client)
+    user_data = {"id": "222", "username": "LogoutMe", "avatar": None}
+    with patch("main_auth_discord.httpx.Client", return_value=_mock_httpx_client(user_data)):
+        test_client.get(f"/auth/discord/callback?code=fake-code&state={state}", follow_redirects=False)
+
+    assert test_client.get("/auth/discord/me").status_code == 200
+
+    resp = test_client.post("/auth/discord/logout")
+    assert resp.status_code == 200
+    cookie_header = resp.headers.get("set-cookie", "")
+    assert "discord_session=" in cookie_header
+    assert 'discord_session=""' in cookie_header or "Max-Age=0" in cookie_header or "max-age=0" in cookie_header.lower()
+
+    assert test_client.get("/auth/discord/me").status_code == 401
+
+
+def test_discord_logout_without_cookie_is_a_noop(test_client):
+    resp = test_client.post("/auth/discord/logout")
+    assert resp.status_code == 200
+
+
+def test_discord_logout_does_not_touch_game_state(test_client, db_session, sample_game_session, sample_team, sample_player):
+    # AC #5 : la déconnexion ne doit interrompre ni modifier une partie en
+    # cours — aucun code de logout ne doit toucher Player/Team/GameSession.
+    # `Player.account_id` n'existe pas encore (AD-19, Story O.2.1, hors
+    # périmètre de cette story) : on vérifie ici que le jeu lui-même — nom du
+    # joueur, équipe, partie active — est intact après un logout Discord,
+    # ce qui suffit à prouver l'absence de tout effet de bord côté jeu.
+    state = _login_and_get_state(test_client)
+    user_data = {"id": "333", "username": "MidGame", "avatar": None}
+    with patch("main_auth_discord.httpx.Client", return_value=_mock_httpx_client(user_data)):
+        test_client.get(f"/auth/discord/callback?code=fake-code&state={state}", follow_redirects=False)
+
+    test_client.post("/auth/discord/logout")
+
+    db_session.refresh(sample_player)
+    db_session.refresh(sample_team)
+    db_session.refresh(sample_game_session)
+    assert sample_player.name == "Test Player"
+    assert sample_player.team_id == sample_team.id
+    assert sample_game_session.is_active is True
+    # L'Account lui-même (et donc tout Answer/Player qui y sera lié par
+    # O.2.1) survit intact au logout — seul le cookie est effacé (AD-22).
+    account = db_session.query(models.Account).filter(models.Account.discord_id == "333").first()
+    assert account is not None
+    assert account.pseudo == "MidGame"
+
+
 def test_discord_callback_never_stores_email(test_client, db_session):
     # Même si la réponse mockée de GET /users/@me contient une adresse email
     # (le scope `identify` ne la garantit pas absente côté API réelle), AC #7
