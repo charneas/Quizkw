@@ -61,6 +61,26 @@ describe('Home — bouton Connexion Discord (Story O.1.1)', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Connexion' })).not.toBeInTheDocument())
   })
 
+  it("n'affiche jamais le bouton Connexion en flash pour un utilisateur déjà connecté", async () => {
+    // Revue de code : account vaut null jusqu'à la résolution de GET
+    // /auth/discord/me, indiscernable de "non connecté" sans état de
+    // chargement dédié — un compte déjà connecté voyait "Connexion"
+    // apparaître puis disparaître à chaque montage.
+    let resolveAccount!: (value: { pseudo: string; avatar: string }) => void
+    vi.spyOn(api, 'fetchDiscordAccount').mockReturnValue(
+      new Promise((resolve) => {
+        resolveAccount = resolve
+      })
+    )
+    renderHome()
+
+    expect(screen.queryByRole('button', { name: 'Connexion' })).not.toBeInTheDocument()
+
+    resolveAccount({ pseudo: 'Test', avatar: 'https://cdn.discordapp.com/embed/avatars/0.png' })
+    await waitFor(() => expect(api.fetchDiscordAccount).toHaveBeenCalled())
+    expect(screen.queryByRole('button', { name: 'Connexion' })).not.toBeInTheDocument()
+  })
+
   it('retire ?discord=connected de la barre d\'adresse au montage (Story O.1.2)', async () => {
     // Revue de code : ce nettoyage avait disparu avec le retrait du flag
     // localStorage d'O.1.1, laissant le paramètre en permanence dans l'URL.

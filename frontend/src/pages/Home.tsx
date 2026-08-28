@@ -28,7 +28,7 @@ function Home() {
   // DiscordAccountContext, partagé avec AccountButton (App.tsx) — une seule
   // requête réseau, un seul état, plus de désynchronisation possible entre
   // les deux composants après un logout.
-  const { account } = useDiscordAccount()
+  const { account, isLoading: isAccountLoading } = useDiscordAccount()
   const isDiscordConnected = account !== null
 
   useEffect(() => {
@@ -72,7 +72,12 @@ function Home() {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
-      {!isDiscordConnected && (
+      {/* Revue de code : attendre la résolution initiale de GET
+          /auth/discord/me avant d'afficher "Connexion" — sinon un
+          utilisateur déjà connecté voit ce bouton clignoter le temps de
+          l'aller-retour réseau (account vaut null jusque-là, indiscernable
+          de "non connecté"). */}
+      {!isAccountLoading && !isDiscordConnected && (
         <div className="fixed top-4 right-16 z-40 flex flex-col items-end gap-1 max-w-[200px]">
           <button
             onClick={handleDiscordLogin}

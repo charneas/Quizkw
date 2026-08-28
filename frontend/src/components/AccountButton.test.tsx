@@ -99,6 +99,27 @@ describe('AccountButton (Story O.1.2)', () => {
     expect(screen.getByRole('button', { name: /TestPlayer/ })).toBeInTheDocument()
   })
 
+  it('affiche un message quand la déconnexion échoue, effacé à la réouverture du menu', async () => {
+    vi.spyOn(api, 'fetchDiscordAccount').mockResolvedValue({
+      pseudo: 'TestPlayer',
+      avatar: 'https://cdn.discordapp.com/embed/avatars/0.png',
+    })
+    vi.spyOn(api, 'logoutDiscord').mockResolvedValue(false)
+
+    renderAccountButton()
+    const button = await screen.findByRole('button', { name: /TestPlayer/ })
+    fireEvent.click(button)
+    fireEvent.click(await screen.findByRole('button', { name: 'Se déconnecter' }))
+
+    expect(await screen.findByText(/Déconnexion impossible/)).toBeInTheDocument()
+
+    // Referme puis rouvre le menu : le message ne doit pas rester affiché
+    // indéfiniment après un nouvel essai potentiel.
+    fireEvent.click(button)
+    fireEvent.click(button)
+    expect(screen.queryByText(/Déconnexion impossible/)).not.toBeInTheDocument()
+  })
+
   describe('Suppression de compte (Story O.3.1)', () => {
     async function openMenu() {
       vi.spyOn(api, 'fetchDiscordAccount').mockResolvedValue({
@@ -141,6 +162,18 @@ describe('AccountButton (Story O.1.2)', () => {
 
       await waitFor(() => expect(deleteSpy).toHaveBeenCalled())
       expect(screen.getByRole('button', { name: /TestPlayer/ })).toBeInTheDocument()
+    })
+
+    it('affiche un message dans la confirmation quand la suppression échoue', async () => {
+      vi.spyOn(api, 'deleteAccount').mockResolvedValue(false)
+      await openMenu()
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Supprimer mon compte' }))
+      fireEvent.click(await screen.findByRole('button', { name: 'Supprimer définitivement' }))
+
+      expect(await screen.findByText(/Suppression impossible/)).toBeInTheDocument()
+      // La confirmation reste ouverte : le message doit rester visible avec elle.
+      expect(screen.getByRole('button', { name: 'Supprimer définitivement' })).toBeInTheDocument()
     })
 
     it("l'annulation ferme la confirmation sans appeler l'API", async () => {

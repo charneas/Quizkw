@@ -9,18 +9,26 @@ import { deleteAccount, fetchDiscordAccount, logoutDiscord, type DiscordAccount 
 // fois la désynchronisation et le doublement de requête.
 interface DiscordAccountContextValue {
   account: DiscordAccount | null
+  // Revue de code : true seulement le temps de la toute première résolution
+  // GET /auth/discord/me — permet à Home.tsx de ne pas afficher le bouton
+  // "Connexion" en flash pour un utilisateur déjà connecté, le temps de
+  // l'aller-retour réseau initial (account valait null jusque-là, identique
+  // à "non connecté").
+  isLoading: boolean
   logout: () => Promise<boolean>
   deleteAccount: () => Promise<boolean>
 }
 
 const DiscordAccountContext = createContext<DiscordAccountContextValue>({
   account: null,
+  isLoading: true,
   logout: async () => false,
   deleteAccount: async () => false,
 })
 
 export function DiscordAccountProvider({ children }: { children: ReactNode }) {
   const [account, setAccount] = useState<DiscordAccount | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
     let cancelled = false
@@ -31,6 +39,9 @@ export function DiscordAccountProvider({ children }: { children: ReactNode }) {
       .catch(() => {
         // Réseau indisponible/erreur inattendue : rester non connecté plutôt
         // que de laisser une rejection non gérée.
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false)
       })
     return () => {
       cancelled = true
@@ -52,7 +63,7 @@ export function DiscordAccountProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <DiscordAccountContext.Provider value={{ account, logout, deleteAccount: removeAccount }}>
+    <DiscordAccountContext.Provider value={{ account, isLoading, logout, deleteAccount: removeAccount }}>
       {children}
     </DiscordAccountContext.Provider>
   )
