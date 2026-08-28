@@ -66,6 +66,27 @@ def test_join_team_with_tampered_cookie_leaves_account_id_null_no_500(test_clien
     assert player.account_id is None
 
 
+def test_join_team_with_undeserializable_cookie_payload_leaves_account_id_null_no_500(test_client, db_session, monkeypatch):
+    # Revue de code : `.loads()` peut lever `BadPayload` (signature valide,
+    # payload non désérialisable) en plus de `BadSignature` — seul le second
+    # cas était intercepté avant ce test, laissant le premier remonter en 500.
+    from itsdangerous import BadPayload
+
+    def _raise_bad_payload(self, value):
+        raise BadPayload("payload non désérialisable")
+
+    monkeypatch.setattr(URLSafeSerializer, "loads", _raise_bad_payload)
+
+    game, team = _make_game_and_team(db_session)
+    test_client.cookies.set("discord_session", "anything")
+
+    resp = test_client.post(f"/games/{game.code}/teams/{team.id}/players/", json={"name": "Eve"})
+    assert resp.status_code == 200
+
+    player = db_session.query(models.Player).filter(models.Player.name == "Eve").first()
+    assert player.account_id is None
+
+
 def test_join_team_without_discord_config_still_creates_guest_player(test_client, db_session):
     game, team = _make_game_and_team(db_session)
     test_client.cookies.set("discord_session", _signed_discord_cookie("222"))

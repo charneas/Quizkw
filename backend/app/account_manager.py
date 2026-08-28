@@ -1,7 +1,7 @@
 import os
 
 from fastapi import Request
-from itsdangerous import BadSignature, URLSafeSerializer
+from itsdangerous import BadPayload, BadSignature, URLSafeSerializer
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -84,7 +84,10 @@ def resolve_account_from_request(request: Request, db: Session) -> models.Accoun
         return None
     try:
         payload = URLSafeSerializer(session_secret_key, salt="discord-session").loads(cookie_value)
-    except BadSignature:
+    except (BadSignature, BadPayload):
+        # BadPayload (revue de code) : signature valide mais désérialisation
+        # du payload impossible — même traitement "non connecté" que
+        # BadSignature, jamais une 500 sur join_team/create_player.
         return None
     discord_id = payload.get("discord_id")
     if not discord_id:

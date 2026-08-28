@@ -705,6 +705,12 @@ class MemoryGridManager:
 
         if not isinstance(theme_ids, list) or len(theme_ids) != 3:
             raise ValueError("Un finaliste doit choisir exactement 3 thèmes")
+        # Revue de code : `len(theme_ids) != 3` seul laissait passer un doublon
+        # (ex. [5, 5, 6]) puisque le comptage d'existence ci-dessous déduplique
+        # via `.in_()` — un finaliste n'a donc jamais réellement 3 thèmes
+        # distincts dans ce cas.
+        if len(set(theme_ids)) != 3:
+            raise ValueError("Un finaliste doit choisir 3 thèmes distincts")
 
         # Dette technique découverte en revue de code (Story O.2.2) :
         # `selected_theme_ids` (JSON, sans contrainte FK possible sur une

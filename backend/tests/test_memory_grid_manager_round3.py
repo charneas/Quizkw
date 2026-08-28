@@ -174,6 +174,20 @@ class TestPlayerThemes:
 
         assert "3 thèmes" in str(exc_info.value)
 
+    def test_rejects_duplicate_theme_id_even_if_two_others_exist(self, memory_grid_manager, db_session,
+                                                                  sample_game_session, round3_finalists, round3_themes):
+        # Revue de code : le comptage d'existence déduplique via `.in_()` —
+        # sans garde explicite sur les ids soumis, [t0, t0, t1] passait la
+        # validation alors qu'un seul thème distinct est réellement fourni.
+        theme_ids = [round3_themes[0].id, round3_themes[0].id, round3_themes[1].id]
+
+        with pytest.raises(ValueError) as exc_info:
+            memory_grid_manager.select_player_themes(
+                sample_game_session.id, round3_finalists[0].id, theme_ids
+            )
+
+        assert "distincts" in str(exc_info.value)
+
 
 class TestGridWithThemes:
     """La variante de grille bâtie sur les thèmes choisis."""
