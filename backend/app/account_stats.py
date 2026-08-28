@@ -48,8 +48,12 @@ def _manche1_theme_totals(db: Session, account_id: int | None) -> dict[int, dict
 
     totals: dict[int, dict[str, int]] = {}
     for theme_id, is_correct in query.all():
-        if theme_id is None:
-            continue
+        # Revue de code : les questions sans thème (`theme_id is None`, valide
+        # en base) étaient auparavant exclues entièrement — y compris de la
+        # stat générale (FR5, censée couvrir "toutes questions confondues"
+        # sans notion de thème). Regroupées ici sous la clé `None`, exclue
+        # explicitement de la liste par thème dans compute_account_stats
+        # (aucun `Theme` ne peut avoir cet id) mais comptée dans le général.
         bucket = totals.setdefault(theme_id, {"correct": 0, "total": 0})
         bucket["total"] += 1
         if is_correct:
@@ -70,8 +74,8 @@ def _round2_theme_totals(db: Session, account_id: int | None) -> dict[int, dict[
 
     totals: dict[int, dict[str, int]] = {}
     for theme_id, correct, answered in query.all():
-        if theme_id is None:
-            continue
+        # Même raison que _manche1_theme_totals : ne pas exclure les lignes
+        # sans thème de la stat générale.
         bucket = totals.setdefault(theme_id, {"correct": 0, "total": 0})
         bucket["correct"] += correct or 0
         bucket["total"] += answered or 0
@@ -97,7 +101,10 @@ def compute_account_stats(db: Session, account_id: int) -> dict:
     # Profil, même s'il existe globalement (trouvé lors de l'écriture des
     # tests : la version initiale renvoyait l'union avec le global, listant
     # des thèmes que le compte n'a jamais touchés).
-    theme_ids = {theme_id for theme_id, counts in personal.items() if counts["total"] > 0}
+    theme_ids = {
+        theme_id for theme_id, counts in personal.items()
+        if theme_id is not None and counts["total"] > 0
+    }
     theme_names = {}
     if theme_ids:
         for theme_id, name in db.query(models.Theme.id, models.Theme.name).filter(

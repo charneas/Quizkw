@@ -215,6 +215,36 @@ def test_account_stats_not_double_counted_when_account_has_two_players_on_same_t
     assert theme["personal_correct"] == 1
 
 
+def test_account_stats_general_includes_themeless_questions(test_client, db_session):
+    # Revue de code : Question.theme_id est nullable en base (questions de
+    # grille mémoire notamment) — la stat générale (FR5, "toutes questions
+    # confondues", sans notion de thème) ne doit pas les exclure.
+    account = _make_account(db_session, "709")
+    game, team = _make_game_and_team(db_session)
+    _make_player(db_session, team.id, account_id=account.id)
+
+    question = models.Question(
+        text="Question sans theme",
+        category="Test",
+        difficulty=models.Difficulty.EASY,
+        points=2,
+        correct_answer="bonne reponse",
+        wrong_answers=json.dumps(["a", "b", "c"]),
+        theme_id=None,
+    )
+    db_session.add(question)
+    db_session.commit()
+    db_session.refresh(question)
+    _make_answer(db_session, question.id, team.id, is_correct=True)
+
+    test_client.cookies.set("discord_session", _signed_discord_cookie("709"))
+    resp = test_client.get("/account/stats")
+    data = resp.json()
+    assert data["general"]["personal_total"] == 1
+    assert data["general"]["personal_correct"] == 1
+    assert data["themes"] == []  # aucun thème réel n'est concerné
+
+
 def test_compute_account_stats_general_matches_theme_sums(db_session, sample_theme):
     account = _make_account(db_session, "707")
     game, team = _make_game_and_team(db_session)
