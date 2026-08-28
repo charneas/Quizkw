@@ -9,9 +9,15 @@ import os
 os.environ.setdefault("SESSION_SECRET_KEY", "test-secret-key-not-for-production")
 os.environ.setdefault("SESSION_COOKIE_SECURE", "false")  # TestClient n'est pas en HTTPS
 os.environ.setdefault("RATE_LIMIT_ENABLED", "false")  # voir app/rate_limit.py
+# AD-22 (Epic O, Story O.1.1) : mêmes exigences "requis sans défaut inline" que
+# SESSION_SECRET_KEY, mais secret/valeurs dédiés au flux Discord.
+os.environ.setdefault("DISCORD_CLIENT_ID", "test-discord-client-id")
+os.environ.setdefault("DISCORD_CLIENT_SECRET", "test-discord-client-secret")
+os.environ.setdefault("DISCORD_REDIRECT_URI", "http://testserver/api/auth/discord/callback")
+os.environ.setdefault("DISCORD_SESSION_SECRET_KEY", "test-discord-secret-key-not-for-production")
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool
 
@@ -40,6 +46,18 @@ def engine():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+    # Ce moteur de test est distinct de celui d'app/database.py — le PRAGMA
+    # posé là-bas ne s'applique jamais ici sans cette même déclaration. Activé
+    # une première fois en O.2.1, retiré temporairement en O.2.2 (révélait un
+    # bug préexistant dans select_player_themes, corrigé depuis), remis après
+    # correction pour que le comportement des tests reste représentatif de la
+    # prod (app/database.py active ce même PRAGMA).
+    @event.listens_for(engine, "connect")
+    def _set_sqlite_foreign_keys(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys = ON")
+        cursor.close()
+
     return engine
 
 @pytest.fixture(scope="session")

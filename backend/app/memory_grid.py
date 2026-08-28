@@ -701,10 +701,28 @@ class MemoryGridManager:
         peuvent choisir les mêmes thèmes et create_memory_grid_with_themes
         n'a plus de base cohérente pour distinguer leurs cellules.
         """
-        from app.models import PlayerRound3Stats
+        from app.models import Theme, PlayerRound3Stats
 
         if not isinstance(theme_ids, list) or len(theme_ids) != 3:
             raise ValueError("Un finaliste doit choisir exactement 3 thèmes")
+        # Revue de code : `len(theme_ids) != 3` seul laissait passer un doublon
+        # (ex. [5, 5, 6]) puisque le comptage d'existence ci-dessous déduplique
+        # via `.in_()` — un finaliste n'a donc jamais réellement 3 thèmes
+        # distincts dans ce cas.
+        if len(set(theme_ids)) != 3:
+            raise ValueError("Un finaliste doit choisir 3 thèmes distincts")
+
+        # Dette technique découverte en revue de code (Story O.2.2) :
+        # `selected_theme_ids` (JSON, sans contrainte FK possible sur une
+        # colonne JSON) n'était jamais validé contre les Theme réellement en
+        # base — un client buggé pouvait y écrire n'importe quel entier, que
+        # `create_memory_grid_with_themes` recopiait ensuite tel quel dans
+        # `chosen_theme_id` (colonne avec FK, elle). Invisible tant que
+        # `PRAGMA foreign_keys` était désactivé côté SQLite ; validé
+        # explicitement ici pour que l'activation de ce pragma redevienne sûre.
+        existing_count = self.db.query(Theme.id).filter(Theme.id.in_(theme_ids)).count()
+        if existing_count != len(set(theme_ids)):
+            raise ValueError(f"Thème(s) inconnu(s) : {theme_ids}")
 
         others = self.db.query(PlayerRound3Stats).filter(
             PlayerRound3Stats.game_session_id == game_session_id,

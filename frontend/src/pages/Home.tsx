@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { createGame, storeHostToken } from '../services/api'
 import { pluralJoueurs } from '../utils/pluralize'
+import { useDiscordAccount } from '../contexts/DiscordAccountContext'
 
 const PLAYERS_PER_TEAM_OPTIONS = [
   { value: 1, label: '1 joueur' },
@@ -23,6 +24,26 @@ function Home() {
   const [isCreating, setIsCreating] = useState(false)
   const [error, setError] = useState('')
   const [showCreate, setShowCreate] = useState(false)
+  // Story O.2.1 (revue de code) : le compte connecté vient désormais de
+  // DiscordAccountContext, partagé avec AccountButton (App.tsx) — une seule
+  // requête réseau, un seul état, plus de désynchronisation possible entre
+  // les deux composants après un logout.
+  const { account, isLoading: isAccountLoading } = useDiscordAccount()
+  const isDiscordConnected = account !== null
+
+  useEffect(() => {
+    // Le callback OAuth redirige vers `/?discord=connected` (backend, inchangé
+    // par cette story) — plus rien ne lit ce paramètre pour décider de l'état
+    // connecté (porté par le contexte), mais il faut encore le retirer de la
+    // barre d'adresse.
+    if (new URLSearchParams(window.location.search).get('discord') === 'connected') {
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+  }, [])
+
+  const handleDiscordLogin = () => {
+    window.location.href = '/api/auth/discord/login'
+  }
 
   const handleCreateGame = async () => {
     setIsCreating(true)
@@ -51,6 +72,24 @@ function Home() {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
+      {/* Revue de code : attendre la résolution initiale de GET
+          /auth/discord/me avant d'afficher "Connexion" — sinon un
+          utilisateur déjà connecté voit ce bouton clignoter le temps de
+          l'aller-retour réseau (account vaut null jusque-là, indiscernable
+          de "non connecté"). */}
+      {!isAccountLoading && !isDiscordConnected && (
+        <div className="fixed top-4 right-16 z-40 flex flex-col items-end gap-1 max-w-[200px]">
+          <button
+            onClick={handleDiscordLogin}
+            className="min-h-[44px] px-4 rounded bg-[#5865F2] text-white font-medium hover:scale-105 transition-transform"
+          >
+            Connexion
+          </button>
+          <p className="text-xs text-text-muted text-right">
+            Quizkw conserve ton identifiant, ton pseudo et ton avatar Discord — tu peux les supprimer à tout moment depuis ton Profil.
+          </p>
+        </div>
+      )}
       <div className="max-w-md w-full space-y-8">
         {/* Hero — seul endroit de l'app avec une texture/dégradé décoratif (DESIGN.md) */}
         <div className="text-center relative py-4">

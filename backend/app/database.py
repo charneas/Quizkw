@@ -24,6 +24,15 @@ if DATABASE_URL.startswith("sqlite"):
     def _set_sqlite_busy_timeout(dbapi_connection, connection_record):
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA busy_timeout = 5000")
+        # Story O.2.1 : SQLite n'applique pas les contraintes FK par défaut —
+        # sans ce pragma, `ondelete="SET NULL"` (Player.account_id ->
+        # accounts.id, AD-21) n'est qu'une déclaration de schéma inerte.
+        # Activé une première fois en O.2.1, retiré en revue de O.2.2 (révélait
+        # un bug préexistant, memory_grid.py::select_player_themes acceptant
+        # des theme_ids sans les valider), remis après correction de ce bug
+        # racine (validation ajoutée dans select_player_themes) — voir Change
+        # Log de o-2-1-attribution-des-reponses-au-compte.md pour l'historique.
+        cursor.execute("PRAGMA foreign_keys = ON")
         cursor.close()
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=True, bind=engine)

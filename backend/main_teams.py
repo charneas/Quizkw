@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app import models, schemas
+from app.account_manager import resolve_account_id_from_request
 from app.game_helpers import require_team_token
 from app.rate_limit import limiter
 
@@ -95,7 +96,7 @@ def rename_team(
     return team
 
 @router.post("/games/{code}/teams/{team_id}/players/", response_model=schemas.PlayerWithTeamToken)
-def join_team(code: str, team_id: int, player_create: schemas.PlayerCreate, db: Session = Depends(get_db)):
+def join_team(code: str, team_id: int, player_create: schemas.PlayerCreate, request: Request, db: Session = Depends(get_db)):
     """
     Rejoindre une équipe existante en tant que joueur, avec son pseudo.
 
@@ -127,7 +128,11 @@ def join_team(code: str, team_id: int, player_create: schemas.PlayerCreate, db: 
     if player_create.name.strip().lower() in {n.lower() for (n,) in existing_names}:
         raise HTTPException(status_code=400, detail="Ce pseudo est déjà pris dans cette équipe")
 
-    player = models.Player(name=player_create.name, team_id=team.id)
+    # AD-19 (Story O.2.1) : écrit une seule fois, à cet instant — jamais relu
+    # ni réécrit ensuite. Résolution silencieuse : un joueur invité (pas de
+    # cookie Discord valide) reste account_id=None, sans erreur (FR1).
+    account_id = resolve_account_id_from_request(request, db)
+    player = models.Player(name=player_create.name, team_id=team.id, account_id=account_id)
     db.add(player)
     db.commit()
     db.refresh(player)
@@ -143,7 +148,7 @@ def join_team(code: str, team_id: int, player_create: schemas.PlayerCreate, db: 
     )
 
 @router.post("/games/{code}/players/", response_model=schemas.Player)
-def create_player(code: str, player_create: schemas.PlayerCreate, db: Session = Depends(get_db)):
+def create_player(code: str, player_create: schemas.PlayerCreate, request: Request, db: Session = Depends(get_db)):
     """
     Create a player in a game session (for Round 2 individual play)
     """
@@ -151,10 +156,14 @@ def create_player(code: str, player_create: schemas.PlayerCreate, db: Session = 
     if not game:
         raise HTTPException(status_code=404, detail="Game session not found")
 
+    # AD-19 (Story O.2.1) : même résolution silencieuse que join_team.
+    account_id = resolve_account_id_from_request(request, db)
+
     # For Round 2, players can be created without team (will be assigned later or stay individual)
     player = models.Player(
         name=player_create.name,
-        team_id=None  # Allow null for Round 2 individual play
+        team_id=None,  # Allow null for Round 2 individual play
+        account_id=account_id,
     )
 
     db.add(player)

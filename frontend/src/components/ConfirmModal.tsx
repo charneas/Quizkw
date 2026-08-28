@@ -4,6 +4,10 @@ interface ConfirmModalProps {
   confirmLabel?: string
   cancelLabel?: string
   danger?: boolean
+  // Erreur transitoire (429/5xx) d'une tentative précédente — la modale
+  // reste ouverte dans ce cas (voir AccountButton), l'appelant doit donc
+  // pouvoir signaler pourquoi sans la fermer.
+  error?: string
   onConfirm: () => void
   onCancel: () => void
 }
@@ -14,6 +18,7 @@ function ConfirmModal({
   confirmLabel = 'Confirmer',
   cancelLabel = 'Annuler',
   danger = true,
+  error,
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
@@ -22,6 +27,9 @@ function ConfirmModal({
       <div className="card max-w-sm w-full">
         <h3 className="text-lg font-semibold text-text mb-2">{title}</h3>
         <p className="text-sm text-text-muted mb-6">{message}</p>
+        {error && (
+          <p className="text-danger text-sm mb-4 bg-danger/10 rounded-lg p-2">{error}</p>
+        )}
         <div className="flex gap-3">
           <button onClick={onCancel} className="btn-secondary flex-1 min-h-[44px]">
             {cancelLabel}
