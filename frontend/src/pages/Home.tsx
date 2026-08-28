@@ -78,14 +78,22 @@ function Home() {
           l'aller-retour réseau (account vaut null jusque-là, indiscernable
           de "non connecté"). */}
       {!isAccountLoading && !isDiscordConnected && (
-        <div className="fixed top-4 right-16 z-40 flex flex-col items-end gap-1 max-w-[200px]">
+        <div className="fixed top-4 right-16 z-40 flex flex-col items-end gap-1 max-w-[200px] group">
           <button
             onClick={handleDiscordLogin}
+            aria-describedby="discord-data-retention-notice"
             className="min-h-[44px] px-4 rounded bg-[#5865F2] text-white font-medium hover:scale-105 transition-transform"
           >
             Connexion
           </button>
-          <p className="text-xs text-text-muted text-right">
+          {/* Toujours présent dans le DOM (annoncé par les lecteurs d'écran
+              via aria-describedby), mais visible seulement au survol/focus
+              du bouton — permanent, il alourdissait l'accueil pour un texte
+              qui ne concerne que le geste de connexion (retour utilisateur). */}
+          <p
+            id="discord-data-retention-notice"
+            className="text-xs text-text-muted text-right opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
+          >
             Quizkw conserve ton identifiant, ton pseudo et ton avatar Discord — tu peux les supprimer à tout moment depuis ton Profil.
           </p>
         </div>
