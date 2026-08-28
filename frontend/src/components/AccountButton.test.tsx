@@ -62,7 +62,7 @@ describe('AccountButton (Story O.1.2)', () => {
     try {
       // @ts-expect-error -- remplacement volontaire pour observer une absence de navigation
       delete window.location
-      window.location = { ...originalLocation, href: '', reload: vi.fn() } as unknown as Location
+      window.location = { ...originalLocation, href: '', reload: vi.fn() } as unknown as string & Location
 
       renderAccountButton()
       const button = await screen.findByRole('button', { name: /TestPlayer/ })
@@ -77,7 +77,7 @@ describe('AccountButton (Story O.1.2)', () => {
       expect(window.location.href).toBe('')
       expect(window.location.reload).not.toHaveBeenCalled()
     } finally {
-      window.location = originalLocation
+      window.location = originalLocation as unknown as string & Location
     }
   })
 

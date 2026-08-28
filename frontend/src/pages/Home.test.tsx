@@ -43,7 +43,7 @@ describe('Home — bouton Connexion Discord (Story O.1.1)', () => {
     try {
       // @ts-expect-error -- remplacement volontaire pour observer la navigation plein-navigateur
       delete window.location
-      window.location = { ...originalLocation, href: '' } as Location
+      window.location = { ...originalLocation, href: '' } as unknown as string & Location
 
       fireEvent.click(await screen.findByRole('button', { name: 'Connexion' }))
       expect(window.location.href).toBe('/api/auth/discord/login')
@@ -51,7 +51,7 @@ describe('Home — bouton Connexion Discord (Story O.1.1)', () => {
       // Restauration systématique, même si l'assertion ci-dessus échoue --
       // sinon window.location reste un objet corrompu pour les tests suivants
       // du fichier (trouvé en revue de code).
-      window.location = originalLocation
+      window.location = originalLocation as unknown as string & Location
     }
   })
 
