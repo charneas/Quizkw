@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { createGame, storeHostToken } from '../services/api'
+import { createGame, storeHostToken, joinPublicQueue } from '../services/api'
 import { pluralJoueurs } from '../utils/pluralize'
 import { useDiscordAccount } from '../contexts/DiscordAccountContext'
 
@@ -25,6 +25,9 @@ function Home() {
   const [error, setError] = useState('')
   const [showCreate, setShowCreate] = useState(false)
   const [soloFinale, setSoloFinale] = useState(false)
+  const [publicPseudo, setPublicPseudo] = useState('')
+  const [isJoiningPublic, setIsJoiningPublic] = useState(false)
+  const [publicError, setPublicError] = useState('')
   // Story O.2.1 (revue de code) : le compte connecté vient désormais de
   // DiscordAccountContext, partagé avec AccountButton (App.tsx) — une seule
   // requête réseau, un seul état, plus de désynchronisation possible entre
@@ -69,6 +72,21 @@ function Home() {
   const handleJoinGame = () => {
     if (joinCode.trim()) {
       navigate(`/lobby/${joinCode.trim().toUpperCase()}`)
+    }
+  }
+
+  const handleJoinPublicQueue = async () => {
+    const pseudo = publicPseudo.trim()
+    if (!pseudo) return
+    setIsJoiningPublic(true)
+    setPublicError('')
+    try {
+      const result = await joinPublicQueue(pseudo)
+      navigate(`/public-queue/${result.code}`)
+    } catch (err) {
+      setPublicError(err instanceof Error ? err.message : 'Erreur lors de la connexion à la file')
+    } finally {
+      setIsJoiningPublic(false)
     }
   }
 
@@ -136,6 +154,38 @@ function Home() {
               Rejoindre
             </button>
           </div>
+        </div>
+
+        {/* Jouer avec des inconnus (spec-rooms-publiques) : file d'attente
+            publique auto-remplie, aucun code requis pour rejoindre. */}
+        <div className="card">
+          <h2 className="text-xl font-semibold mb-4">🌍 Jouer avec des inconnus</h2>
+          <p className="text-sm text-text-muted mb-3">
+            Rejoins une file d'attente publique — dès que 4 joueurs sont réunis, la partie démarre automatiquement.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <input
+              type="text"
+              placeholder="Ton pseudo"
+              value={publicPseudo}
+              onChange={(e) => setPublicPseudo(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleJoinPublicQueue()}
+              className="input-field"
+              maxLength={30}
+            />
+            <button
+              onClick={handleJoinPublicQueue}
+              disabled={!publicPseudo.trim() || isJoiningPublic}
+              className="btn-primary whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px]"
+            >
+              {isJoiningPublic ? '⏳ Connexion...' : 'Jouer avec des inconnus'}
+            </button>
+          </div>
+          {publicError && (
+            <div className="text-danger text-sm text-center bg-danger/10 rounded-lg p-2 mt-3">
+              {publicError}
+            </div>
+          )}
         </div>
 
         {/* Créer une partie */}

@@ -180,6 +180,7 @@ class GameSession(GameSessionBase):
     current_round: RoundTypeEnum
     current_question_id: Optional[int] = None
     is_solo_finale: bool = False
+    is_public: bool = False
     is_active: bool
     started: bool
     created_at: datetime
@@ -214,6 +215,31 @@ class Answer(AnswerBase):
         from_attributes = True
 
 # Schémas pour les réponses API
+class PublicQueueJoinRequest(BaseModel):
+    """Corps de POST /games/public/join (spec-rooms-publiques/1). Même règle
+    de pseudo non-vide que PlayerCreate."""
+    name: str
+
+    @field_validator('name')
+    @classmethod
+    def name_not_blank(cls, v: str) -> str:
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("Le pseudo ne peut pas être vide")
+        return stripped
+
+class PublicQueueJoinResponse(BaseModel):
+    """Réponse de POST /games/public/join : le code est toujours renvoyé
+    (nécessaire pour poller /games/{code}), l'écran d'attente frontend ne
+    l'affiche à l'utilisateur qu'une fois `game.started` (pure question
+    d'affichage, voir story)."""
+    code: str
+    game: GameSession
+    team_id: int
+    team_token: str
+    player_id: int
+    player_token: str
+
 class GameSessionResponse(BaseModel):
     game: GameSession
     message: str

@@ -19,6 +19,7 @@ from main_admin import router as admin_router, auth_router as admin_auth_router
 from main_content_gen import router as content_gen_router, player_router as content_flag_router
 from main_propositions import router as propositions_router
 from main_games import router as games_router
+from main_public_queue import router as public_queue_router
 from main_teams import router as teams_router, PENALTY_POINTS
 from main_manche1 import router as manche1_router
 from main_round2 import router as round2_router
@@ -95,6 +96,8 @@ app.include_router(content_flag_router)
 app.include_router(propositions_router)
 # Include session/host lifecycle endpoints (Epic H, story H.014)
 app.include_router(games_router)
+# Include public queue endpoint (spec-rooms-publiques, story 1)
+app.include_router(public_queue_router)
 # Include teams/players/tokens endpoints (Epic H, story H.015)
 app.include_router(teams_router)
 # Include questions/wheel/validation endpoints (Epic H, story H.016)

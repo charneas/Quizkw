@@ -215,6 +215,30 @@ export async function getGame(code: string) {
   return fetchApi<any>(`/games/${code}`)
 }
 
+// === File d'attente publique (spec-rooms-publiques, story 1) ===
+
+export interface PublicQueueJoinResult {
+  code: string
+  game: any
+  team_id: number
+  team_token: string
+  player_id: number
+  player_token: string
+}
+
+// Même pattern de stockage de tokens que joinTeam : chaque joueur reçoit ici
+// sa propre équipe-de-1 (pas de partage de team_token entre inconnus).
+export async function joinPublicQueue(name: string): Promise<PublicQueueJoinResult> {
+  const result = await fetchApi<PublicQueueJoinResult>('/games/public/join', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  })
+  storeTeamToken(result.team_id, result.team_token)
+  storePlayerToken(result.player_id, result.player_token)
+  storePlayerIdentity(result.code, { id: result.player_id, name, team_id: result.team_id })
+  return result
+}
+
 export async function startGame(code: string) {
   return fetchApi<any>(`/games/${code}/start`, {
     method: 'POST',

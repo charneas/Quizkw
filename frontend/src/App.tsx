@@ -4,6 +4,7 @@ import AccountButton from './components/AccountButton'
 import { DiscordAccountProvider } from './contexts/DiscordAccountContext'
 import Home from './pages/Home'
 import Lobby from './pages/Lobby'
+import PublicQueue from './pages/PublicQueue'
 import Game from './pages/Game'
 import HostGame from './pages/HostGame'
 import TeamScreen from './pages/TeamScreen'
@@ -30,6 +31,7 @@ function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/lobby/:code" element={<Lobby />} />
+          <Route path="/public-queue/:code" element={<PublicQueue />} />
           <Route path="/game/:code" element={<Game />} />
           <Route path="/game/:code/host" element={<HostGame />} />
           <Route path="/team/:code/:teamId" element={<TeamScreen />} />

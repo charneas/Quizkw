@@ -33,6 +33,7 @@ export interface GameSession {
   current_question_id: number | null
   is_active: boolean
   started: boolean
+  is_public?: boolean
   created_at: string
   teams: Team[]
 }

@@ -82,19 +82,18 @@ def get_game(code: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
     return game
 
-@router.post("/games/{code}/start")
-def start_game(code: str, db: Session = Depends(get_db), _host: models.GameSession = Depends(require_host)):
-    """
-    Démarrer une session de jeu. Échoue si une équipe n'a pas encore son
-    nombre complet de joueurs (BUG-201).
-    """
-    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
-    if not game:
-        raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
+def _start_game_core(db: Session, game: models.GameSession, teams: list) -> None:
+    """Validation + démarrage effectif d'une partie (BUG-201), extraite de
+    `start_game` (spec-rooms-publiques/1) pour être réutilisable par le
+    déclenchement automatique de la file publique — qui ne passe jamais par
+    `require_host` (aucun host_token n'existe pour une partie assemblée sans
+    hôte humain). Ne jamais dupliquer cette logique ailleurs.
 
-    # Vérifier qu'il y a au moins 2 équipes (exactement 4 en mode "Manche 3
-    # directe", voir spec-manche-3-seule).
-    teams = db.query(models.Team).filter(models.Team.game_session_id == game.id).all()
+    Lève HTTPException (400) en cas d'équipes invalides/incomplètes, comme la
+    route HTTP existante. Ne fait pas le commit final — l'appelant décide du
+    moment (permet à /games/public/join de committer join + démarrage en une
+    seule transaction atomique).
+    """
     if game.is_solo_finale:
         if len(teams) != 4:
             raise HTTPException(
@@ -132,6 +131,22 @@ def start_game(code: str, db: Session = Depends(get_db), _host: models.GameSessi
         game.current_round = models.RoundType.MANCHE_3
         seed_solo_finale_round2_stats(db, game, teams)
 
+
+@router.post("/games/{code}/start")
+def start_game(code: str, db: Session = Depends(get_db), _host: models.GameSession = Depends(require_host)):
+    """
+    Démarrer une session de jeu. Échoue si une équipe n'a pas encore son
+    nombre complet de joueurs (BUG-201).
+    """
+    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
+
+    # Vérifier qu'il y a au moins 2 équipes (exactement 4 en mode "Manche 3
+    # directe", voir spec-manche-3-seule).
+    teams = db.query(models.Team).filter(models.Team.game_session_id == game.id).all()
+
+    _start_game_core(db, game, teams)
     db.commit()
 
     return {"message": "Jeu démarré avec succès", "teams": len(teams)}

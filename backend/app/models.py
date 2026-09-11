@@ -67,6 +67,11 @@ class GameSession(Base):
     # Story spec-manche-3-seule/1 : mode "Manche 3 directe" — 4 joueurs
     # sautent directement en Manche 3 sans jouer les Manches 1/2.
     is_solo_finale = Column(Boolean, default=False, nullable=False, server_default="false")
+    # spec-rooms-publiques/1 : file d'attente publique anonyme (équipes-de-1,
+    # total_players=4), démarrage auto au 4e sans host_token — voir
+    # main_public_queue.py. `created_at` sert de base au TTL d'expiration
+    # paresseuse (filtre de recherche, pas de tâche planifiée).
+    is_public = Column(Boolean, default=False, nullable=False, server_default="false")
 
     # Relations
     current_question = relationship("Question")
