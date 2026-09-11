@@ -10,3 +10,4 @@ class ExtractedTrack:
     artist: str
     isrc: Optional[str] = None
     youtube_video_id: Optional[str] = None
+    source_url: Optional[str] = None

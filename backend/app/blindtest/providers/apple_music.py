@@ -5,6 +5,7 @@ process (valide jusqu'à 6 mois) — voir Design Notes de la spec.
 
 Détection : host `music.apple.com`, chemin contenant `/playlist/`.
 """
+import logging
 import os
 import re
 import time
@@ -16,6 +17,8 @@ import jwt
 
 from app.blindtest.errors import PrivatePlaylistError, ProviderConfigError, UnrecognizedUrlError
 from app.blindtest.extraction_types import ExtractedTrack
+
+logger = logging.getLogger(__name__)
 
 _PLAYLIST_ID_RE = re.compile(r"/playlist/[^/]+/(pl\.[A-Za-z0-9]+)")
 _API_BASE = "https://api.music.apple.com/v1/catalog/us/playlists"
@@ -111,10 +114,14 @@ def fetch_tracks(url: str) -> List[ExtractedTrack]:
         artist = attrs.get("artistName")
         if not title or not artist:
             continue
+        source_url = attrs.get("url")
+        if not source_url:
+            logger.warning("Apple Music: champ 'url' absent des attributs du morceau %r", title)
         tracks.append(ExtractedTrack(
             title=title,
             artist=artist,
             isrc=attrs.get("isrc"),
+            source_url=source_url,
         ))
 
     if not tracks:

@@ -85,10 +85,12 @@ def fetch_tracks(url: str) -> List[ExtractedTrack]:
                 if not title or not artist:
                     continue
                 external_ids = track.get("external_ids") or {}
+                external_urls = track.get("external_urls") or {}
                 tracks.append(ExtractedTrack(
                     title=title,
                     artist=artist,
                     isrc=external_ids.get("isrc"),
+                    source_url=external_urls.get("spotify"),
                 ))
 
             next_url = payload.get("next")

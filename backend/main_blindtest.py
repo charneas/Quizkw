@@ -4,10 +4,10 @@ limiter) mais branché sur la DB isolée `app.blindtest.database` (AD-7).
 """
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from app.blindtest import schemas
+from app.blindtest import matching, schemas
 from app.blindtest.database import get_db
 from app.blindtest.errors import PrivatePlaylistError, ProviderConfigError, UnrecognizedUrlError
 from app.blindtest.import_pipeline import extract_tracks
@@ -24,6 +24,7 @@ router = APIRouter()
 def import_playlist(
     request: Request,
     body: schemas.PlaylistImportRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     """Extrait une playlist publique (Spotify/YouTube/Apple Music) et
@@ -50,8 +51,22 @@ def import_playlist(
             artist=item.artist,
             isrc=item.isrc,
             youtube_video_id=item.youtube_video_id,
+            source_url=item.source_url,
         ))
 
     db.commit()
     db.refresh(playlist)
+
+    background_tasks.add_task(matching.match_playlist_tracks, playlist.id)
+
+    return playlist
+
+
+@router.get("/blindtest/playlists/{playlist_id}", response_model=schemas.PlaylistResponse)
+def get_playlist(playlist_id: int, db: Session = Depends(get_db)):
+    """Permet au client de poller l'état de résolution (matching en tâche de
+    fond) d'une playlist déjà importée."""
+    playlist = db.query(Playlist).filter(Playlist.id == playlist_id).first()
+    if not playlist:
+        raise HTTPException(status_code=404, detail="Playlist introuvable")
     return playlist

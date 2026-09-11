@@ -31,6 +31,7 @@ class Track(Base):
     artist = Column(String, nullable=False)
     isrc = Column(String, nullable=True)
     youtube_video_id = Column(String, nullable=True)
+    source_url = Column(String, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     playlist = relationship("Playlist", back_populates="tracks")

@@ -69,10 +69,11 @@ APPLE_URL = "https://music.apple.com/us/playlist/todays-hits/pl.abc123"
 class TestSpotifyImport:
     def test_valid_spotify_playlist_persists_playlist_and_tracks(self, blindtest_client, blindtest_engine):
         fake_tracks = [
-            ExtractedTrack(title="Song A", artist="Artist A", isrc="ISRC1"),
+            ExtractedTrack(title="Song A", artist="Artist A", isrc="ISRC1", source_url="https://open.spotify.com/track/aaa"),
             ExtractedTrack(title="Song B", artist="Artist B", isrc=None),
         ]
-        with patch("app.blindtest.providers.spotify.fetch_tracks", return_value=fake_tracks):
+        with patch("app.blindtest.providers.spotify.fetch_tracks", return_value=fake_tracks), \
+             patch("app.blindtest.matching.match_playlist_tracks"):
             resp = blindtest_client.post("/blindtest/playlists", json={"url": SPOTIFY_URL})
 
         assert resp.status_code == 201
@@ -85,6 +86,12 @@ class TestSpotifyImport:
         playlists, tracks = _count_rows(blindtest_engine)
         assert playlists == 1
         assert tracks == 2
+
+        with blindtest_engine.connect() as conn:
+            from sqlalchemy import text
+            row = conn.execute(text("SELECT source_url FROM tracks ORDER BY id")).fetchall()
+        assert row[0][0] == "https://open.spotify.com/track/aaa"
+        assert row[1][0] is None
 
     def test_spotify_missing_credentials_returns_503_no_partial_write(self, blindtest_client, blindtest_engine):
         with patch(
@@ -117,7 +124,8 @@ class TestYoutubeImport:
         fake_tracks = [
             ExtractedTrack(title="Vid A", artist="Channel A", youtube_video_id="vid123"),
         ]
-        with patch("app.blindtest.providers.youtube.fetch_tracks", return_value=fake_tracks):
+        with patch("app.blindtest.providers.youtube.fetch_tracks", return_value=fake_tracks), \
+             patch("app.blindtest.matching.match_playlist_tracks"):
             resp = blindtest_client.post("/blindtest/playlists", json={"url": YOUTUBE_URL})
 
         assert resp.status_code == 201
@@ -129,7 +137,8 @@ class TestYoutubeImport:
 class TestAppleMusicImport:
     def test_valid_apple_music_playlist_persists(self, blindtest_client, blindtest_engine):
         fake_tracks = [ExtractedTrack(title="Song C", artist="Artist C")]
-        with patch("app.blindtest.providers.apple_music.fetch_tracks", return_value=fake_tracks):
+        with patch("app.blindtest.providers.apple_music.fetch_tracks", return_value=fake_tracks), \
+             patch("app.blindtest.matching.match_playlist_tracks"):
             resp = blindtest_client.post("/blindtest/playlists", json={"url": APPLE_URL})
 
         assert resp.status_code == 201

@@ -138,6 +138,12 @@ backlog détaillé.
   playlists Apple Music. `APPLE_MUSIC_PRIVATE_KEY` porte le contenu du `.p8`
   téléchargé depuis le portail développeur Apple (les `\n` littéraux sont
   acceptés si la valeur passe par une variable d'env shell).
+- `IDONTHAVESPOTIFY_BASE_URL` : URL de base du service self-hosted
+  [`idonthavespotify`](https://github.com/sjdonado/idonthavespotify) (Docker
+  Compose, pas d'auth), utilisé en primaire pour résoudre chaque morceau
+  Spotify/Apple Music vers un `youtube_video_id` (Story 1.2). Pas de valeur
+  par défaut : si absente, le matching saute directement au repli YouTube
+  `search.list` (quota ~100/jour) sans lever d'erreur.
 
 ### Base de données
 
