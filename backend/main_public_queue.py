@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app import models, schemas
 from app.game_helpers import generate_session_code
+from app.pseudo_filter import contains_forbidden_word
 from app.rate_limit import limiter
 from main_games import _start_game_core
 
@@ -78,6 +79,9 @@ def join_public_queue(request: Request, body: schemas.PublicQueueJoinRequest, db
     équipe-de-1 + son joueur en un seul appel atomique, et déclenche le
     démarrage automatique si ce joueur est le 4e.
     """
+    if contains_forbidden_word(body.name):
+        raise HTTPException(status_code=400, detail="Ce pseudo n'est pas autorisé")
+
     game = _find_open_public_queue(db)
     if game is not None:
         # Même garde de capacité que create_team : si la file trouvée est déjà

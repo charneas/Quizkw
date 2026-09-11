@@ -44,6 +44,27 @@ class TestPublicQueueFirstPlayers:
         assert response.status_code == 400
 
 
+class TestPublicQueuePseudoFilter:
+    def test_forbidden_pseudo_rejected(self, test_client):
+        response = _join_public(test_client, "connard")
+        assert response.status_code == 400
+
+    def test_forbidden_pseudo_rejected_case_insensitive_and_substring(self, test_client):
+        response = _join_public(test_client, "SuperConnardDu92")
+        assert response.status_code == 400
+
+    def test_normal_pseudo_accepted(self, test_client):
+        response = _join_public(test_client, "Alice")
+        assert response.status_code == 200
+
+    def test_common_first_names_not_falsely_rejected(self, test_client):
+        # Revue de code : "nique"/"viol" en sous-chaîne bloquaient à tort des
+        # prénoms courants ("Dominique", "Monique", "Violette", "Violaine").
+        for name in ["Dominique", "Monique", "Violette", "Violaine"]:
+            response = _join_public(test_client, name)
+            assert response.status_code == 200, f"{name} ne devrait pas être rejeté"
+
+
 class TestPublicQueueAutoStart:
     def test_fourth_player_triggers_auto_start_without_host_token(self, test_client):
         names = ["Alice", "Bob", "Carol", "Dan"]
