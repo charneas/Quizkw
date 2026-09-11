@@ -125,6 +125,19 @@ backlog détaillé.
   déploiement (ex. `openssl rand -hex 32`).
 - `SESSION_COOKIE_SECURE` : `true` par défaut (cookie envoyé uniquement en
   HTTPS) ; ne le passer à `false` qu'en dev local HTTP.
+- `BLINDTEST_DATABASE_URL` : URL de connexion de la DB dédiée au module
+  blindtest (Epic 1), distincte de `DATABASE_URL` (AD-7, pas de JOIN
+  cross-DB). Développement : `sqlite:///./blindtest.db`.
+- `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` : credentials Client
+  Credentials Spotify (app-level, pas d'OAuth utilisateur) pour l'import de
+  playlists Spotify.
+- `YOUTUBE_API_KEY` : clé API YouTube Data pour l'import de playlists
+  YouTube.
+- `APPLE_MUSIC_KEY_ID` / `APPLE_MUSIC_TEAM_ID` / `APPLE_MUSIC_PRIVATE_KEY` :
+  identifiants du developer token JWT (ES256) Apple Music pour l'import de
+  playlists Apple Music. `APPLE_MUSIC_PRIVATE_KEY` porte le contenu du `.p8`
+  téléchargé depuis le portail développeur Apple (les `\n` littéraux sont
+  acceptés si la valeur passe par une variable d'env shell).
 
 ### Base de données
 
