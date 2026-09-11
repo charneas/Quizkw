@@ -64,6 +64,9 @@ class GameSession(Base):
     # (liste de player_id) et joueur actuellement autorisé à jouer.
     round2_turn_order = Column(JSON, nullable=True)
     round2_current_turn_player_id = Column(Integer, ForeignKey("players.id"), nullable=True)
+    # Story spec-manche-3-seule/1 : mode "Manche 3 directe" — 4 joueurs
+    # sautent directement en Manche 3 sans jouer les Manches 1/2.
+    is_solo_finale = Column(Boolean, default=False, nullable=False, server_default="false")
 
     # Relations
     current_question = relationship("Question")

@@ -24,6 +24,7 @@ function Home() {
   const [isCreating, setIsCreating] = useState(false)
   const [error, setError] = useState('')
   const [showCreate, setShowCreate] = useState(false)
+  const [soloFinale, setSoloFinale] = useState(false)
   // Story O.2.1 (revue de code) : le compte connecté vient désormais de
   // DiscordAccountContext, partagé avec AccountButton (App.tsx) — une seule
   // requête réseau, un seul état, plus de désynchronisation possible entre
@@ -50,10 +51,11 @@ function Home() {
     setError('')
     try {
       const result = await createGame({
-        total_players: totalPlayers,
-        players_per_team: playersPerTeam,
+        total_players: soloFinale ? 4 : totalPlayers,
+        players_per_team: soloFinale ? 1 : playersPerTeam,
         manche1_question_count: questionCount,
         wheel_frequency: wheelFrequency,
+        is_solo_finale: soloFinale,
       })
       storeHostToken(result.game.code, result.host_token)
       navigate(`/lobby/${result.game.code}`)
@@ -149,43 +151,76 @@ function Home() {
             </button>
           ) : (
             <div className="space-y-4">
-              <div>
-                <label className="block text-sm text-text-muted mb-1">
-                  Nombre total de joueurs
-                </label>
+              <label className="flex items-center gap-2 cursor-pointer select-none">
                 <input
-                  type="number"
-                  min={4}
-                  max={12}
-                  value={totalPlayers}
-                  onChange={(e) => setTotalPlayers(Number(e.target.value))}
-                  className="input-field"
+                  type="checkbox"
+                  checked={soloFinale}
+                  onChange={(e) => setSoloFinale(e.target.checked)}
+                  className="w-5 h-5 accent-brand"
                 />
-              </div>
+                <span className="text-sm text-text">🏁 Manche 3 directe</span>
+              </label>
 
-              <div>
-                <label className="block text-sm text-text-muted mb-1">
-                  Joueurs par équipe
-                </label>
-                <div className="flex gap-3">
-                  {PLAYERS_PER_TEAM_OPTIONS.map((option) => (
-                    <button
-                      key={option.value}
-                      onClick={() => setPlayersPerTeam(option.value)}
-                      className={`flex-1 min-h-[44px] py-2 px-4 rounded-lg border transition-colors ${
-                        playersPerTeam === option.value
-                          ? 'bg-brand-600 border-brand text-white'
-                          : 'bg-surface border-border text-text-muted hover:border-brand'
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
+              <div
+                className={`grid transition-[grid-template-rows,opacity] duration-300 ease-in-out ${
+                  soloFinale ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'
+                }`}
+                aria-hidden={soloFinale}
+              >
+                <div className="overflow-hidden space-y-4">
+                  <div>
+                    <label className="block text-sm text-text-muted mb-1">
+                      Nombre total de joueurs
+                    </label>
+                    <input
+                      type="number"
+                      min={4}
+                      max={12}
+                      value={totalPlayers}
+                      onChange={(e) => setTotalPlayers(Number(e.target.value))}
+                      className="input-field"
+                      tabIndex={soloFinale ? -1 : undefined}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-text-muted mb-1">
+                      Joueurs par équipe
+                    </label>
+                    <div className="flex gap-3">
+                      {PLAYERS_PER_TEAM_OPTIONS.map((option) => (
+                        <button
+                          key={option.value}
+                          onClick={() => setPlayersPerTeam(option.value)}
+                          className={`flex-1 min-h-[44px] py-2 px-4 rounded-lg border transition-colors ${
+                            playersPerTeam === option.value
+                              ? 'bg-brand-600 border-brand text-white'
+                              : 'bg-surface border-border text-text-muted hover:border-brand'
+                          }`}
+                          tabIndex={soloFinale ? -1 : undefined}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="text-sm text-text-muted text-center">
+                    {Math.floor(totalPlayers / playersPerTeam)} équipes de {playersPerTeam} {pluralJoueurs(playersPerTeam)}
+                  </div>
                 </div>
               </div>
 
-              <div className="text-sm text-text-muted text-center">
-                {Math.floor(totalPlayers / playersPerTeam)} équipes de {playersPerTeam} {pluralJoueurs(playersPerTeam)}
+              <div
+                className={`grid transition-[grid-template-rows,opacity] duration-300 ease-in-out ${
+                  soloFinale ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+                }`}
+              >
+                <div className="overflow-hidden">
+                  <div className="text-sm text-text-muted text-center bg-brand-muted/20 rounded-lg p-2">
+                    4 joueurs, chacun pour soi — direct sur le memory grid
+                  </div>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">

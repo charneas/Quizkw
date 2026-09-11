@@ -14,6 +14,7 @@ from app import models, schemas
 from app import manche1_orchestration
 from app import team_state_service
 from app.game_helpers import generate_session_code, require_host, require_team_token
+from app.manche3_direct import seed_solo_finale_round2_stats
 from app.rate_limit import limiter
 
 router = APIRouter()
@@ -38,16 +39,26 @@ def create_game(request: Request, game_create: schemas.GameSessionCreate, db: Se
     while db.query(models.GameSession).filter(models.GameSession.code == code).first():
         code = generate_session_code()
 
+    # Mode "Manche 3 directe" (spec-manche-3-seule) : 4 joueurs individuels,
+    # imposé côté backend indépendamment de ce que le client envoie pour ces
+    # deux champs.
+    total_players = game_create.total_players
+    players_per_team = game_create.players_per_team
+    if game_create.is_solo_finale:
+        total_players = 4
+        players_per_team = 1
+
     # Créer la session
     game = models.GameSession(
         code=code,
-        total_players=game_create.total_players,
-        players_per_team=game_create.players_per_team,
+        total_players=total_players,
+        players_per_team=players_per_team,
         manche1_question_count=game_create.manche1_question_count,
         wheel_frequency=game_create.wheel_frequency,
         current_round=models.RoundType.MANCHE_1,
         is_active=True,
         started=False,
+        is_solo_finale=game_create.is_solo_finale,
         host_token=secrets.token_urlsafe(24)
     )
 
@@ -81,9 +92,16 @@ def start_game(code: str, db: Session = Depends(get_db), _host: models.GameSessi
     if not game:
         raise HTTPException(status_code=404, detail="Session de jeu non trouvée")
 
-    # Vérifier qu'il y a au moins 2 équipes
+    # Vérifier qu'il y a au moins 2 équipes (exactement 4 en mode "Manche 3
+    # directe", voir spec-manche-3-seule).
     teams = db.query(models.Team).filter(models.Team.game_session_id == game.id).all()
-    if len(teams) < 2:
+    if game.is_solo_finale:
+        if len(teams) != 4:
+            raise HTTPException(
+                status_code=400,
+                detail="La Manche 3 directe exige exactement 4 joueurs",
+            )
+    elif len(teams) < 2:
         raise HTTPException(status_code=400, detail="Au moins 2 équipes sont nécessaires pour démarrer")
 
     # BUG-201 : l'auto-remplissage silencieux de joueurs factices
@@ -105,6 +123,15 @@ def start_game(code: str, db: Session = Depends(get_db), _host: models.GameSessi
 
     game.is_active = True
     game.started = True
+
+    if game.is_solo_finale:
+        # Saute directement en Manche 3 (spec-manche-3-seule) : seed les
+        # PlayerRound2Stats synthétiques dans la même transaction que le
+        # démarrage, pour que get_finalists_from_round2/_setup_turn_order
+        # (non modifiés) désignent les 4 joueurs comme finalistes.
+        game.current_round = models.RoundType.MANCHE_3
+        seed_solo_finale_round2_stats(db, game, teams)
+
     db.commit()
 
     return {"message": "Jeu démarré avec succès", "teams": len(teams)}

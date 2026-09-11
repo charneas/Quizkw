@@ -155,6 +155,7 @@ class GameSessionBase(BaseModel):
     players_per_team: int = Field(..., ge=1, le=3)
     manche1_question_count: int = Field(default=20, ge=20, le=50)
     wheel_frequency: int = Field(default=5, ge=5, le=10)
+    is_solo_finale: bool = False
 
     @field_validator('manche1_question_count')
     @classmethod
@@ -178,6 +179,7 @@ class GameSession(GameSessionBase):
     code: str
     current_round: RoundTypeEnum
     current_question_id: Optional[int] = None
+    is_solo_finale: bool = False
     is_active: bool
     started: bool
     created_at: datetime
