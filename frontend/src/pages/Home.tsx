@@ -223,39 +223,48 @@ function Home() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-text-muted mb-1">
-                    Questions (Manche 1)
-                  </label>
-                  <select
-                    value={questionCount}
-                    onChange={(e) => setQuestionCount(Number(e.target.value))}
-                    className="input-field text-sm py-1.5"
-                  >
-                    {QUESTION_COUNT_OPTIONS.map((count) => (
-                      <option key={count} value={count}>
-                        {count} questions
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              <div
+                className={`grid transition-[grid-template-rows,opacity] duration-300 ease-in-out ${
+                  soloFinale ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'
+                }`}
+                aria-hidden={soloFinale}
+              >
+                <div className="overflow-hidden grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-text-muted mb-1">
+                      Questions (Manche 1)
+                    </label>
+                    <select
+                      value={questionCount}
+                      onChange={(e) => setQuestionCount(Number(e.target.value))}
+                      className="input-field text-sm py-1.5"
+                      tabIndex={soloFinale ? -1 : undefined}
+                    >
+                      {QUESTION_COUNT_OPTIONS.map((count) => (
+                        <option key={count} value={count}>
+                          {count} questions
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-                <div>
-                  <label className="block text-xs text-text-muted mb-1">
-                    Tours entre chaque roue
-                  </label>
-                  <select
-                    value={wheelFrequency}
-                    onChange={(e) => setWheelFrequency(Number(e.target.value))}
-                    className="input-field text-sm py-1.5"
-                  >
-                    {WHEEL_FREQUENCY_OPTIONS.map((value) => (
-                      <option key={value} value={value}>
-                        {value}
-                      </option>
-                    ))}
-                  </select>
+                  <div>
+                    <label className="block text-xs text-text-muted mb-1">
+                      Tours entre chaque roue
+                    </label>
+                    <select
+                      value={wheelFrequency}
+                      onChange={(e) => setWheelFrequency(Number(e.target.value))}
+                      className="input-field text-sm py-1.5"
+                      tabIndex={soloFinale ? -1 : undefined}
+                    >
+                      {WHEEL_FREQUENCY_OPTIONS.map((value) => (
+                        <option key={value} value={value}>
+                          {value}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               </div>
 
