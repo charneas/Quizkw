@@ -8,6 +8,11 @@ python-dotenv==1.0.0
 psycopg2-binary==2.9.9
 anthropic==0.107.0
 httpx==0.28.1
+# PyJWT[crypto] : signature ES256 du developer token Apple Music (Story 1.1,
+# app/blindtest/providers/apple_music.py) — déjà présent dans le venv testé,
+# épinglé ici pour que les nouvelles installs l'obtiennent aussi.
+PyJWT==2.13.0
+cryptography==48.0.0
 bcrypt==5.0.0
 itsdangerous==2.2.0
 slowapi==0.1.10

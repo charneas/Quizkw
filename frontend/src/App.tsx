@@ -21,6 +21,7 @@ import AdminStats from './pages/AdminStats'
 import AdminThemes from './pages/AdminThemes'
 import AdminQuestions from './pages/AdminQuestions'
 import AdminContentGeneration from './pages/AdminContentGeneration'
+import AdminBlindtestReconciliation from './pages/AdminBlindtestReconciliation'
 
 function App() {
   return (
@@ -46,6 +47,7 @@ function App() {
           <Route path="/admin/propositions" element={<AdminPropositions />} />
           <Route path="/admin/propositions/rejected" element={<AdminPropositionsRejected />} />
           <Route path="/admin/propositions/:id/edit" element={<AdminPropositionEdit />} />
+          <Route path="/admin/blindtest" element={<AdminBlindtestReconciliation />} />
           <Route path="/admin/stats" element={<AdminStats />} />
           <Route path="/proposer" element={<Propositions />} />
         </Routes>

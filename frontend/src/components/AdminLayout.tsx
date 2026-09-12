@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { to: '/admin/content/generate', label: 'Génération de contenu' },
   { to: '/admin/propositions', label: 'Propositions en attente' },
   { to: '/admin/propositions/rejected', label: 'Propositions refusées' },
+  { to: '/admin/blindtest', label: 'Blind test — non trouvés' },
   { to: '/admin/stats', label: 'Statistiques' },
 ]
 

@@ -13,6 +13,8 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from app.database import engine
 from app.models import Base
+from app.blindtest.database import engine as blindtest_engine
+from app.blindtest.models import Base as BlindtestBase
 from app.rate_limit import limiter
 from main_extended import router
 from main_admin import router as admin_router, auth_router as admin_auth_router
@@ -27,6 +29,7 @@ from main_ping_pong import router as ping_pong_router
 from main_memory_grid_legacy import router as memory_grid_router
 from main_auth_discord import router as discord_auth_router
 from main_account import router as account_router
+from main_blindtest import router as blindtest_router, admin_router as blindtest_admin_router
 
 # E-002 : journalisation minimale au niveau module (voir la spine § Deferred —
 # pas d'infrastructure d'observabilité, seulement logging.getLogger standard
@@ -40,6 +43,9 @@ logger = logging.getLogger(__name__)
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
+# Blindtest module (Epic 1) : engine/fichier SQLite distinct (AD-7) — voir
+# app/blindtest/database.py.
+BlindtestBase.metadata.create_all(bind=blindtest_engine)
 
 app = FastAPI(
     title="Quizkw API",
@@ -113,6 +119,11 @@ app.include_router(memory_grid_router)
 app.include_router(discord_auth_router)
 # Include account stats (Epic O, story O.2.2) — GET /account/stats, AD-20
 app.include_router(account_router)
+# Include blindtest playlist import (Epic 1, story 1.1) — DB isolée, AD-7
+app.include_router(blindtest_router)
+# Include blindtest admin reconciliation (spec-blindtest-admin-reconciliation)
+# — mêmes garanties require_admin_session/AD-17 que les autres routes /admin/*
+app.include_router(blindtest_admin_router)
 
 
 if __name__ == "__main__":

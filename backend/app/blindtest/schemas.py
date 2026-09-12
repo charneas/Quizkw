@@ -1,0 +1,58 @@
+"""Schémas Pydantic du module blindtest — Story 1.1/1.4."""
+from typing import List, Optional
+
+from pydantic import BaseModel, ConfigDict, computed_field
+
+
+class PlaylistImportRequest(BaseModel):
+    url: str
+
+
+class TrackResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    title: str
+    artist: str
+    isrc: Optional[str] = None
+    youtube_video_id: Optional[str] = None
+
+
+class PlaylistResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    provider: str
+    source_url: str
+    tracks: List[TrackResponse]
+
+    @computed_field
+    @property
+    def not_found_count(self) -> int:
+        """Nombre de morceaux non résolus (Story 1.4) : `youtube_video_id`
+        encore `None` au moment de la réponse. Valeur "live" — peut encore
+        baisser tant que le matching en arrière-plan (Story 1.2) tourne."""
+        return sum(1 for track in self.tracks if track.youtube_video_id is None)
+
+
+# === Admin — réconciliation manuelle des morceaux non trouvés ===
+
+class UnresolvedTrackResponse(BaseModel):
+    """Un morceau sans `youtube_video_id`, avec assez de contexte pour
+    qu'un admin le retrouve manuellement (titre/artiste/isrc, lien du
+    morceau lui-même, et la playlist d'origine)."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    title: str
+    artist: str
+    isrc: Optional[str] = None
+    source_url: Optional[str] = None
+    playlist_id: int
+    playlist_provider: str
+
+
+class ResolveTrackRequest(BaseModel):
+    """Corps de `PUT /admin/blindtest/tracks/{track_id}` — lien YouTube
+    complet (`watch?v=`/`youtu.be/`) ou videoId nu (11 caractères)."""
+    youtube_url: str

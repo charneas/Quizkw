@@ -92,6 +92,7 @@ temp/
 
 # Backend specific
 backend/quizkw.db
+backend/blindtest.db
 # Les révisions Alembic DOIVENT être versionnées (AD-14) : une migration qui
 # n'atteint pas le dépôt n'atteint ni un autre poste ni la production. Elles
 # étaient exclues ici, ce qui rendait la règle inapplicable par construction.
