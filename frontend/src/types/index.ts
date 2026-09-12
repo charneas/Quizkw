@@ -346,6 +346,25 @@ export interface UnresolvedBlindtestTrack {
   playlist_provider: string
 }
 
+// === Blind-test — lobby / connexion à une partie (Story 2.1) ===
+
+export interface BlindtestGameCreateResponse {
+  id: number
+  code: string
+}
+
+/** Enveloppe commune à tous les messages WS blind-test, dans les deux sens
+ * (cf. Boundaries & Constraints de spec-2-1-lobby-connexion-partie.md). */
+export interface BlindtestWsEnvelope<T = unknown> {
+  type: string
+  payload: T
+  ts?: string
+}
+
+export interface BlindtestGameStatePayload {
+  players: string[]
+}
+
 export interface QuestionCreateRequest {
   text: string
   category: string

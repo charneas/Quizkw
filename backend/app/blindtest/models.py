@@ -1,8 +1,10 @@
-"""Modèles SQLAlchemy du module blindtest — Story 1.1/1.2/1.3.
+"""Modèles SQLAlchemy du module blindtest — Story 1.1/1.2/1.3/2.1.
 
 `MatchCache` (Story 1.3) persiste les résolutions déjà réussies (par ISRC ou
 par `(title, artist)` normalisé) pour éviter de re-solliciter les providers
-sur un morceau déjà connu. `Game`/`Round`/`Score` restent hors scope ici.
+sur un morceau déjà connu. `Game` (Story 2.1) ne porte que le strict
+nécessaire au lobby (code, phase) — `Round`/`Score` restent hors scope ici,
+voir spec-2-1-lobby-connexion-partie.md § Design Notes.
 """
 from datetime import datetime, timezone
 
@@ -49,4 +51,20 @@ class MatchCache(Base):
     isrc = Column(String, nullable=True, unique=True)
     normalized_key = Column(String, nullable=True, unique=True)
     youtube_video_id = Column(String, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class Game(Base):
+    """Une partie de blind test (Story 2.1) : juste un code + une phase.
+
+    Pas de FK vers `Playlist`/`Track` ni de colonne joueurs ici — la
+    présence est dérivée des sockets ouverts (voir `game_connections.py`),
+    aucun `Player` DB table tant que rien ne nécessite un état survivant à
+    une connexion (cf. Design Notes de la spec).
+    """
+    __tablename__ = "games"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String, unique=True, nullable=False, index=True)
+    phase = Column(String, nullable=False, default="lobby")
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

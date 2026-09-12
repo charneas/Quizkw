@@ -22,6 +22,7 @@ import AdminThemes from './pages/AdminThemes'
 import AdminQuestions from './pages/AdminQuestions'
 import AdminContentGeneration from './pages/AdminContentGeneration'
 import AdminBlindtestReconciliation from './pages/AdminBlindtestReconciliation'
+import BlindTestLobby from './pages/BlindTestLobby'
 
 function App() {
   return (
@@ -48,6 +49,9 @@ function App() {
           <Route path="/admin/propositions/rejected" element={<AdminPropositionsRejected />} />
           <Route path="/admin/propositions/:id/edit" element={<AdminPropositionEdit />} />
           <Route path="/admin/blindtest" element={<AdminBlindtestReconciliation />} />
+          {/* Story 2.1 : atteignable directement par URL avec un code, pas
+              de point d'entrée dans la navigation existante (hors scope). */}
+          <Route path="/blindtest/:code" element={<BlindTestLobby />} />
           <Route path="/admin/stats" element={<AdminStats />} />
           <Route path="/proposer" element={<Propositions />} />
         </Routes>
