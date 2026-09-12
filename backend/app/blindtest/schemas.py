@@ -6,6 +6,11 @@ from pydantic import BaseModel, ConfigDict, computed_field
 
 class PlaylistImportRequest(BaseModel):
     url: str
+    # Story 2.2 : scoping optionnel à une partie. Toujours ensemble présents
+    # ou ensemble absents (validé dans `main_blindtest.import_playlist`, pas
+    # ici — la validation dépend de l'état DB/WS, pas juste de la forme).
+    game_code: Optional[str] = None
+    pseudo: Optional[str] = None
 
 
 class TrackResponse(BaseModel):
@@ -25,6 +30,8 @@ class PlaylistResponse(BaseModel):
     provider: str
     source_url: str
     tracks: List[TrackResponse]
+    game_id: Optional[int] = None
+    owner_pseudo: Optional[str] = None
 
     @computed_field
     @property

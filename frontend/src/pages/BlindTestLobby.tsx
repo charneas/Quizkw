@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { BlindtestSocket } from '../lib/blindtestSocket'
+import { importBlindtestPlaylist } from '../services/api'
 
 /**
  * Lobby blind-test (Story 2.1) : saisie de pseudo + bouton pour rejoindre,
@@ -8,6 +9,10 @@ import { BlindtestSocket } from '../lib/blindtestSocket'
  * `game_state`. Atteint directement par URL avec un code (`/blindtest/:code`)
  * — pas de point d'entrée dans la navigation existante, hors scope de cette
  * story (cf. Code Map de la spec).
+ *
+ * Story 2.2 : une fois `joined`, un formulaire d'import de playlist scopé
+ * à cette partie/pseudo apparaît (mirroir du pattern pseudo-form ci-dessus :
+ * champ + bouton + état d'erreur/succès inline).
  */
 export default function BlindTestLobby() {
   const { code = '' } = useParams<{ code: string }>()
@@ -17,6 +22,11 @@ export default function BlindTestLobby() {
   const [players, setPlayers] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const socketRef = useRef<BlindtestSocket | null>(null)
+
+  const [playlistUrl, setPlaylistUrl] = useState('')
+  const [isImporting, setIsImporting] = useState(false)
+  const [importError, setImportError] = useState<string | null>(null)
+  const [importSuccess, setImportSuccess] = useState<string | null>(null)
 
   useEffect(() => {
     return () => {
@@ -67,6 +77,39 @@ export default function BlindTestLobby() {
     })
   }
 
+  function handleImportPlaylist() {
+    // Même garde anti-double-appel que handleJoin : un second clic avant
+    // que le premier import ait fini de se résoudre ne doit pas partir en
+    // parallèle (deux imports simultanés de la même URL, état d'erreur qui
+    // s'écrase de façon imprévisible).
+    if (isImporting) {
+      return
+    }
+
+    const trimmedUrl = playlistUrl.trim()
+    if (!trimmedUrl) {
+      setImportError('Merci de coller un lien de playlist.')
+      setImportSuccess(null)
+      return
+    }
+
+    setImportError(null)
+    setImportSuccess(null)
+    setIsImporting(true)
+
+    importBlindtestPlaylist(trimmedUrl, code, pseudo.trim())
+      .then((playlist) => {
+        setImportSuccess(`Playlist importée (${playlist.tracks.length} morceau${playlist.tracks.length > 1 ? 'x' : ''}).`)
+        setPlaylistUrl('')
+      })
+      .catch((err: Error) => {
+        setImportError(err.message || "Échec de l'import.")
+      })
+      .finally(() => {
+        setIsImporting(false)
+      })
+  }
+
   return (
     <div className="max-w-md mx-auto p-6 space-y-4">
       <h1 className="text-xl font-semibold">Blind test — Lobby {code}</h1>
@@ -89,15 +132,37 @@ export default function BlindTestLobby() {
           </button>
         </div>
       ) : (
-        <div className="space-y-2">
-          <p className="text-text-muted">Joueurs présents :</p>
-          <ul className="space-y-1">
-            {players.map((p) => (
-              <li key={p} className="card px-3 py-2">
-                {p}
-              </li>
-            ))}
-          </ul>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <p className="text-text-muted">Joueurs présents :</p>
+            <ul className="space-y-1">
+              {players.map((p) => (
+                <li key={p} className="card px-3 py-2">
+                  {p}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-text-muted">Importer ta playlist (Spotify, YouTube ou Apple Music) :</p>
+            {importError && <p className="text-sm text-red-500">{importError}</p>}
+            {importSuccess && <p className="text-sm text-green-600">{importSuccess}</p>}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                className="input-field flex-1"
+                placeholder="Lien de la playlist"
+                value={playlistUrl}
+                onChange={(e) => setPlaylistUrl(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleImportPlaylist()}
+                disabled={isImporting}
+              />
+              <button className="btn-primary" onClick={handleImportPlaylist} disabled={isImporting}>
+                Importer
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

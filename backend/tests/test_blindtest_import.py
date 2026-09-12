@@ -272,6 +272,195 @@ class TestNotFoundCount:
         assert get_resp.json()["not_found_count"] == 1
 
 
+class TestScopedImport:
+    """Tests de la Story 2.2 (import scopé à une partie) — matrice I/O de
+    spec-2-2-import-scope-partie.md. Utilise directement `Game` (table
+    isolée blindtest) et le `connection_manager` en mémoire de Story 2.1
+    pour simuler un pseudo connecté au lobby, sans ouvrir de vrai socket."""
+
+    def _make_game(self, blindtest_engine, phase="lobby", code="ABCDEF"):
+        from sqlalchemy.orm import sessionmaker
+
+        from app.blindtest.models import Game
+
+        SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=blindtest_engine)
+        db = SessionLocal()
+        game = Game(code=code, phase=phase)
+        db.add(game)
+        db.commit()
+        db.refresh(game)
+        game_id = game.id
+        db.close()
+        return game_id
+
+    def test_unscoped_import_unaffected_game_id_and_owner_pseudo_none(self, blindtest_client, blindtest_engine):
+        """Regression guard : import sans game_code/pseudo reste identique à
+        Epic 1 — game_id/owner_pseudo restent None."""
+        fake_tracks = [ExtractedTrack(title="Song A", artist="Artist A", isrc="ISRC1")]
+        with patch("app.blindtest.providers.spotify.fetch_tracks", return_value=fake_tracks), \
+             patch("app.blindtest.matching.match_playlist_tracks"):
+            resp = blindtest_client.post("/blindtest/playlists", json={"url": SPOTIFY_URL})
+
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["game_id"] is None
+        assert data["owner_pseudo"] is None
+
+    def test_scoped_import_valid_persists_game_id_and_owner_pseudo(self, blindtest_client, blindtest_engine):
+        from app.blindtest.game_connections import manager as connection_manager
+
+        self._make_game(blindtest_engine, phase="lobby", code="ABCDEF")
+        connection_manager._games["ABCDEF"] = {"Alice": object()}
+        try:
+            fake_tracks = [ExtractedTrack(title="Song A", artist="Artist A", isrc="ISRC1")]
+            with patch("app.blindtest.providers.spotify.fetch_tracks", return_value=fake_tracks), \
+                 patch("app.blindtest.matching.match_playlist_tracks"):
+                resp = blindtest_client.post(
+                    "/blindtest/playlists",
+                    json={"url": SPOTIFY_URL, "game_code": "ABCDEF", "pseudo": "Alice"},
+                )
+
+            assert resp.status_code == 201
+            data = resp.json()
+            assert data["game_id"] is not None
+            assert data["owner_pseudo"] == "Alice"
+        finally:
+            connection_manager._games.pop("ABCDEF", None)
+
+    def test_scoped_import_unknown_game_code_returns_404_no_partial_write(self, blindtest_client, blindtest_engine):
+        with patch("app.blindtest.providers.spotify.fetch_tracks") as spotify_mock:
+            resp = blindtest_client.post(
+                "/blindtest/playlists",
+                json={"url": SPOTIFY_URL, "game_code": "ZZZZZZ", "pseudo": "Alice"},
+            )
+
+        assert resp.status_code == 404
+        spotify_mock.assert_not_called()
+        playlists, tracks = _count_rows(blindtest_engine)
+        assert playlists == 0
+        assert tracks == 0
+
+    def test_scoped_import_game_not_in_lobby_phase_returns_400_no_partial_write(self, blindtest_client, blindtest_engine):
+        from app.blindtest.game_connections import manager as connection_manager
+
+        self._make_game(blindtest_engine, phase="round_started", code="INPLAY")
+        connection_manager._games["INPLAY"] = {"Alice": object()}
+        try:
+            with patch("app.blindtest.providers.spotify.fetch_tracks") as spotify_mock:
+                resp = blindtest_client.post(
+                    "/blindtest/playlists",
+                    json={"url": SPOTIFY_URL, "game_code": "INPLAY", "pseudo": "Alice"},
+                )
+
+            assert resp.status_code == 400
+            spotify_mock.assert_not_called()
+            playlists, tracks = _count_rows(blindtest_engine)
+            assert playlists == 0
+            assert tracks == 0
+        finally:
+            connection_manager._games.pop("INPLAY", None)
+
+    def test_scoped_import_pseudo_not_connected_returns_400_no_partial_write(self, blindtest_client, blindtest_engine):
+        self._make_game(blindtest_engine, phase="lobby", code="GHOSTG")
+        with patch("app.blindtest.providers.spotify.fetch_tracks") as spotify_mock:
+            resp = blindtest_client.post(
+                "/blindtest/playlists",
+                json={"url": SPOTIFY_URL, "game_code": "GHOSTG", "pseudo": "Ghost"},
+            )
+
+        assert resp.status_code == 400
+        spotify_mock.assert_not_called()
+        playlists, tracks = _count_rows(blindtest_engine)
+        assert playlists == 0
+        assert tracks == 0
+
+    def test_scoped_import_pseudo_disconnects_during_extraction_returns_400_no_partial_write(
+        self, blindtest_client, blindtest_engine
+    ):
+        """`extract_tracks` est un aller-retour réseau qui peut prendre
+        plusieurs secondes ; si le pseudo se déconnecte du lobby pendant ce
+        délai, la re-vérification juste avant `db.add(playlist)` doit
+        rejeter l'import au lieu de committer une playlist scopée à un
+        pseudo qui n'est plus connecté (revue de code)."""
+        from app.blindtest.game_connections import manager as connection_manager
+
+        self._make_game(blindtest_engine, phase="lobby", code="RACEGO")
+        connection_manager._games["RACEGO"] = {"Alice": object()}
+
+        def fetch_then_disconnect(*args, **kwargs):
+            # Simule la déconnexion du pseudo pendant l'appel réseau au
+            # provider, avant que le résultat ne soit renvoyé.
+            connection_manager._games.pop("RACEGO", None)
+            fake_tracks = [ExtractedTrack(title="Song A", artist="Artist A", isrc="ISRC1")]
+            return fake_tracks
+
+        try:
+            with patch("app.blindtest.providers.spotify.fetch_tracks", side_effect=fetch_then_disconnect), \
+                 patch("app.blindtest.matching.match_playlist_tracks"):
+                resp = blindtest_client.post(
+                    "/blindtest/playlists",
+                    json={"url": SPOTIFY_URL, "game_code": "RACEGO", "pseudo": "Alice"},
+                )
+
+            assert resp.status_code == 400
+            playlists, tracks = _count_rows(blindtest_engine)
+            assert playlists == 0
+            assert tracks == 0
+        finally:
+            connection_manager._games.pop("RACEGO", None)
+
+    def test_only_game_code_provided_returns_400(self, blindtest_client, blindtest_engine):
+        with patch("app.blindtest.providers.spotify.fetch_tracks") as spotify_mock:
+            resp = blindtest_client.post(
+                "/blindtest/playlists",
+                json={"url": SPOTIFY_URL, "game_code": "ABCDEF"},
+            )
+
+        assert resp.status_code == 400
+        spotify_mock.assert_not_called()
+
+    def test_only_pseudo_provided_returns_400(self, blindtest_client, blindtest_engine):
+        with patch("app.blindtest.providers.spotify.fetch_tracks") as spotify_mock:
+            resp = blindtest_client.post(
+                "/blindtest/playlists",
+                json={"url": SPOTIFY_URL, "pseudo": "Alice"},
+            )
+
+        assert resp.status_code == 400
+        spotify_mock.assert_not_called()
+
+    def test_two_players_two_playlists_same_game_distinct_owner_pseudo(self, blindtest_client, blindtest_engine):
+        from app.blindtest.game_connections import manager as connection_manager
+
+        self._make_game(blindtest_engine, phase="lobby", code="SHARED")
+        connection_manager._games["SHARED"] = {"Alice": object(), "Bob": object()}
+        try:
+            fake_tracks_a = [ExtractedTrack(title="Song A", artist="Artist A", isrc="ISRC1")]
+            fake_tracks_b = [ExtractedTrack(title="Song B", artist="Artist B", isrc="ISRC2")]
+            with patch("app.blindtest.providers.spotify.fetch_tracks", side_effect=[fake_tracks_a, fake_tracks_b]), \
+                 patch("app.blindtest.matching.match_playlist_tracks"):
+                resp_a = blindtest_client.post(
+                    "/blindtest/playlists",
+                    json={"url": SPOTIFY_URL, "game_code": "SHARED", "pseudo": "Alice"},
+                )
+                resp_b = blindtest_client.post(
+                    "/blindtest/playlists",
+                    json={"url": SPOTIFY_URL, "game_code": "SHARED", "pseudo": "Bob"},
+                )
+
+            assert resp_a.status_code == 201
+            assert resp_b.status_code == 201
+            data_a, data_b = resp_a.json(), resp_b.json()
+            assert data_a["game_id"] == data_b["game_id"]
+            assert data_a["owner_pseudo"] == "Alice"
+            assert data_b["owner_pseudo"] == "Bob"
+
+            playlists, _ = _count_rows(blindtest_engine)
+            assert playlists == 2
+        finally:
+            connection_manager._games.pop("SHARED", None)
+
+
 class TestDbIsolation:
     def test_blindtest_db_url_distinct_from_main_db(self):
         from app import database as main_database
