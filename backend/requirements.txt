@@ -25,3 +25,9 @@ openpyxl==3.1.5
 # l'exécution) — s'installe sans erreur sur Windows (wheel pur Python) mais ne peut pas y
 # être exécuté. Épinglé ici pour que le déploiement Linux installe la version testée.
 gunicorn==26.0.0
+# websockets : support WS d'uvicorn (Epic 2, Story 2.1 — premier usage
+# WebSocket du backend). Présent jusqu'ici seulement en dépendance
+# transitive non trackée dans le venv de dev (confirmé via `pip show`) — un
+# install propre à partir de requirements.txt seul n'était pas garanti de
+# l'avoir.
+websockets==16.0

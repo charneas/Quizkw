@@ -6,6 +6,7 @@ import type {
   AnswerCellResponse,
   Theme,
   QualificationStatus,
+  BlindtestGameCreateResponse,
 } from '../types'
 
 const API_BASE = '/api'
@@ -930,6 +931,12 @@ export async function adminResolveBlindtestTrack(trackId: number, youtubeUrl: st
     method: 'PUT',
     body: JSON.stringify({ youtube_url: youtubeUrl }),
   })
+}
+
+// === Blind-test — lobby / connexion à une partie (Story 2.1) ===
+
+export async function createBlindtestGame() {
+  return fetchApi<BlindtestGameCreateResponse>('/blindtest/games', { method: 'POST' })
 }
 
 export async function adminListRejectedPropositions() {

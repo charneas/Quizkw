@@ -56,3 +56,12 @@ class ResolveTrackRequest(BaseModel):
     """Corps de `PUT /admin/blindtest/tracks/{track_id}` — lien YouTube
     complet (`watch?v=`/`youtu.be/`) ou videoId nu (11 caractères)."""
     youtube_url: str
+
+
+# === Lobby / connexion à une partie (Story 2.1) ===
+
+class GameCreateResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    code: str
