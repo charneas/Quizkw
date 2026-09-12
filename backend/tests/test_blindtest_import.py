@@ -205,6 +205,73 @@ class TestMalformedUrl:
         assert resp.status_code == 400
 
 
+class TestNotFoundCount:
+    """Tests de la Story 1.4 (signalement des morceaux non trouvés)."""
+
+    def test_all_resolved_gives_zero_not_found_count(self, blindtest_client, blindtest_engine):
+        fake_tracks = [
+            ExtractedTrack(title="Vid A", artist="Channel A", youtube_video_id="vid-a"),
+            ExtractedTrack(title="Vid B", artist="Channel B", youtube_video_id="vid-b"),
+        ]
+        with patch("app.blindtest.providers.youtube.fetch_tracks", return_value=fake_tracks), \
+             patch("app.blindtest.matching.match_playlist_tracks"):
+            resp = blindtest_client.post("/blindtest/playlists", json={"url": YOUTUBE_URL})
+
+        assert resp.json()["not_found_count"] == 0
+
+    def test_some_unresolved_counts_only_null_video_id_tracks(self, blindtest_client, blindtest_engine):
+        fake_tracks = [
+            ExtractedTrack(title="Song A", artist="Artist A", isrc="ISRC1"),
+            ExtractedTrack(title="Song B", artist="Artist B", isrc="ISRC2"),
+            ExtractedTrack(title="Song C", artist="Artist C", isrc="ISRC3"),
+        ]
+        with patch("app.blindtest.providers.spotify.fetch_tracks", return_value=fake_tracks), \
+             patch("app.blindtest.matching.match_playlist_tracks"):
+            resp = blindtest_client.post("/blindtest/playlists", json={"url": SPOTIFY_URL})
+
+        data = resp.json()
+        assert len(data["tracks"]) == 3
+        assert data["not_found_count"] == 3  # matching mocké : rien n'a encore été résolu
+
+    def test_mixed_resolved_and_unresolved_counts_only_unresolved(self, blindtest_client, blindtest_engine):
+        fake_tracks = [
+            ExtractedTrack(title="Resolved A", artist="Artist A", youtube_video_id="vid-a"),
+            ExtractedTrack(title="Unresolved B", artist="Artist B", isrc="ISRC-B"),
+            ExtractedTrack(title="Unresolved C", artist="Artist C", isrc="ISRC-C"),
+        ]
+        with patch("app.blindtest.providers.spotify.fetch_tracks", return_value=fake_tracks), \
+             patch("app.blindtest.matching.match_playlist_tracks"):
+            resp = blindtest_client.post("/blindtest/playlists", json={"url": SPOTIFY_URL})
+
+        data = resp.json()
+        assert len(data["tracks"]) == 3
+        assert data["not_found_count"] == 2
+
+    def test_empty_playlist_gives_zero_not_found_count(self, blindtest_client, blindtest_engine):
+        with patch("app.blindtest.providers.spotify.fetch_tracks", return_value=[]), \
+             patch("app.blindtest.matching.match_playlist_tracks"):
+            resp = blindtest_client.post("/blindtest/playlists", json={"url": SPOTIFY_URL})
+
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["tracks"] == []
+        assert data["not_found_count"] == 0
+
+    def test_all_unresolved_returns_200_with_full_count_no_fatal_error(self, blindtest_client, blindtest_engine):
+        fake_tracks = [ExtractedTrack(title="Ghost Song", artist="Nobody")]
+        with patch("app.blindtest.providers.spotify.fetch_tracks", return_value=fake_tracks), \
+             patch("app.blindtest.matching.match_playlist_tracks"):
+            resp = blindtest_client.post("/blindtest/playlists", json={"url": SPOTIFY_URL})
+
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["not_found_count"] == len(data["tracks"]) == 1
+
+        get_resp = blindtest_client.get(f"/blindtest/playlists/{data['id']}")
+        assert get_resp.status_code == 200
+        assert get_resp.json()["not_found_count"] == 1
+
+
 class TestDbIsolation:
     def test_blindtest_db_url_distinct_from_main_db(self):
         from app import database as main_database
