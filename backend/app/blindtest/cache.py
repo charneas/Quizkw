@@ -14,7 +14,7 @@ dans `MatchCache` — le reste du code (Epic 2 notamment) n'y accède jamais.
 """
 import re
 import unicodedata
-from typing import Optional
+from typing import Optional, Tuple
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -47,20 +47,23 @@ def normalize_key(title: str, artist: str) -> str:
     return f"{_normalize_part(title or '')}|{_normalize_part(artist or '')}"
 
 
-def lookup(db: Session, isrc: Optional[str], title: str, artist: str) -> Optional[str]:
+def lookup(db: Session, isrc: Optional[str], title: str, artist: str) -> Optional[Tuple[str, Optional[int]]]:
     """Cherche une résolution déjà connue : par ISRC en priorité, sinon par
     `(title, artist)` normalisé. Renvoie `None` si aucun des deux ne
     correspond (ou si `isrc` est vide/None, auquel cas seule la clé
-    normalisée est consultée)."""
+    normalisée est consultée), sinon un couple `(youtube_video_id,
+    duration_seconds)` — Story 2.3 : la durée voyage avec le `video_id`
+    depuis le cache, `duration_seconds` pouvant lui-même être `None` si elle
+    n'a encore jamais été résolue pour cette ligne."""
     if isrc:
         row = db.query(MatchCache).filter(MatchCache.isrc == isrc).first()
         if row:
-            return row.youtube_video_id
+            return (row.youtube_video_id, row.duration_seconds)
 
     key = normalize_key(title, artist)
     row = db.query(MatchCache).filter(MatchCache.normalized_key == key).first()
     if row:
-        return row.youtube_video_id
+        return (row.youtube_video_id, row.duration_seconds)
 
     return None
 
@@ -71,6 +74,7 @@ def store(
     title: str,
     artist: str,
     youtube_video_id: str,
+    duration_seconds: Optional[int] = None,
     overwrite: bool = False,
 ) -> None:
     """Enregistre une résolution réussie. Upsert-safe : si une ligne
@@ -83,6 +87,12 @@ def store(
     ligne existante — c'est tout le but de cette correction : remplacer un
     mauvais match mémorisé par le bon, pas laisser une ligne périmée pointer
     vers l'ancienne vidéo.
+
+    `duration_seconds` (Story 2.3) est persisté sur l'insert initial (même
+    `None` — inconnu au moment de l'appel). Sur le chemin ligne-existante
+    (que ce soit `overwrite=True` ou le cas `match_playlist_tracks` où seule
+    la durée manquait), une valeur non-`None` écrase la durée déjà en base ;
+    une valeur `None` ne touche jamais une durée déjà connue.
 
     Ne commit pas : c'est aux appelants de commiter (`matching.py` commit
     juste après son appel à `store`, `main_blindtest.py` commit une seule
@@ -106,9 +116,20 @@ def store(
         if existing:
             if overwrite:
                 existing.youtube_video_id = youtube_video_id
+            if duration_seconds is not None:
+                existing.duration_seconds = duration_seconds
+            if overwrite or duration_seconds is not None:
                 db.flush()
             return
-        _insert_safely(db, MatchCache(isrc=isrc, normalized_key=None, youtube_video_id=youtube_video_id))
+        _insert_safely(
+            db,
+            MatchCache(
+                isrc=isrc,
+                normalized_key=None,
+                youtube_video_id=youtube_video_id,
+                duration_seconds=duration_seconds,
+            ),
+        )
         return
 
     key = normalize_key(title, artist)
@@ -116,9 +137,20 @@ def store(
     if existing:
         if overwrite:
             existing.youtube_video_id = youtube_video_id
+        if duration_seconds is not None:
+            existing.duration_seconds = duration_seconds
+        if overwrite or duration_seconds is not None:
             db.flush()
         return
-    _insert_safely(db, MatchCache(isrc=None, normalized_key=key, youtube_video_id=youtube_video_id))
+    _insert_safely(
+        db,
+        MatchCache(
+            isrc=None,
+            normalized_key=key,
+            youtube_video_id=youtube_video_id,
+            duration_seconds=duration_seconds,
+        ),
+    )
 
 
 def _insert_safely(db: Session, row: MatchCache) -> None:

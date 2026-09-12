@@ -135,7 +135,12 @@ def import_playlist(
             # Import direct YouTube : le morceau est déjà résolu, on
             # alimente le cache tout de suite pour qu'un futur import
             # Spotify/Apple Music du même morceau tape le cache (Story 1.3).
-            cache.store(db, item.isrc, item.title, item.artist, item.youtube_video_id)
+            # `duration_seconds=None` explicite (Story 2.3) : la durée n'est
+            # pas encore connue à ce stade synchrone — c'est
+            # `match_playlist_tracks` (tâche de fond planifiée juste après)
+            # qui la récupérera et la persistera, jamais cette requête
+            # player-facing (NFR1).
+            cache.store(db, item.isrc, item.title, item.artist, item.youtube_video_id, duration_seconds=None)
 
     db.commit()
     db.refresh(playlist)
@@ -199,8 +204,15 @@ def resolve_track(track_id: int, body: schemas.ResolveTrackRequest, db: Session 
     if not video_id:
         raise HTTPException(status_code=400, detail="Lien YouTube ou identifiant de vidéo invalide")
 
+    # Story 2.3 : action admin low-frequency (pas player-facing, pas de
+    # contrainte NFR1) — la durée est récupérée synchrone, dans la même
+    # requête que la correction du `youtube_video_id`.
+    duration = matching.fetch_video_duration(video_id)
+
     track.youtube_video_id = video_id
-    cache.store(db, track.isrc, track.title, track.artist, video_id, overwrite=True)
+    if duration is not None:
+        track.duration_seconds = duration
+    cache.store(db, track.isrc, track.title, track.artist, video_id, duration_seconds=duration, overwrite=True)
     db.commit()
     db.refresh(track)
     return track

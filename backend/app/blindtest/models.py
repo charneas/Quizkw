@@ -43,6 +43,12 @@ class Track(Base):
     isrc = Column(String, nullable=True)
     youtube_video_id = Column(String, nullable=True)
     source_url = Column(String, nullable=True)
+    # Story 2.3 : durée de la vidéo YouTube résolue (`videos.list`), en
+    # secondes. `NULL` tant qu'elle n'a pas encore été récupérée (ou en cas
+    # d'échec `videos.list` — jamais retenté automatiquement) ; un morceau
+    # avec `youtube_video_id` renseigné mais `duration_seconds` nul reste
+    # inéligible au tirage de round (Story 2.4).
+    duration_seconds = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     playlist = relationship("Playlist", back_populates="tracks")
@@ -59,6 +65,11 @@ class MatchCache(Base):
     isrc = Column(String, nullable=True, unique=True)
     normalized_key = Column(String, nullable=True, unique=True)
     youtube_video_id = Column(String, nullable=False)
+    # Story 2.3 : durée en secondes, mémorisée aux côtés du `youtube_video_id`
+    # pour qu'un cache-hit serve aussi la durée sans nouvel appel
+    # `videos.list`. Peut rester `NULL` sur une ligne dont le `videos.list`
+    # a échoué au moment de la résolution (pas de retry automatique).
+    duration_seconds = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 

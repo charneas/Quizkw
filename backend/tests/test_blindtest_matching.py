@@ -193,28 +193,32 @@ class TestResolveTrackVideoId:
         track = _FakeTrack(source_url="TRACK_URL")
         with patch("app.blindtest.matching.cache.lookup", return_value=None), \
              patch("app.blindtest.matching.resolve_via_idonthavespotify", return_value="vidA") as primary, \
-             patch("app.blindtest.matching.resolve_via_youtube_search") as fallback:
+             patch("app.blindtest.matching.resolve_via_youtube_search") as fallback, \
+             patch("app.blindtest.matching.fetch_video_duration", return_value=120) as duration_fetch:
             result = matching.resolve_track_video_id(MagicMock(), track)
-        assert result == "vidA"
+        assert result == ("vidA", 120)
         primary.assert_called_once_with("TRACK_URL")
         fallback.assert_not_called()
+        duration_fetch.assert_called_once_with("vidA")
 
     def test_primary_miss_falls_back(self):
         track = _FakeTrack(source_url="TRACK_URL")
         with patch("app.blindtest.matching.cache.lookup", return_value=None), \
              patch("app.blindtest.matching.resolve_via_idonthavespotify", return_value=None), \
-             patch("app.blindtest.matching.resolve_via_youtube_search", return_value="vidB") as fallback:
+             patch("app.blindtest.matching.resolve_via_youtube_search", return_value="vidB") as fallback, \
+             patch("app.blindtest.matching.fetch_video_duration", return_value=90):
             result = matching.resolve_track_video_id(MagicMock(), track)
-        assert result == "vidB"
+        assert result == ("vidB", 90)
         fallback.assert_called_once_with(track.title, track.artist)
 
     def test_no_source_url_skips_primary_goes_straight_to_fallback(self):
         track = _FakeTrack(source_url=None, playlist_source_url="PLAYLIST_URL_SHOULD_NOT_BE_USED")
         with patch("app.blindtest.matching.cache.lookup", return_value=None), \
              patch("app.blindtest.matching.resolve_via_idonthavespotify") as primary, \
-             patch("app.blindtest.matching.resolve_via_youtube_search", return_value="vidC") as fallback:
+             patch("app.blindtest.matching.resolve_via_youtube_search", return_value="vidC") as fallback, \
+             patch("app.blindtest.matching.fetch_video_duration", return_value=60):
             result = matching.resolve_track_video_id(MagicMock(), track)
-        assert result == "vidC"
+        assert result == ("vidC", 60)
         primary.assert_not_called()
 
     def test_uses_track_source_url_never_playlist_source_url(self):
@@ -223,29 +227,178 @@ class TestResolveTrackVideoId:
         track = _FakeTrack(source_url="TRACK_OWN_URL", playlist_source_url="PLAYLIST_URL")
         with patch("app.blindtest.matching.cache.lookup", return_value=None), \
              patch("app.blindtest.matching.resolve_via_idonthavespotify", return_value="vid") as primary, \
-             patch("app.blindtest.matching.resolve_via_youtube_search"):
+             patch("app.blindtest.matching.resolve_via_youtube_search"), \
+             patch("app.blindtest.matching.fetch_video_duration", return_value=None):
             matching.resolve_track_video_id(MagicMock(), track)
         primary.assert_called_once_with("TRACK_OWN_URL")
         called_arg = primary.call_args[0][0]
         assert called_arg != "PLAYLIST_URL"
 
-    def test_both_fail_returns_none(self):
+    def test_both_fail_returns_none_none(self):
         track = _FakeTrack(source_url="TRACK_URL")
         with patch("app.blindtest.matching.cache.lookup", return_value=None), \
              patch("app.blindtest.matching.resolve_via_idonthavespotify", return_value=None), \
-             patch("app.blindtest.matching.resolve_via_youtube_search", return_value=None):
+             patch("app.blindtest.matching.resolve_via_youtube_search", return_value=None), \
+             patch("app.blindtest.matching.fetch_video_duration") as duration_fetch:
             result = matching.resolve_track_video_id(MagicMock(), track)
-        assert result is None
+        assert result == (None, None)
+        duration_fetch.assert_not_called()
 
-    def test_cache_hit_skips_both_providers(self):
+    def test_cache_hit_skips_both_providers_and_duration_fetch(self):
         track = _FakeTrack(source_url="TRACK_URL")
-        with patch("app.blindtest.matching.cache.lookup", return_value="cached-vid"), \
+        with patch("app.blindtest.matching.cache.lookup", return_value=("cached-vid", 42)), \
              patch("app.blindtest.matching.resolve_via_idonthavespotify") as primary, \
-             patch("app.blindtest.matching.resolve_via_youtube_search") as fallback:
+             patch("app.blindtest.matching.resolve_via_youtube_search") as fallback, \
+             patch("app.blindtest.matching.fetch_video_duration") as duration_fetch:
             result = matching.resolve_track_video_id(MagicMock(), track)
-        assert result == "cached-vid"
+        assert result == ("cached-vid", 42)
         primary.assert_not_called()
         fallback.assert_not_called()
+        duration_fetch.assert_not_called()
+
+    def test_cache_hit_with_unknown_duration_returns_none_duration_no_retry(self):
+        """Cache-hit, durée encore inconnue (matrice I/O) : la durée reste
+        `None` telle quelle, aucun appel `fetch_video_duration` (pas de
+        retry automatique)."""
+        track = _FakeTrack(source_url="TRACK_URL")
+        with patch("app.blindtest.matching.cache.lookup", return_value=("cached-vid", None)), \
+             patch("app.blindtest.matching.fetch_video_duration") as duration_fetch:
+            result = matching.resolve_track_video_id(MagicMock(), track)
+        assert result == ("cached-vid", None)
+        duration_fetch.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# fetch_video_duration / _parse_iso8601_duration
+# ---------------------------------------------------------------------------
+
+class TestParseIso8601Duration:
+    def test_minutes_and_seconds(self):
+        assert matching._parse_iso8601_duration("PT4M13S") == 4 * 60 + 13
+
+    def test_hours_minutes_seconds(self):
+        assert matching._parse_iso8601_duration("PT1H2M3S") == 3600 + 120 + 3
+
+    def test_seconds_only(self):
+        assert matching._parse_iso8601_duration("PT45S") == 45
+
+    def test_hours_only(self):
+        assert matching._parse_iso8601_duration("PT2H") == 7200
+
+    def test_malformed_returns_none(self):
+        assert matching._parse_iso8601_duration("not-a-duration") is None
+
+    def test_empty_returns_none(self):
+        assert matching._parse_iso8601_duration("") is None
+
+    def test_bare_pt_returns_none(self):
+        assert matching._parse_iso8601_duration("PT") is None
+
+
+class TestFetchVideoDuration:
+    def test_no_api_key_returns_none_no_network_call(self, monkeypatch):
+        monkeypatch.delenv("YOUTUBE_API_KEY", raising=False)
+        with patch("httpx.Client") as client_cls:
+            result = matching.fetch_video_duration("vid1")
+        assert result is None
+        client_cls.assert_not_called()
+
+    def test_success_extracts_duration_seconds(self, monkeypatch):
+        monkeypatch.setenv("YOUTUBE_API_KEY", "fake-key")
+        fake_resp = MagicMock(status_code=200)
+        fake_resp.json.return_value = {"items": [{"contentDetails": {"duration": "PT3M30S"}}]}
+        with patch("httpx.Client") as client_cls:
+            client_cls.return_value.__enter__.return_value.get.return_value = fake_resp
+            result = matching.fetch_video_duration("vid1")
+        assert result == 210
+
+    def test_empty_items_returns_none(self, monkeypatch):
+        monkeypatch.setenv("YOUTUBE_API_KEY", "fake-key")
+        fake_resp = MagicMock(status_code=200)
+        fake_resp.json.return_value = {"items": []}
+        with patch("httpx.Client") as client_cls:
+            client_cls.return_value.__enter__.return_value.get.return_value = fake_resp
+            result = matching.fetch_video_duration("vid1")
+        assert result is None
+
+    def test_non_200_returns_none(self, monkeypatch):
+        monkeypatch.setenv("YOUTUBE_API_KEY", "fake-key")
+        fake_resp = MagicMock(status_code=404)
+        with patch("httpx.Client") as client_cls:
+            client_cls.return_value.__enter__.return_value.get.return_value = fake_resp
+            result = matching.fetch_video_duration("unknown-vid")
+        assert result is None
+
+    def test_network_error_returns_none_no_exception(self, monkeypatch):
+        monkeypatch.setenv("YOUTUBE_API_KEY", "fake-key")
+        with patch("httpx.Client") as client_cls:
+            client_cls.return_value.__enter__.return_value.get.side_effect = httpx.ConnectError("boom")
+            result = matching.fetch_video_duration("vid1")
+        assert result is None
+
+    def test_malformed_payload_returns_none(self, monkeypatch):
+        monkeypatch.setenv("YOUTUBE_API_KEY", "fake-key")
+        fake_resp = MagicMock(status_code=200)
+        fake_resp.json.return_value = {"unexpected": "shape"}
+        with patch("httpx.Client") as client_cls:
+            client_cls.return_value.__enter__.return_value.get.return_value = fake_resp
+            result = matching.fetch_video_duration("vid1")
+        assert result is None
+
+    def test_uses_videos_list_endpoint_with_content_details_part(self, monkeypatch):
+        monkeypatch.setenv("YOUTUBE_API_KEY", "fake-key")
+        fake_resp = MagicMock(status_code=200)
+        fake_resp.json.return_value = {"items": []}
+        with patch("httpx.Client") as client_cls:
+            get_mock = client_cls.return_value.__enter__.return_value.get
+            get_mock.return_value = fake_resp
+            matching.fetch_video_duration("vid1")
+        args, kwargs = get_mock.call_args
+        assert args[0] == matching._YOUTUBE_VIDEOS_URL
+        assert kwargs["params"]["part"] == "contentDetails"
+        assert kwargs["params"]["id"] == "vid1"
+
+
+class TestResolveTrackDurationOnly:
+    def test_cache_hit_with_duration_skips_fetch(self):
+        track = _FakeTrack(source_url=None)
+        track.youtube_video_id = "vid-existing"
+        with patch("app.blindtest.matching.cache.lookup", return_value=("vid-existing", 55)), \
+             patch("app.blindtest.matching.fetch_video_duration") as duration_fetch:
+            result = matching.resolve_track_duration_only(MagicMock(), track)
+        assert result == 55
+        duration_fetch.assert_not_called()
+
+    def test_cache_hit_without_duration_calls_fetch(self):
+        track = _FakeTrack(source_url=None)
+        track.youtube_video_id = "vid-existing"
+        with patch("app.blindtest.matching.cache.lookup", return_value=("vid-existing", None)), \
+             patch("app.blindtest.matching.fetch_video_duration", return_value=77) as duration_fetch:
+            result = matching.resolve_track_duration_only(MagicMock(), track)
+        assert result == 77
+        duration_fetch.assert_called_once_with("vid-existing")
+
+    def test_no_cache_hit_calls_fetch_directly(self):
+        track = _FakeTrack(source_url=None)
+        track.youtube_video_id = "vid-existing"
+        with patch("app.blindtest.matching.cache.lookup", return_value=None), \
+             patch("app.blindtest.matching.fetch_video_duration", return_value=99) as duration_fetch:
+            result = matching.resolve_track_duration_only(MagicMock(), track)
+        assert result == 99
+        duration_fetch.assert_called_once_with("vid-existing")
+
+    def test_cache_hit_for_different_video_id_falls_through_to_fresh_fetch(self):
+        """Le cache peut pointer, sous la même clé isrc/normalisée, vers un
+        `video_id` différent de celui du morceau (ex : correction admin
+        divergente) — ne jamais renvoyer une durée qui appartient à une
+        autre vidéo, refaire un `fetch_video_duration` frais sur le bon id."""
+        track = _FakeTrack(source_url=None)
+        track.youtube_video_id = "vid-existing"
+        with patch("app.blindtest.matching.cache.lookup", return_value=("vid-other", 55)), \
+             patch("app.blindtest.matching.fetch_video_duration", return_value=123) as duration_fetch:
+            result = matching.resolve_track_duration_only(MagicMock(), track)
+        assert result == 123
+        duration_fetch.assert_called_once_with("vid-existing")
 
 
 # ---------------------------------------------------------------------------
@@ -286,15 +439,16 @@ class TestMatchPlaylistTracks:
 
         def fake_resolve(db, track):
             if track.title == "PrimaryHit":
-                return "vid1"
+                return ("vid1", 100)
             if track.title == "FallbackHit":
-                return "vid2"
+                return ("vid2", 200)
             if track.title == "Already":
                 raise AssertionError("already-resolved tracks must never be re-queried")
-            return None
+            return (None, None)
 
         with patch("app.blindtest.matching.SessionLocal", matching_session_factory), \
-             patch("app.blindtest.matching.resolve_track_video_id", side_effect=fake_resolve):
+             patch("app.blindtest.matching.resolve_track_video_id", side_effect=fake_resolve), \
+             patch("app.blindtest.matching.resolve_track_duration_only", return_value=None):
             matching.match_playlist_tracks(playlist_id)
 
         db2 = matching_session_factory()
@@ -303,7 +457,9 @@ class TestMatchPlaylistTracks:
 
         assert tracks_by_title["Already"].youtube_video_id == "existing"
         assert tracks_by_title["PrimaryHit"].youtube_video_id == "vid1"
+        assert tracks_by_title["PrimaryHit"].duration_seconds == 100
         assert tracks_by_title["FallbackHit"].youtube_video_id == "vid2"
+        assert tracks_by_title["FallbackHit"].duration_seconds == 200
         assert tracks_by_title["Unresolved"].youtube_video_id is None
 
     def test_one_track_exception_does_not_abort_the_others(self, matching_session_factory):
@@ -322,7 +478,7 @@ class TestMatchPlaylistTracks:
         def fake_resolve(db, track):
             if track.title == "Crashing":
                 raise RuntimeError("boom")
-            return f"vid-{track.title}"
+            return (f"vid-{track.title}", None)
 
         with patch("app.blindtest.matching.SessionLocal", matching_session_factory), \
              patch("app.blindtest.matching.resolve_track_video_id", side_effect=fake_resolve):
@@ -362,6 +518,83 @@ class TestMatchPlaylistTracks:
         resolved = db2.query(Track).filter(Track.playlist_id == playlist_id).first()
         db2.close()
         assert resolved.youtube_video_id == "cached-vid"
+
+    def test_direct_youtube_track_with_video_id_gets_duration_fetched(self, matching_session_factory):
+        """Matrice I/O : import YouTube direct — `youtube_video_id` déjà
+        présent, `duration_seconds` encore `NULL` — doit maintenant être
+        repris par la tâche de fond (auparavant complètement ignoré par le
+        filtre de requête)."""
+        db = matching_session_factory()
+        playlist = Playlist(source_url="PLAYLIST_URL", provider="youtube")
+        db.add(playlist)
+        db.flush()
+        track = Track(playlist_id=playlist.id, title="Direct", artist="A", youtube_video_id="already-known-vid")
+        db.add(track)
+        db.commit()
+        playlist_id = playlist.id
+        db.close()
+
+        with patch("app.blindtest.matching.SessionLocal", matching_session_factory), \
+             patch("app.blindtest.matching.resolve_track_video_id") as video_id_resolver, \
+             patch("app.blindtest.matching.resolve_track_duration_only", return_value=150) as duration_resolver:
+            matching.match_playlist_tracks(playlist_id)
+
+        video_id_resolver.assert_not_called()
+        duration_resolver.assert_called_once()
+
+        db2 = matching_session_factory()
+        resolved = db2.query(Track).filter(Track.playlist_id == playlist_id).first()
+        db2.close()
+        assert resolved.youtube_video_id == "already-known-vid"
+        assert resolved.duration_seconds == 150
+
+    def test_videos_list_failure_keeps_video_id_duration_stays_null_no_exception(self, matching_session_factory):
+        """Matrice I/O : échec `videos.list` — le `youtube_video_id` déjà
+        résolu reste intact, `duration_seconds` reste `NULL`, rien ne
+        propage."""
+        db = matching_session_factory()
+        playlist = Playlist(source_url="PLAYLIST_URL", provider="youtube")
+        db.add(playlist)
+        db.flush()
+        track = Track(playlist_id=playlist.id, title="Direct", artist="A", youtube_video_id="already-known-vid")
+        db.add(track)
+        db.commit()
+        playlist_id = playlist.id
+        db.close()
+
+        with patch("app.blindtest.matching.SessionLocal", matching_session_factory), \
+             patch("app.blindtest.matching.resolve_track_duration_only", return_value=None):
+            matching.match_playlist_tracks(playlist_id)
+
+        db2 = matching_session_factory()
+        resolved = db2.query(Track).filter(Track.playlist_id == playlist_id).first()
+        db2.close()
+        assert resolved.youtube_video_id == "already-known-vid"
+        assert resolved.duration_seconds is None
+
+    def test_fresh_resolution_videos_list_failure_video_id_kept_duration_null(self, matching_session_factory):
+        """Matrice I/O : une résolution fraîche (pas de youtube_video_id au
+        départ) dont `videos.list` échoue garde tout de même le
+        `youtube_video_id` obtenu, `duration_seconds` reste `NULL`."""
+        db = matching_session_factory()
+        playlist = Playlist(source_url="PLAYLIST_URL", provider="spotify")
+        db.add(playlist)
+        db.flush()
+        track = Track(playlist_id=playlist.id, title="Song", artist="A", source_url="url1")
+        db.add(track)
+        db.commit()
+        playlist_id = playlist.id
+        db.close()
+
+        with patch("app.blindtest.matching.SessionLocal", matching_session_factory), \
+             patch("app.blindtest.matching.resolve_track_video_id", return_value=("fresh-vid", None)):
+            matching.match_playlist_tracks(playlist_id)
+
+        db2 = matching_session_factory()
+        resolved = db2.query(Track).filter(Track.playlist_id == playlist_id).first()
+        db2.close()
+        assert resolved.youtube_video_id == "fresh-vid"
+        assert resolved.duration_seconds is None
 
 
 # ---------------------------------------------------------------------------
@@ -410,7 +643,7 @@ class TestImportThenPollIntegration:
         ]
         with patch("app.blindtest.providers.spotify.fetch_tracks", return_value=fake_tracks), \
              patch("app.blindtest.matching.SessionLocal", blindtest_session_factory), \
-             patch("app.blindtest.matching.resolve_track_video_id", return_value="resolved-vid"):
+             patch("app.blindtest.matching.resolve_track_video_id", return_value=("resolved-vid", 180)):
             post_resp = blindtest_client.post("/blindtest/playlists", json={"url": SPOTIFY_URL})
 
         assert post_resp.status_code == 201
@@ -420,6 +653,7 @@ class TestImportThenPollIntegration:
         assert get_resp.status_code == 200
         data = get_resp.json()
         assert data["tracks"][0]["youtube_video_id"] == "resolved-vid"
+        assert data["tracks"][0]["duration_seconds"] == 180
 
     def test_get_unknown_playlist_returns_404(self, blindtest_client):
         resp = blindtest_client.get("/blindtest/playlists/999999")

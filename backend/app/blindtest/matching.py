@@ -22,10 +22,11 @@ lien à tous les morceaux et ne peut pas résoudre correctement.
 import logging
 import os
 import re
-from typing import Optional
+from typing import Optional, Tuple
 from urllib.parse import urlparse, parse_qs
 
 import httpx
+from sqlalchemy import or_
 
 from app.blindtest import cache
 from app.blindtest.database import SessionLocal
@@ -34,6 +35,14 @@ from app.blindtest.models import Track
 logger = logging.getLogger(__name__)
 
 _YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
+_YOUTUBE_VIDEOS_URL = "https://www.googleapis.com/youtube/v3/videos"
+
+# Durée ISO-8601 renvoyée par `videos.list` (`contentDetails.duration`),
+# forme `PT#H#M#S` — chaque groupe est optionnel (ex: "PT4M13S", "PT1H2M",
+# "PT45S"), jamais de jours/semaines/mois/années pour une vidéo YouTube.
+_ISO8601_DURATION_RE = re.compile(
+    r"^PT(?:(?P<hours>\d+)H)?(?:(?P<minutes>\d+)M)?(?:(?P<seconds>\d+)S)?$"
+)
 
 # Un videoId YouTube fait toujours exactement 11 caractères
 # alphanumériques/`-`/`_` (cf. admin de réconciliation manuelle, qui accepte
@@ -143,41 +152,139 @@ def resolve_via_youtube_search(title: str, artist: str) -> Optional[str]:
     return video_id or None
 
 
-def resolve_track_video_id(db, track: Track) -> Optional[str]:
-    """Résout un `youtube_video_id` pour `track` : cache (`cache.lookup`) en
-    tout premier lieu, puis `idonthavespotify` en primaire (uniquement si
-    `track.source_url` est renseigné — jamais `track.playlist.source_url`),
-    puis `search.list` en repli."""
+def _parse_iso8601_duration(duration: str) -> Optional[int]:
+    """Convertit une durée ISO-8601 `PT#H#M#S` (format
+    `contentDetails.duration` de `videos.list`) en secondes. Renvoie `None`
+    sur tout format inattendu — ne lève jamais."""
+    if not duration:
+        return None
+    match = _ISO8601_DURATION_RE.match(duration.strip())
+    if not match:
+        return None
+    hours = int(match.group("hours") or 0)
+    minutes = int(match.group("minutes") or 0)
+    seconds = int(match.group("seconds") or 0)
+    if hours == 0 and minutes == 0 and seconds == 0 and not any(match.groups()):
+        # Aucun groupe présent du tout ("PT" nu) : pas une durée valide.
+        return None
+    return hours * 3600 + minutes * 60 + seconds
+
+
+def fetch_video_duration(video_id: str) -> Optional[int]:
+    """Récupère la durée (en secondes) d'une vidéo YouTube déjà résolue, via
+    `videos.list?part=contentDetails` (quota général ~10000/jour, distinct
+    du quota restreint de `search.list`, NFR2). Ne lève jamais — toute
+    erreur (config manquante, réseau, HTTP, JSON, format inattendu) renvoie
+    `None`."""
+    api_key = os.getenv("YOUTUBE_API_KEY")
+    if not api_key:
+        return None
+
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.get(
+                _YOUTUBE_VIDEOS_URL,
+                params={
+                    "part": "contentDetails",
+                    "id": video_id,
+                    "key": api_key,
+                },
+            )
+            if resp.status_code != 200:
+                return None
+            payload = resp.json()
+    except (httpx.HTTPError, ValueError) as exc:
+        logger.warning("videos.list: échec de résolution de durée pour %r (%s)", video_id, exc)
+        return None
+
+    if not isinstance(payload, dict):
+        return None
+    items = payload.get("items") or []
+    if not items or not isinstance(items[0], dict):
+        return None
+    content_details = items[0].get("contentDetails")
+    if not isinstance(content_details, dict):
+        return None
+    duration = content_details.get("duration")
+    if not isinstance(duration, str):
+        return None
+    return _parse_iso8601_duration(duration)
+
+
+def resolve_track_video_id(db, track: Track) -> Tuple[Optional[str], Optional[int]]:
+    """Résout un `(youtube_video_id, duration_seconds)` pour `track` : cache
+    (`cache.lookup`) en tout premier lieu — renvoyé tel quel, durée
+    éventuellement `None` si jamais résolue avant cette story — puis
+    `idonthavespotify` en primaire (uniquement si `track.source_url` est
+    renseigné — jamais `track.playlist.source_url`), puis `search.list` en
+    repli. Une résolution fraîche (hors cache) déclenche un unique appel
+    `fetch_video_duration` une fois le `video_id` connu (Story 2.3)."""
     cached = cache.lookup(db, track.isrc, track.title, track.artist)
     if cached:
         return cached
 
+    video_id = None
     if track.source_url:
         video_id = resolve_via_idonthavespotify(track.source_url)
-        if video_id:
-            return video_id
 
-    return resolve_via_youtube_search(track.title, track.artist)
+    if not video_id:
+        video_id = resolve_via_youtube_search(track.title, track.artist)
+
+    if not video_id:
+        return (None, None)
+
+    duration = fetch_video_duration(video_id)
+    return (video_id, duration)
+
+
+def resolve_track_duration_only(db, track: Track) -> Optional[int]:
+    """Résout uniquement la durée d'un morceau qui a déjà un
+    `youtube_video_id` (import YouTube direct) : consulte le cache d'abord
+    (même clé ISRC/normalisée que `resolve_track_video_id`), sinon appelle
+    `fetch_video_duration` directement sur le `video_id` déjà connu."""
+    cached = cache.lookup(db, track.isrc, track.title, track.artist)
+    if cached and cached[1] is not None and cached[0] == track.youtube_video_id:
+        return cached[1]
+
+    return fetch_video_duration(track.youtube_video_id)
 
 
 def match_playlist_tracks(playlist_id: int) -> None:
-    """Résout tous les morceaux non-YouTube (`youtube_video_id IS NULL`)
-    d'une playlist. Ouvre sa propre session DB, itère et commit morceau par
-    morceau ; l'échec d'un morceau n'interrompt jamais les suivants."""
+    """Résout tous les morceaux d'une playlist qui n'ont pas encore un
+    `youtube_video_id` OU pas encore de `duration_seconds` (Story 2.3 :
+    couvre aussi les imports YouTube directs, qui arrivent déjà avec un
+    `youtube_video_id` mais sans durée). Ouvre sa propre session DB, itère
+    et commit morceau par morceau ; l'échec d'un morceau n'interrompt
+    jamais les suivants."""
     db = SessionLocal()
     try:
         tracks = (
             db.query(Track)
-            .filter(Track.playlist_id == playlist_id, Track.youtube_video_id.is_(None))
+            .filter(
+                Track.playlist_id == playlist_id,
+                or_(Track.youtube_video_id.is_(None), Track.duration_seconds.is_(None)),
+            )
             .all()
         )
         for track in tracks:
             try:
-                video_id = resolve_track_video_id(db, track)
-                if video_id:
-                    track.youtube_video_id = video_id
-                    cache.store(db, track.isrc, track.title, track.artist, video_id)
-                    db.commit()
+                if track.youtube_video_id is None:
+                    video_id, duration = resolve_track_video_id(db, track)
+                    if video_id:
+                        track.youtube_video_id = video_id
+                        if duration is not None:
+                            track.duration_seconds = duration
+                        cache.store(db, track.isrc, track.title, track.artist, video_id, duration_seconds=duration)
+                        db.commit()
+                else:
+                    duration = resolve_track_duration_only(db, track)
+                    if duration is not None:
+                        track.duration_seconds = duration
+                        cache.store(
+                            db, track.isrc, track.title, track.artist, track.youtube_video_id,
+                            duration_seconds=duration, overwrite=True,
+                        )
+                        db.commit()
             except Exception:
                 logger.exception("Matching: échec inattendu pour le morceau %s (playlist %s)", track.id, playlist_id)
                 db.rollback()
