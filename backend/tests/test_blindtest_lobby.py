@@ -83,6 +83,21 @@ class TestJoinValidCode:
             assert msg["payload"]["players"] == ["Alice"]
             assert "ts" in msg
 
+    def test_first_joiner_becomes_host(self, blindtest_client):
+        code = _create_game(blindtest_client)
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            msg1 = ws1.receive_json()
+            assert msg1["payload"]["host_pseudo"] == "Alice"
+            assert msg1["payload"]["phase"] == "lobby"
+
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
+                ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                msg2 = ws2.receive_json()
+                # Le second joueur ne devient jamais l'hôte : la colonne
+                # n'est assignée qu'une fois, au tout premier joueur.
+                assert msg2["payload"]["host_pseudo"] == "Alice"
+
     def test_join_case_insensitive_code(self, blindtest_client):
         code = _create_game(blindtest_client)
         with blindtest_client.websocket_connect(f"/blindtest/games/{code.lower()}/ws") as ws:
@@ -194,6 +209,168 @@ class TestDisconnect:
             # ws2 (Bob) fermé en sortant du `with` -> Alice reçoit un roster à jour
             msg1 = ws1.receive_json()
             assert msg1["payload"]["players"] == ["Alice"]
+
+
+def _add_track(engine, game_code: str, *, youtube_video_id="abc123", duration_seconds=100) -> None:
+    """Insère directement une `Playlist`+`Track` scopées à `game_code`, sans
+    passer par le pipeline d'import (hors scope de cette story) — juste ce
+    qu'il faut pour rendre un morceau éligible (ou non) au tirage de round."""
+    from app.blindtest.models import Game, Playlist, Track
+
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    db = SessionLocal()
+    try:
+        game = db.query(Game).filter(Game.code == game_code).first()
+        playlist = Playlist(source_url="https://example.com", provider="youtube", game_id=game.id, owner_pseudo="Alice")
+        db.add(playlist)
+        db.flush()
+        db.add(Track(
+            playlist_id=playlist.id,
+            title="Titre",
+            artist="Artiste",
+            youtube_video_id=youtube_video_id,
+            duration_seconds=duration_seconds,
+        ))
+        db.commit()
+    finally:
+        db.close()
+
+
+class TestStartGame:
+    def test_host_starts_with_eligible_pot_draws_and_broadcasts(self, blindtest_client, blindtest_engine):
+        code = _create_game(blindtest_client)
+        _add_track(blindtest_engine, code)
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()  # game_state, Alice devient hôte
+
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
+                ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                ws2.receive_json()  # game_state pour Bob
+                ws1.receive_json()  # game_state (roster à jour) pour Alice
+
+                ws1.send_json({"type": "start_game", "payload": {}})
+
+                msg1 = ws1.receive_json()
+                msg2 = ws2.receive_json()
+                for msg in (msg1, msg2):
+                    assert msg["type"] == "round_started"
+                    assert msg["payload"]["videoId"] == "abc123"
+                    assert 0 <= msg["payload"]["startSeconds"] < 100
+
+    def test_non_host_start_game_is_silently_ignored(self, blindtest_client, blindtest_engine):
+        code = _create_game(blindtest_client)
+        _add_track(blindtest_engine, code)
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
+                ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                ws2.receive_json()
+                ws1.receive_json()
+
+                ws2.send_json({"type": "start_game", "payload": {}})
+
+                # Rien ne doit arriver suite à ce message : on le vérifie en
+                # provoquant un nouveau broadcast (une 3e connexion) et en
+                # confirmant que la partie est toujours en phase lobby.
+                with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws3:
+                    ws3.send_json({"type": "join", "payload": {"pseudo": "Carol"}})
+                    msg3 = ws3.receive_json()
+                    assert msg3["payload"]["phase"] == "lobby"
+
+    def test_empty_pot_is_silently_ignored(self, blindtest_client):
+        code = _create_game(blindtest_client)
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+
+            ws1.send_json({"type": "start_game", "payload": {}})
+
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
+                ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                msg2 = ws2.receive_json()
+                assert msg2["payload"]["phase"] == "lobby"
+
+    def test_duplicate_start_is_a_noop(self, blindtest_client, blindtest_engine):
+        code = _create_game(blindtest_client)
+        _add_track(blindtest_engine, code)
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+
+            ws1.send_json({"type": "start_game", "payload": {}})
+            first = ws1.receive_json()
+            assert first["type"] == "round_started"
+
+            ws1.send_json({"type": "start_game", "payload": {}})
+
+            # Aucun nouveau `round_started` : on le confirme via un nouveau
+            # joignant, dont le `game_state` doit rester en `round_started`
+            # (pas de second tirage qui aurait pu changer le morceau/offset).
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
+                ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                msg2 = ws2.receive_json()
+                assert msg2["payload"]["phase"] == "round_started"
+
+    def test_disconnect_after_round_started_rebroadcasts_current_phase(self, blindtest_client, blindtest_engine):
+        """Régression (revue de code) : le `finally` du handler WS lisait un
+        objet `Game` ORM chargé une seule fois à la connexion, jamais
+        rafraîchi — si un round démarrait via une *autre* connexion pendant
+        la vie de ce socket, sa déconnexion rediffusait un `phase: "lobby"`
+        périmé à tous les clients restants, malgré la vraie phase déjà
+        passée en `round_started`."""
+        code = _create_game(blindtest_client)
+        _add_track(blindtest_engine, code)
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()  # game_state, Alice devient hôte
+
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
+                ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                ws2.receive_json()  # game_state pour Bob
+                ws1.receive_json()  # game_state (roster à jour) pour Alice
+
+                ws1.send_json({"type": "start_game", "payload": {}})
+                ws1.receive_json()  # round_started pour Alice
+                ws2.receive_json()  # round_started pour Bob
+
+                # Bob (ws2, une connexion distincte de celle qui a démarré le
+                # round) se déconnecte ici, en sortant du `with`. Le `finally`
+                # de son handler doit refléter la vraie phase courante, pas
+                # celle vue à sa connexion (avant le `start_game`).
+
+            # Une nouvelle connexion observe l'état après la déconnexion de
+            # Bob : la phase doit toujours être `round_started`.
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws3:
+                ws3.send_json({"type": "join", "payload": {"pseudo": "Carol"}})
+                msg3 = ws3.receive_json()
+                assert msg3["payload"]["phase"] == "round_started"
+
+    def test_same_track_different_games_different_start_seconds(self, blindtest_client, blindtest_engine):
+        code_x = _create_game(blindtest_client)
+        code_y = _create_game(blindtest_client)
+        _add_track(blindtest_engine, code_x, duration_seconds=10_000)
+        _add_track(blindtest_engine, code_y, duration_seconds=10_000)
+
+        starts = []
+        for code in (code_x, code_y):
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws:
+                ws.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+                ws.receive_json()
+                ws.send_json({"type": "start_game", "payload": {}})
+                msg = ws.receive_json()
+                starts.append(msg["payload"]["startSeconds"])
+
+        # Espace [0, 10000) : collision statistiquement négligeable, ce
+        # test peut en théorie flaker mais avec une probabilité infime.
+        assert starts[0] != starts[1]
 
 
 class TestTwoGamesIsolation:

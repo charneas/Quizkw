@@ -363,6 +363,19 @@ export interface BlindtestWsEnvelope<T = unknown> {
 
 export interface BlindtestGameStatePayload {
   players: string[]
+  // Story 2.4 : phase de la partie et pseudo de l'hôte (celui qui peut
+  // déclencher `start_game`) — poussés par le serveur, jamais recalculés
+  // côté client (epic-2-context.md : `game_state` est l'unique source de
+  // vérité affichée).
+  phase: string
+  host_pseudo: string | null
+}
+
+// Story 2.4 : payload de `round_started`, poussé par le serveur au host
+// `start_game` réussi — lecture exclusivement via le YouTube IFrame Player.
+export interface BlindtestRoundStartedPayload {
+  videoId: string
+  startSeconds: number
 }
 
 // === Blind-test — import de playlist scopé à une partie (Story 2.2) ===
