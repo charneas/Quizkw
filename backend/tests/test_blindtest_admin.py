@@ -165,10 +165,11 @@ class TestListUnresolved:
 class TestResolveTrack:
     def test_full_youtube_url_resolves(self, admin_client, blindtest_session_factory, blindtest_engine):
         track_id, _ = _make_unresolved_track(blindtest_session_factory, isrc="ISRC-1")
-        resp = admin_client.put(
-            f"/admin/blindtest/tracks/{track_id}",
-            json={"youtube_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
-        )
+        with patch("main_blindtest.matching.fetch_video_duration", return_value=None):
+            resp = admin_client.put(
+                f"/admin/blindtest/tracks/{track_id}",
+                json={"youtube_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
+            )
         assert resp.status_code == 200
         assert resp.json()["youtube_video_id"] == "dQw4w9WgXcQ"
 
@@ -178,6 +179,71 @@ class TestResolveTrack:
             cache_rows = conn.execute(text("SELECT COUNT(*) FROM match_cache WHERE isrc = 'ISRC-1'")).scalar()
         assert row[0] == "dQw4w9WgXcQ"
         assert cache_rows == 1
+
+    def test_resolve_fetches_and_persists_duration_synchronously(
+        self, admin_client, blindtest_session_factory, blindtest_engine
+    ):
+        """Matrice I/O : réconciliation admin — la durée est récupérée dans
+        la même requête (synchrone) et persistée sur `Track` + `MatchCache`."""
+        track_id, _ = _make_unresolved_track(blindtest_session_factory, isrc="ISRC-DUR-ADMIN")
+        with patch("main_blindtest.matching.fetch_video_duration", return_value=222) as duration_fetch:
+            resp = admin_client.put(
+                f"/admin/blindtest/tracks/{track_id}",
+                json={"youtube_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["duration_seconds"] == 222
+        duration_fetch.assert_called_once_with("dQw4w9WgXcQ")
+
+        with blindtest_engine.connect() as conn:
+            from sqlalchemy import text
+            row = conn.execute(
+                text("SELECT duration_seconds FROM tracks WHERE id = :id"), {"id": track_id}
+            ).fetchone()
+            cache_row = conn.execute(
+                text("SELECT duration_seconds FROM match_cache WHERE isrc = 'ISRC-DUR-ADMIN'")
+            ).fetchone()
+        assert row[0] == 222
+        assert cache_row[0] == 222
+
+    def test_resolve_videos_list_failure_keeps_video_id_duration_stays_null(
+        self, admin_client, blindtest_session_factory, blindtest_engine
+    ):
+        """Matrice I/O : échec `videos.list` pendant la réconciliation admin
+        — le `youtube_video_id` reste appliqué, `duration_seconds` reste
+        `NULL`, pas d'erreur 5xx."""
+        track_id, _ = _make_unresolved_track(blindtest_session_factory, isrc="ISRC-DUR-FAIL")
+        with patch("main_blindtest.matching.fetch_video_duration", return_value=None):
+            resp = admin_client.put(
+                f"/admin/blindtest/tracks/{track_id}",
+                json={"youtube_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["youtube_video_id"] == "dQw4w9WgXcQ"
+        assert resp.json()["duration_seconds"] is None
+
+    def test_reresolve_videos_list_failure_does_not_erase_existing_duration(
+        self, admin_client, blindtest_session_factory
+    ):
+        """Ré-résolution (correction) d'un morceau qui a déjà une durée
+        connue : si `videos.list` échoue silencieusement (`fetch_video_duration`
+        renvoie `None`), la durée existante ne doit pas être écrasée à
+        `NULL` — même principe que `cache.store` (un `None` n'efface jamais
+        une valeur déjà connue)."""
+        track_id, _ = _make_unresolved_track(
+            blindtest_session_factory,
+            isrc="ISRC-DUR-KEEP",
+            youtube_video_id="vid-old",
+            duration_seconds=222,
+        )
+        with patch("main_blindtest.matching.fetch_video_duration", return_value=None):
+            resp = admin_client.put(
+                f"/admin/blindtest/tracks/{track_id}",
+                json={"youtube_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["youtube_video_id"] == "dQw4w9WgXcQ"
+        assert resp.json()["duration_seconds"] == 222
 
     def test_youtu_be_short_link_resolves(self, admin_client, blindtest_session_factory):
         track_id, _ = _make_unresolved_track(blindtest_session_factory)

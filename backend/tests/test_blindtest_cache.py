@@ -52,13 +52,13 @@ class TestLookupAndStore:
         db = cache_session_factory()
         cache.store(db, "ISRC-1", "Title", "Artist", "vid1")
         result = cache.lookup(db, "ISRC-1", "Title", "Artist")
-        assert result == "vid1"
+        assert result == ("vid1", None)
 
     def test_store_then_lookup_by_normalized_title_artist(self, cache_session_factory):
         db = cache_session_factory()
         cache.store(db, None, "Song Title", "Some Artist", "vid2")
         result = cache.lookup(db, None, "SONG TITLE", "some artist")
-        assert result == "vid2"
+        assert result == ("vid2", None)
 
     def test_isrc_takes_priority_over_normalized_key(self, cache_session_factory):
         db = cache_session_factory()
@@ -68,7 +68,55 @@ class TestLookupAndStore:
         cache.store(db, "ISRC-X", "Ignored Title", "Ignored Artist", "vid-isrc")
         cache.store(db, None, "Other Song", "Other Artist", "vid-normalized")
         result = cache.lookup(db, "ISRC-X", "Other Song", "Other Artist")
-        assert result == "vid-isrc"
+        assert result == ("vid-isrc", None)
+
+    def test_store_with_duration_then_lookup_returns_duration(self, cache_session_factory):
+        db = cache_session_factory()
+        cache.store(db, "ISRC-DUR", "Title", "Artist", "vid-dur", duration_seconds=210)
+        result = cache.lookup(db, "ISRC-DUR", "Title", "Artist")
+        assert result == ("vid-dur", 210)
+
+    def test_store_without_duration_then_lookup_returns_none_duration(self, cache_session_factory):
+        db = cache_session_factory()
+        cache.store(db, "ISRC-NO-DUR", "Title", "Artist", "vid-no-dur")
+        result = cache.lookup(db, "ISRC-NO-DUR", "Title", "Artist")
+        assert result == ("vid-no-dur", None)
+
+    def test_store_existing_row_missing_duration_gets_duration_backfilled_without_overwrite(self, cache_session_factory):
+        """Chemin `match_playlist_tracks` : ligne existante avec
+        `youtube_video_id` déjà connu mais durée manquante — `store` doit
+        pouvoir compléter juste la durée sans passer par `overwrite=True`."""
+        db = cache_session_factory()
+        cache.store(db, "ISRC-BACKFILL", "Title", "Artist", "vid-x")
+        cache.store(db, "ISRC-BACKFILL", "Title", "Artist", "vid-x", duration_seconds=333)
+        result = cache.lookup(db, "ISRC-BACKFILL", "Title", "Artist")
+        assert result == ("vid-x", 333)
+
+    def test_store_none_duration_does_not_erase_existing_duration(self, cache_session_factory):
+        db = cache_session_factory()
+        cache.store(db, "ISRC-KEEP", "Title", "Artist", "vid-y", duration_seconds=400)
+        cache.store(db, "ISRC-KEEP", "Title", "Artist", "vid-y", duration_seconds=None)
+        result = cache.lookup(db, "ISRC-KEEP", "Title", "Artist")
+        assert result == ("vid-y", 400)
+
+    def test_store_existing_row_missing_duration_gets_duration_backfilled_without_overwrite_normalized_key(
+        self, cache_session_factory
+    ):
+        """Même comportement que le test isrc, mais sur la branche clé
+        normalisée (pas d'isrc) — `store` doit pouvoir compléter juste la
+        durée sans `overwrite=True`."""
+        db = cache_session_factory()
+        cache.store(db, None, "Title Norm", "Artist Norm", "vid-x-norm")
+        cache.store(db, None, "Title Norm", "Artist Norm", "vid-x-norm", duration_seconds=333)
+        result = cache.lookup(db, None, "Title Norm", "Artist Norm")
+        assert result == ("vid-x-norm", 333)
+
+    def test_store_none_duration_does_not_erase_existing_duration_normalized_key(self, cache_session_factory):
+        db = cache_session_factory()
+        cache.store(db, None, "Title Keep", "Artist Keep", "vid-y-norm", duration_seconds=400)
+        cache.store(db, None, "Title Keep", "Artist Keep", "vid-y-norm", duration_seconds=None)
+        result = cache.lookup(db, None, "Title Keep", "Artist Keep")
+        assert result == ("vid-y-norm", 400)
 
     def test_lookup_miss_returns_none(self, cache_session_factory):
         db = cache_session_factory()
@@ -78,7 +126,7 @@ class TestLookupAndStore:
         db = cache_session_factory()
         cache.store(db, None, "Café del Mar", "Énergie!", "vid3")
         result = cache.lookup(db, None, "cafe del mar", "energie")
-        assert result == "vid3"
+        assert result == ("vid3", None)
 
     def test_store_does_not_duplicate_existing_isrc_row(self, cache_session_factory):
         db = cache_session_factory()

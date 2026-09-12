@@ -21,6 +21,7 @@ class TrackResponse(BaseModel):
     artist: str
     isrc: Optional[str] = None
     youtube_video_id: Optional[str] = None
+    duration_seconds: Optional[int] = None
 
 
 class PlaylistResponse(BaseModel):
