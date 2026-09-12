@@ -32,6 +32,33 @@ from main import app as main_app
 
 
 # ---------------------------------------------------------------------------
+# extract_video_id
+# ---------------------------------------------------------------------------
+
+class TestExtractVideoId:
+    def test_non_youtube_host_with_v_param_is_rejected(self):
+        # Le paramètre `?v=x` extrait ("x") ne fait pas 11 caractères
+        # alphanumériques/`-`/`_` : rejeté par le format-check, peu importe
+        # l'hôte non-YouTube.
+        assert matching.extract_video_id("https://example.com/foo?v=x") is None
+
+    def test_v_param_too_short_is_rejected(self):
+        assert matching.extract_video_id("https://www.youtube.com/watch?v=short") is None
+
+    def test_v_param_too_long_is_rejected(self):
+        assert matching.extract_video_id("https://www.youtube.com/watch?v=wayTooLongVideoId123") is None
+
+    def test_v_param_valid_length_is_accepted(self):
+        assert matching.extract_video_id("https://www.youtube.com/watch?v=dQw4w9WgXcQ") == "dQw4w9WgXcQ"
+
+    def test_youtu_be_too_short_is_rejected(self):
+        assert matching.extract_video_id("https://youtu.be/short") is None
+
+    def test_bare_video_id_with_surrounding_whitespace_is_accepted(self):
+        assert matching.extract_video_id("  dQw4w9WgXcQ  ") == "dQw4w9WgXcQ"
+
+
+# ---------------------------------------------------------------------------
 # resolve_via_idonthavespotify
 # ---------------------------------------------------------------------------
 
@@ -48,13 +75,13 @@ class TestResolveViaIdonthavespotify:
         fake_resp = MagicMock(status_code=200)
         fake_resp.json.return_value = {
             "links": [
-                {"type": "youTube", "url": "https://www.youtube.com/watch?v=abc123", "notAvailable": False},
+                {"type": "youTube", "url": "https://www.youtube.com/watch?v=abc123defgh", "notAvailable": False},
             ]
         }
         with patch("httpx.Client") as client_cls:
             client_cls.return_value.__enter__.return_value.post.return_value = fake_resp
             result = matching.resolve_via_idonthavespotify("https://open.spotify.com/track/abc")
-        assert result == "abc123"
+        assert result == "abc123defgh"
 
     def test_not_available_link_falls_back_to_none(self, monkeypatch):
         monkeypatch.setenv("IDONTHAVESPOTIFY_BASE_URL", "http://localhost:9999")

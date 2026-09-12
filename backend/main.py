@@ -29,7 +29,7 @@ from main_ping_pong import router as ping_pong_router
 from main_memory_grid_legacy import router as memory_grid_router
 from main_auth_discord import router as discord_auth_router
 from main_account import router as account_router
-from main_blindtest import router as blindtest_router
+from main_blindtest import router as blindtest_router, admin_router as blindtest_admin_router
 
 # E-002 : journalisation minimale au niveau module (voir la spine § Deferred —
 # pas d'infrastructure d'observabilité, seulement logging.getLogger standard
@@ -121,6 +121,9 @@ app.include_router(discord_auth_router)
 app.include_router(account_router)
 # Include blindtest playlist import (Epic 1, story 1.1) — DB isolée, AD-7
 app.include_router(blindtest_router)
+# Include blindtest admin reconciliation (spec-blindtest-admin-reconciliation)
+# — mêmes garanties require_admin_session/AD-17 que les autres routes /admin/*
+app.include_router(blindtest_admin_router)
 
 
 if __name__ == "__main__":

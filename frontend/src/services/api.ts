@@ -880,6 +880,7 @@ import type {
   QuestionStatsListItem,
   ThemeStatsResponse,
   PropositionUpdateRequest,
+  UnresolvedBlindtestTrack,
 } from '../types'
 
 export async function adminLogin(email: string, password: string) {
@@ -915,6 +916,19 @@ export async function adminRejectProposition(propositionId: number, reason: stri
   return fetchApi<Proposition>(`/admin/propositions/${propositionId}/reject`, {
     method: 'POST',
     body: JSON.stringify({ reason }),
+  })
+}
+
+// === Admin blind-test — réconciliation manuelle (spec-blindtest-admin-reconciliation) ===
+
+export async function adminListUnresolvedBlindtestTracks() {
+  return fetchApi<UnresolvedBlindtestTrack[]>('/admin/blindtest/tracks/unresolved')
+}
+
+export async function adminResolveBlindtestTrack(trackId: number, youtubeUrl: string) {
+  return fetchApi<{ id: number; youtube_video_id: string | null }>(`/admin/blindtest/tracks/${trackId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ youtube_url: youtubeUrl }),
   })
 }
 

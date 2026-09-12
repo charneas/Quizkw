@@ -115,6 +115,24 @@ class TestLookupAndStore:
         assert db.query(MatchCache).filter(MatchCache.isrc == "ISRC-NO-COMMIT").first() is not None
         assert db.in_transaction()
 
+    def test_store_overwrite_true_updates_existing_isrc_row(self, cache_session_factory):
+        """`overwrite=True` (chemin correction admin `resolve_track`) doit
+        écraser la valeur existante, contrairement au défaut no-op."""
+        db = cache_session_factory()
+        cache.store(db, "ISRC-OVERWRITE", "Title", "Artist", "vid-old")
+        cache.store(db, "ISRC-OVERWRITE", "Title", "Artist", "vid-new", overwrite=True)
+        rows = db.query(MatchCache).filter(MatchCache.isrc == "ISRC-OVERWRITE").all()
+        assert len(rows) == 1
+        assert rows[0].youtube_video_id == "vid-new"
+
+    def test_store_overwrite_true_updates_existing_normalized_row(self, cache_session_factory):
+        db = cache_session_factory()
+        cache.store(db, None, "Title", "Artist", "vid-old")
+        cache.store(db, None, "TITLE", "artist", "vid-new", overwrite=True)
+        rows = db.query(MatchCache).filter(MatchCache.normalized_key == cache.normalize_key("Title", "Artist")).all()
+        assert len(rows) == 1
+        assert rows[0].youtube_video_id == "vid-new"
+
     def test_store_race_condition_is_absorbed_as_noop(self, cache_session_factory):
         """Deux résolutions concurrentes du même morceau peuvent toutes deux
         passer le check d'existence avant qu'aucune n'ait été persistée,

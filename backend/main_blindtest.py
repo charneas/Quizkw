@@ -3,10 +3,12 @@
 limiter) mais branché sur la DB isolée `app.blindtest.database` (AD-7).
 """
 import logging
+from typing import List
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
+from app.auth import require_admin_session
 from app.blindtest import cache, matching, schemas
 from app.blindtest.database import get_db
 from app.blindtest.errors import PrivatePlaylistError, ProviderConfigError, UnrecognizedUrlError
@@ -17,6 +19,16 @@ from app.rate_limit import limiter
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Réconciliation manuelle admin des morceaux non trouvés (spec
+# spec-blindtest-admin-reconciliation.md) : même garde `require_admin_session`
+# que les autres routes `/admin/*` (AD-17), branché sur la DB isolée
+# blindtest (jamais de jointure/lecture croisée avec la DB principale).
+admin_router = APIRouter(
+    prefix="/admin/blindtest",
+    tags=["Admin"],
+    dependencies=[Depends(require_admin_session)],
+)
 
 
 @router.post("/blindtest/playlists", response_model=schemas.PlaylistResponse, status_code=201)
@@ -75,3 +87,54 @@ def get_playlist(playlist_id: int, db: Session = Depends(get_db)):
     if not playlist:
         raise HTTPException(status_code=404, detail="Playlist introuvable")
     return playlist
+
+
+@admin_router.get("/tracks/unresolved", response_model=List[schemas.UnresolvedTrackResponse])
+def list_unresolved_tracks(db: Session = Depends(get_db)):
+    """Liste, toutes playlists confondues, les morceaux jamais résolus par
+    le matching automatique (`youtube_video_id IS NULL`) — pas de
+    pagination (hors scope, cf. spec, pattern `AdminPropositions`)."""
+    tracks = (
+        db.query(Track)
+        .join(Playlist, Track.playlist_id == Playlist.id)
+        .options(joinedload(Track.playlist))
+        .filter(Track.youtube_video_id.is_(None))
+        .order_by(Track.id)
+        .all()
+    )
+    return [
+        schemas.UnresolvedTrackResponse(
+            id=track.id,
+            title=track.title,
+            artist=track.artist,
+            isrc=track.isrc,
+            source_url=track.source_url,
+            playlist_id=track.playlist_id,
+            playlist_provider=track.playlist.provider,
+        )
+        for track in tracks
+    ]
+
+
+@admin_router.put("/tracks/{track_id}", response_model=schemas.TrackResponse)
+def resolve_track(track_id: int, body: schemas.ResolveTrackRequest, db: Session = Depends(get_db)):
+    """Résolution manuelle : accepte un lien YouTube complet (`watch?v=`,
+    `youtu.be/`) ou un videoId nu (`extract_video_id`, partagé avec le
+    matching automatique). Écrase toute valeur déjà présente (cas de
+    correction — pas de restriction "null uniquement", cf. matrice I/O).
+    Écrit aussi `MatchCache` (même priorité isrc puis clé normalisée que
+    `cache.store`) pour que les imports futurs du même morceau bénéficient
+    de cette résolution (FR3)."""
+    track = db.query(Track).filter(Track.id == track_id).first()
+    if not track:
+        raise HTTPException(status_code=404, detail="Morceau introuvable")
+
+    video_id = matching.extract_video_id(body.youtube_url)
+    if not video_id:
+        raise HTTPException(status_code=400, detail="Lien YouTube ou identifiant de vidéo invalide")
+
+    track.youtube_video_id = video_id
+    cache.store(db, track.isrc, track.title, track.artist, video_id, overwrite=True)
+    db.commit()
+    db.refresh(track)
+    return track

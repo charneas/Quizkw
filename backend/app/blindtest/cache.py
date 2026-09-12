@@ -65,17 +65,32 @@ def lookup(db: Session, isrc: Optional[str], title: str, artist: str) -> Optiona
     return None
 
 
-def store(db: Session, isrc: Optional[str], title: str, artist: str, youtube_video_id: str) -> None:
+def store(
+    db: Session,
+    isrc: Optional[str],
+    title: str,
+    artist: str,
+    youtube_video_id: str,
+    overwrite: bool = False,
+) -> None:
     """Enregistre une résolution réussie. Upsert-safe : si une ligne
     correspondant déjà à l'ISRC ou à la clé normalisée existe, ne réécrit
-    rien (pas de retry/invalidation — hors scope de cette story).
+    rien par défaut (pas de retry/invalidation pour le matching auto,
+    tolérant aux races).
+
+    `overwrite=True` (utilisé par la correction admin `resolve_track`, cf.
+    `main_blindtest.py`) fait au contraire écraser `youtube_video_id` sur la
+    ligne existante — c'est tout le but de cette correction : remplacer un
+    mauvais match mémorisé par le bon, pas laisser une ligne périmée pointer
+    vers l'ancienne vidéo.
 
     Ne commit pas : c'est aux appelants de commiter (`matching.py` commit
     juste après son appel à `store`, `main_blindtest.py` commit une seule
-    fois à la fin de sa boucle d'import). Ça préserve l'invariant "pas
-    d'écriture partielle" de `import_playlist` — un `db.commit()` ici
-    clôturerait et rouvrirait la transaction, persistant durablement les
-    lignes déjà ajoutées même si le reste de la requête échoue ensuite.
+    fois à la fin de sa boucle d'import / après sa correction admin). Ça
+    préserve l'invariant "pas d'écriture partielle" de `import_playlist` —
+    un `db.commit()` ici clôturerait et rouvrirait la transaction,
+    persistant durablement les lignes déjà ajoutées même si le reste de la
+    requête échoue ensuite.
 
     L'existence-check-puis-insert n'est pas atomique : deux résolutions
     concurrentes du même morceau peuvent toutes deux passer le check avant
@@ -89,6 +104,9 @@ def store(db: Session, isrc: Optional[str], title: str, artist: str, youtube_vid
     if isrc:
         existing = db.query(MatchCache).filter(MatchCache.isrc == isrc).first()
         if existing:
+            if overwrite:
+                existing.youtube_video_id = youtube_video_id
+                db.flush()
             return
         _insert_safely(db, MatchCache(isrc=isrc, normalized_key=None, youtube_video_id=youtube_video_id))
         return
@@ -96,6 +114,9 @@ def store(db: Session, isrc: Optional[str], title: str, artist: str, youtube_vid
     key = normalize_key(title, artist)
     existing = db.query(MatchCache).filter(MatchCache.normalized_key == key).first()
     if existing:
+        if overwrite:
+            existing.youtube_video_id = youtube_video_id
+            db.flush()
         return
     _insert_safely(db, MatchCache(isrc=None, normalized_key=key, youtube_video_id=youtube_video_id))
 

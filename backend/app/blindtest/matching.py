@@ -21,6 +21,7 @@ lien à tous les morceaux et ne peut pas résoudre correctement.
 """
 import logging
 import os
+import re
 from typing import Optional
 from urllib.parse import urlparse, parse_qs
 
@@ -34,8 +35,19 @@ logger = logging.getLogger(__name__)
 
 _YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
 
+# Un videoId YouTube fait toujours exactement 11 caractères
+# alphanumériques/`-`/`_` (cf. admin de réconciliation manuelle, qui accepte
+# un videoId nu en plus d'un lien complet).
+_BARE_VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
 
-def _extract_video_id(youtube_url: str) -> Optional[str]:
+
+def extract_video_id(youtube_url: str) -> Optional[str]:
+    """Extrait un `videoId` YouTube depuis, dans l'ordre : un lien
+    `?v=<id>` (`watch?v=`), un lien court `youtu.be/<id>`, ou un `videoId`
+    nu (11 caractères, aucun schéma/host) — ce dernier cas sert à la
+    réconciliation manuelle admin (Story de reconciliation), qui accepte de
+    coller directement l'identifiant sans lien complet."""
+    youtube_url = youtube_url.strip()
     try:
         parsed = urlparse(youtube_url)
         qs = parse_qs(parsed.query)
@@ -43,10 +55,13 @@ def _extract_video_id(youtube_url: str) -> Optional[str]:
         return None
     values = qs.get("v")
     if values and values[0]:
-        return values[0]
+        candidate = values[0]
+        return candidate if _BARE_VIDEO_ID_RE.match(candidate) else None
     if parsed.hostname == "youtu.be":
-        video_id = parsed.path.lstrip("/")
-        return video_id or None
+        candidate = parsed.path.lstrip("/")
+        return candidate if _BARE_VIDEO_ID_RE.match(candidate) else None
+    if not parsed.scheme and not parsed.netloc and _BARE_VIDEO_ID_RE.match(youtube_url):
+        return youtube_url
     return None
 
 
@@ -83,7 +98,7 @@ def resolve_via_idonthavespotify(source_url: str) -> Optional[str]:
         if link.get("type") == "youTube" and not link.get("notAvailable"):
             url = link.get("url")
             if url:
-                video_id = _extract_video_id(url)
+                video_id = extract_video_id(url)
                 if video_id:
                     return video_id
     return None

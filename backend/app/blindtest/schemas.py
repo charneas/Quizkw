@@ -33,3 +33,26 @@ class PlaylistResponse(BaseModel):
         encore `None` au moment de la réponse. Valeur "live" — peut encore
         baisser tant que le matching en arrière-plan (Story 1.2) tourne."""
         return sum(1 for track in self.tracks if track.youtube_video_id is None)
+
+
+# === Admin — réconciliation manuelle des morceaux non trouvés ===
+
+class UnresolvedTrackResponse(BaseModel):
+    """Un morceau sans `youtube_video_id`, avec assez de contexte pour
+    qu'un admin le retrouve manuellement (titre/artiste/isrc, lien du
+    morceau lui-même, et la playlist d'origine)."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    title: str
+    artist: str
+    isrc: Optional[str] = None
+    source_url: Optional[str] = None
+    playlist_id: int
+    playlist_provider: str
+
+
+class ResolveTrackRequest(BaseModel):
+    """Corps de `PUT /admin/blindtest/tracks/{track_id}` — lien YouTube
+    complet (`watch?v=`/`youtu.be/`) ou videoId nu (11 caractères)."""
+    youtube_url: str

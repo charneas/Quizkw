@@ -334,6 +334,18 @@ export interface PropositionUpdateRequest {
   image_url?: string | null
 }
 
+// === Admin blind-test — réconciliation manuelle (spec-blindtest-admin-reconciliation) ===
+
+export interface UnresolvedBlindtestTrack {
+  id: number
+  title: string
+  artist: string
+  isrc?: string | null
+  source_url?: string | null
+  playlist_id: number
+  playlist_provider: string
+}
+
 export interface QuestionCreateRequest {
   text: string
   category: string
