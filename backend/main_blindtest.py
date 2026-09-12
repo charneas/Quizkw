@@ -7,7 +7,7 @@ import logging
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from app.blindtest import matching, schemas
+from app.blindtest import cache, matching, schemas
 from app.blindtest.database import get_db
 from app.blindtest.errors import PrivatePlaylistError, ProviderConfigError, UnrecognizedUrlError
 from app.blindtest.import_pipeline import extract_tracks
@@ -53,6 +53,11 @@ def import_playlist(
             youtube_video_id=item.youtube_video_id,
             source_url=item.source_url,
         ))
+        if item.youtube_video_id:
+            # Import direct YouTube : le morceau est déjà résolu, on
+            # alimente le cache tout de suite pour qu'un futur import
+            # Spotify/Apple Music du même morceau tape le cache (Story 1.3).
+            cache.store(db, item.isrc, item.title, item.artist, item.youtube_video_id)
 
     db.commit()
     db.refresh(playlist)

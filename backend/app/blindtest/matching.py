@@ -2,9 +2,12 @@
 `Track` non-YouTube d'une playlist (`youtube_video_id IS NULL`), un
 `youtube_video_id` jouable en blind-test.
 
-Ordre (AD-2) : `idonthavespotify` (self-hosted, pas de quota) en primaire,
-puis YouTube Data API `search.list` (quota ~100/jour) en repli, uniquement
-si le primaire échoue/rate/ne renvoie rien d'exploitable.
+Ordre : cache (`cache.lookup`, Story 1.3) en tout premier lieu, puis
+`idonthavespotify` (self-hosted, pas de quota) en primaire, puis YouTube Data
+API `search.list` (quota ~100/jour) en dernier repli, uniquement si le cache
+et le primaire échouent/ratent/ne renvoient rien d'exploitable. Toute
+résolution réussie est écrite dans `MatchCache` (`cache.store`) pour que les
+imports suivants du même morceau ne rappellent plus jamais un provider (FR3).
 
 Tourne en `BackgroundTasks` (planifié par `main_blindtest.py` juste après le
 commit de l'import) — ouvre sa PROPRE session (`SessionLocal()`), jamais la
@@ -23,6 +26,7 @@ from urllib.parse import urlparse, parse_qs
 
 import httpx
 
+from app.blindtest import cache
 from app.blindtest.database import SessionLocal
 from app.blindtest.models import Track
 
@@ -124,10 +128,15 @@ def resolve_via_youtube_search(title: str, artist: str) -> Optional[str]:
     return video_id or None
 
 
-def resolve_track_video_id(track: Track) -> Optional[str]:
-    """Résout un `youtube_video_id` pour `track` : `idonthavespotify` en
-    primaire (uniquement si `track.source_url` est renseigné — jamais
-    `track.playlist.source_url`), puis `search.list` en repli."""
+def resolve_track_video_id(db, track: Track) -> Optional[str]:
+    """Résout un `youtube_video_id` pour `track` : cache (`cache.lookup`) en
+    tout premier lieu, puis `idonthavespotify` en primaire (uniquement si
+    `track.source_url` est renseigné — jamais `track.playlist.source_url`),
+    puis `search.list` en repli."""
+    cached = cache.lookup(db, track.isrc, track.title, track.artist)
+    if cached:
+        return cached
+
     if track.source_url:
         video_id = resolve_via_idonthavespotify(track.source_url)
         if video_id:
@@ -149,9 +158,10 @@ def match_playlist_tracks(playlist_id: int) -> None:
         )
         for track in tracks:
             try:
-                video_id = resolve_track_video_id(track)
+                video_id = resolve_track_video_id(db, track)
                 if video_id:
                     track.youtube_video_id = video_id
+                    cache.store(db, track.isrc, track.title, track.artist, video_id)
                     db.commit()
             except Exception:
                 logger.exception("Matching: échec inattendu pour le morceau %s (playlist %s)", track.id, playlist_id)

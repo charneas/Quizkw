@@ -1,7 +1,8 @@
-"""Modèles SQLAlchemy du module blindtest — Story 1.1 seulement.
+"""Modèles SQLAlchemy du module blindtest — Story 1.1/1.2/1.3.
 
-`MatchCache`/`Game`/`Round`/`Score` (mentionnés dans l'epic context) sont hors
-scope ici : ajoutés par Story 1.2+.
+`MatchCache` (Story 1.3) persiste les résolutions déjà réussies (par ISRC ou
+par `(title, artist)` normalisé) pour éviter de re-solliciter les providers
+sur un morceau déjà connu. `Game`/`Round`/`Score` restent hors scope ici.
 """
 from datetime import datetime, timezone
 
@@ -35,3 +36,17 @@ class Track(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     playlist = relationship("Playlist", back_populates="tracks")
+
+
+class MatchCache(Base):
+    """Cache de résolution (Story 1.3) : une ligne par morceau déjà résolu,
+    clé par ISRC (priorité) ou par `(title, artist)` normalisé (repli). Ne
+    stocke que le `youtube_video_id` — ce n'est pas un registre de morceaux,
+    juste un cache de résolution (cf. Design Notes de la spec)."""
+    __tablename__ = "match_cache"
+
+    id = Column(Integer, primary_key=True, index=True)
+    isrc = Column(String, nullable=True, unique=True)
+    normalized_key = Column(String, nullable=True, unique=True)
+    youtube_video_id = Column(String, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

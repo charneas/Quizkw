@@ -153,36 +153,40 @@ class _FakePlaylist:
 
 
 class _FakeTrack:
-    def __init__(self, title="T", artist="A", source_url=None, playlist_source_url="PLAYLIST_URL"):
+    def __init__(self, title="T", artist="A", source_url=None, playlist_source_url="PLAYLIST_URL", isrc=None):
         self.title = title
         self.artist = artist
         self.source_url = source_url
+        self.isrc = isrc
         self.playlist = _FakePlaylist(playlist_source_url)
 
 
 class TestResolveTrackVideoId:
     def test_primary_success_skips_fallback(self):
         track = _FakeTrack(source_url="TRACK_URL")
-        with patch("app.blindtest.matching.resolve_via_idonthavespotify", return_value="vidA") as primary, \
+        with patch("app.blindtest.matching.cache.lookup", return_value=None), \
+             patch("app.blindtest.matching.resolve_via_idonthavespotify", return_value="vidA") as primary, \
              patch("app.blindtest.matching.resolve_via_youtube_search") as fallback:
-            result = matching.resolve_track_video_id(track)
+            result = matching.resolve_track_video_id(MagicMock(), track)
         assert result == "vidA"
         primary.assert_called_once_with("TRACK_URL")
         fallback.assert_not_called()
 
     def test_primary_miss_falls_back(self):
         track = _FakeTrack(source_url="TRACK_URL")
-        with patch("app.blindtest.matching.resolve_via_idonthavespotify", return_value=None), \
+        with patch("app.blindtest.matching.cache.lookup", return_value=None), \
+             patch("app.blindtest.matching.resolve_via_idonthavespotify", return_value=None), \
              patch("app.blindtest.matching.resolve_via_youtube_search", return_value="vidB") as fallback:
-            result = matching.resolve_track_video_id(track)
+            result = matching.resolve_track_video_id(MagicMock(), track)
         assert result == "vidB"
         fallback.assert_called_once_with(track.title, track.artist)
 
     def test_no_source_url_skips_primary_goes_straight_to_fallback(self):
         track = _FakeTrack(source_url=None, playlist_source_url="PLAYLIST_URL_SHOULD_NOT_BE_USED")
-        with patch("app.blindtest.matching.resolve_via_idonthavespotify") as primary, \
+        with patch("app.blindtest.matching.cache.lookup", return_value=None), \
+             patch("app.blindtest.matching.resolve_via_idonthavespotify") as primary, \
              patch("app.blindtest.matching.resolve_via_youtube_search", return_value="vidC") as fallback:
-            result = matching.resolve_track_video_id(track)
+            result = matching.resolve_track_video_id(MagicMock(), track)
         assert result == "vidC"
         primary.assert_not_called()
 
@@ -190,19 +194,31 @@ class TestResolveTrackVideoId:
         """Régression du bug corrigé (Spec Change Log) : le lien envoyé à
         idonthavespotify doit être celui du MORCEAU, pas de la playlist."""
         track = _FakeTrack(source_url="TRACK_OWN_URL", playlist_source_url="PLAYLIST_URL")
-        with patch("app.blindtest.matching.resolve_via_idonthavespotify", return_value="vid") as primary, \
+        with patch("app.blindtest.matching.cache.lookup", return_value=None), \
+             patch("app.blindtest.matching.resolve_via_idonthavespotify", return_value="vid") as primary, \
              patch("app.blindtest.matching.resolve_via_youtube_search"):
-            matching.resolve_track_video_id(track)
+            matching.resolve_track_video_id(MagicMock(), track)
         primary.assert_called_once_with("TRACK_OWN_URL")
         called_arg = primary.call_args[0][0]
         assert called_arg != "PLAYLIST_URL"
 
     def test_both_fail_returns_none(self):
         track = _FakeTrack(source_url="TRACK_URL")
-        with patch("app.blindtest.matching.resolve_via_idonthavespotify", return_value=None), \
+        with patch("app.blindtest.matching.cache.lookup", return_value=None), \
+             patch("app.blindtest.matching.resolve_via_idonthavespotify", return_value=None), \
              patch("app.blindtest.matching.resolve_via_youtube_search", return_value=None):
-            result = matching.resolve_track_video_id(track)
+            result = matching.resolve_track_video_id(MagicMock(), track)
         assert result is None
+
+    def test_cache_hit_skips_both_providers(self):
+        track = _FakeTrack(source_url="TRACK_URL")
+        with patch("app.blindtest.matching.cache.lookup", return_value="cached-vid"), \
+             patch("app.blindtest.matching.resolve_via_idonthavespotify") as primary, \
+             patch("app.blindtest.matching.resolve_via_youtube_search") as fallback:
+            result = matching.resolve_track_video_id(MagicMock(), track)
+        assert result == "cached-vid"
+        primary.assert_not_called()
+        fallback.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -241,7 +257,7 @@ class TestMatchPlaylistTracks:
         playlist_id = playlist.id
         db.close()
 
-        def fake_resolve(track):
+        def fake_resolve(db, track):
             if track.title == "PrimaryHit":
                 return "vid1"
             if track.title == "FallbackHit":
@@ -276,7 +292,7 @@ class TestMatchPlaylistTracks:
         playlist_id = playlist.id
         db.close()
 
-        def fake_resolve(track):
+        def fake_resolve(db, track):
             if track.title == "Crashing":
                 raise RuntimeError("boom")
             return f"vid-{track.title}"
@@ -292,6 +308,33 @@ class TestMatchPlaylistTracks:
         assert tracks_by_title["First"].youtube_video_id == "vid-First"
         assert tracks_by_title["Crashing"].youtube_video_id is None
         assert tracks_by_title["Third"].youtube_video_id == "vid-Third"
+
+    def test_cache_hit_skips_provider_http_calls_entirely(self, matching_session_factory):
+        """Acceptance criteria (spec 1.3) : une ligne MatchCache pré-existante
+        pour l'ISRC d'un morceau doit empêcher tout appel HTTP provider."""
+        from app.blindtest.models import MatchCache
+
+        db = matching_session_factory()
+        playlist = Playlist(source_url="PLAYLIST_URL", provider="spotify")
+        db.add(playlist)
+        db.flush()
+        track = Track(playlist_id=playlist.id, title="Cached Song", artist="A", isrc="ISRC-1", source_url="url1")
+        db.add(track)
+        db.add(MatchCache(isrc="ISRC-1", normalized_key=None, youtube_video_id="cached-vid"))
+        db.commit()
+        playlist_id = playlist.id
+        db.close()
+
+        with patch("app.blindtest.matching.SessionLocal", matching_session_factory), \
+             patch("httpx.Client") as client_cls:
+            matching.match_playlist_tracks(playlist_id)
+
+        client_cls.assert_not_called()
+
+        db2 = matching_session_factory()
+        resolved = db2.query(Track).filter(Track.playlist_id == playlist_id).first()
+        db2.close()
+        assert resolved.youtube_video_id == "cached-vid"
 
 
 # ---------------------------------------------------------------------------

@@ -133,6 +133,43 @@ class TestYoutubeImport:
         assert data["provider"] == "youtube"
         assert data["tracks"][0]["youtube_video_id"] == "vid123"
 
+    def test_failure_after_first_track_cache_store_leaves_no_partial_write(self, blindtest_client, blindtest_engine):
+        """`cache.store()` (appelé pour le premier morceau, déjà résolu en
+        YouTube direct) ne doit plus commiter en interne : si la boucle
+        d'import échoue plus tard (ici sur la construction du 2e `Track`),
+        ni la `Playlist` ni les `Track`/`MatchCache` déjà `add`és ne doivent
+        être persistés — c'était le bug corrigé (regression pour
+        spec-1-3-cache-matching-imports.md, section "no partial write")."""
+        fake_tracks = [
+            ExtractedTrack(title="Vid A", artist="Channel A", youtube_video_id="vid-a"),
+            ExtractedTrack(title="Vid B", artist="Channel B", youtube_video_id="vid-b"),
+        ]
+
+        from app.blindtest.models import Track as RealTrack
+
+        call_count = {"n": 0}
+
+        def track_side_effect(*args, **kwargs):
+            call_count["n"] += 1
+            if call_count["n"] == 2:
+                raise RuntimeError("boom after first track's cache.store()")
+            return RealTrack(*args, **kwargs)
+
+        with patch("app.blindtest.providers.youtube.fetch_tracks", return_value=fake_tracks), \
+             patch("main_blindtest.Track", side_effect=track_side_effect), \
+             patch("app.blindtest.matching.match_playlist_tracks"):
+            with pytest.raises(RuntimeError):
+                blindtest_client.post("/blindtest/playlists", json={"url": YOUTUBE_URL})
+
+        playlists, tracks = _count_rows(blindtest_engine)
+        assert playlists == 0
+        assert tracks == 0
+
+        with blindtest_engine.connect() as conn:
+            from sqlalchemy import text
+            cache_rows = conn.execute(text("SELECT COUNT(*) FROM match_cache")).scalar()
+        assert cache_rows == 0
+
 
 class TestAppleMusicImport:
     def test_valid_apple_music_playlist_persists(self, blindtest_client, blindtest_engine):
