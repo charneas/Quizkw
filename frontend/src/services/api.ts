@@ -7,6 +7,7 @@ import type {
   Theme,
   QualificationStatus,
   BlindtestGameCreateResponse,
+  BlindtestPlaylistResponse,
 } from '../types'
 
 const API_BASE = '/api'
@@ -937,6 +938,16 @@ export async function adminResolveBlindtestTrack(trackId: number, youtubeUrl: st
 
 export async function createBlindtestGame() {
   return fetchApi<BlindtestGameCreateResponse>('/blindtest/games', { method: 'POST' })
+}
+
+// Story 2.2 : import scopé à une partie — gameCode/pseudo sont toujours
+// fournis ensemble par l'appelant (BlindTestLobby n'affiche ce formulaire
+// qu'une fois `joined`, pseudo/code donc toujours connus côté client).
+export async function importBlindtestPlaylist(url: string, gameCode: string, pseudo: string) {
+  return fetchApi<BlindtestPlaylistResponse>('/blindtest/playlists', {
+    method: 'POST',
+    body: JSON.stringify({ url, game_code: gameCode, pseudo }),
+  })
 }
 
 export async function adminListRejectedPropositions() {

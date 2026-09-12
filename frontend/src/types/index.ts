@@ -365,6 +365,26 @@ export interface BlindtestGameStatePayload {
   players: string[]
 }
 
+// === Blind-test — import de playlist scopé à une partie (Story 2.2) ===
+
+export interface BlindtestTrack {
+  id: number
+  title: string
+  artist: string
+  isrc?: string | null
+  youtube_video_id?: string | null
+}
+
+export interface BlindtestPlaylistResponse {
+  id: number
+  provider: string
+  source_url: string
+  tracks: BlindtestTrack[]
+  not_found_count: number
+  game_id?: number | null
+  owner_pseudo?: string | null
+}
+
 export interface QuestionCreateRequest {
   text: string
   category: string

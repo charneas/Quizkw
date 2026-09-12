@@ -52,6 +52,32 @@ admin_router = APIRouter(
 )
 
 
+def _validate_scope(body: schemas.PlaylistImportRequest, db: Session) -> Game | None:
+    """Valide la paire `game_code`/`pseudo` d'un import scopé (Story 2.2) et
+    renvoie le `Game` résolu (ou `None` pour un import anonyme). Lève une
+    `HTTPException` sur toute violation de la matrice I/O de la spec — les
+    deux champs sont toujours ensemble présents ou ensemble absents, le code
+    doit référencer une partie existante en phase `lobby`, et le pseudo doit
+    être actuellement connecté au lobby de cette partie (aucune `Player` DB
+    table, seule la présence WS de Story 2.1 fait foi)."""
+    if bool(body.game_code) != bool(body.pseudo):
+        raise HTTPException(status_code=400, detail="game_code et pseudo doivent être fournis ensemble")
+
+    if not body.game_code:
+        return None
+
+    game_code = body.game_code.upper()
+    game = db.query(Game).filter(Game.code == game_code).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Partie introuvable")
+    if game.phase != "lobby":
+        raise HTTPException(status_code=400, detail="La partie n'est plus en phase de lobby")
+    if not connection_manager.has_pseudo(game_code, body.pseudo.strip()):
+        raise HTTPException(status_code=400, detail="Pseudo non connecté au lobby de cette partie")
+
+    return game
+
+
 @router.post("/blindtest/playlists", response_model=schemas.PlaylistResponse, status_code=201)
 @limiter.limit("10/minute")
 def import_playlist(
@@ -62,7 +88,14 @@ def import_playlist(
 ):
     """Extrait une playlist publique (Spotify/YouTube/Apple Music) et
     persiste `Playlist` + `Track`. Échec propre sans écriture partielle :
-    l'extraction complète a lieu avant tout `db.add`/`db.commit`."""
+    l'extraction complète a lieu avant tout `db.add`/`db.commit`.
+
+    Story 2.2 : `game_code`/`pseudo` scopent optionnellement l'import à une
+    partie — validés avant toute extraction (échec rapide, pas d'appel
+    provider inutile) puisqu'ils ne dépendent que de l'état DB/WS, jamais du
+    contenu de la playlist."""
+    game = _validate_scope(body, db)
+
     try:
         provider, extracted = extract_tracks(body.url)
     except UnrecognizedUrlError:
@@ -73,7 +106,19 @@ def import_playlist(
         logger.error("Configuration provider manquante: %s", exc)
         raise HTTPException(status_code=503, detail=str(exc))
 
-    playlist = Playlist(source_url=body.url, provider=provider)
+    # Re-vérification juste avant la persistance : `extract_tracks` est un
+    # aller-retour réseau qui peut prendre plusieurs secondes, pendant
+    # lesquelles la partie peut quitter la phase `lobby` ou le pseudo se
+    # déconnecter. Sans ce second contrôle, la playlist serait tout de même
+    # committée et scopée à un game/pseudo devenu obsolète (revue de code).
+    game = _validate_scope(body, db)
+
+    playlist = Playlist(
+        source_url=body.url,
+        provider=provider,
+        game_id=game.id if game else None,
+        owner_pseudo=body.pseudo if game else None,
+    )
     db.add(playlist)
     db.flush()  # obtenir playlist.id pour les FK des tracks, avant commit
 

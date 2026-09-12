@@ -22,6 +22,14 @@ class Playlist(Base):
     provider = Column(String, nullable=False)  # "spotify" | "youtube" | "apple_music"
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
+    # Story 2.2 : scoping optionnel à une partie. `game_id` nul == pot
+    # anonyme d'Epic 1 (comportement inchangé) ; renseigné == playlist
+    # apportée par `owner_pseudo` dans le lobby de cette partie. Les deux
+    # colonnes sont toujours ensemble nulles ou toutes deux renseignées
+    # (validé côté requête, pas en contrainte DB — cf. spec Design Notes).
+    game_id = Column(Integer, ForeignKey("games.id"), nullable=True)
+    owner_pseudo = Column(String, nullable=True)
+
     tracks = relationship("Track", back_populates="playlist", cascade="all, delete-orphan")
 
 
