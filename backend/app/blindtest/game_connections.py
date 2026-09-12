@@ -78,3 +78,35 @@ def _envelope(msg_type: str, payload: dict) -> dict:
 
 
 manager = ConnectionManager()
+
+
+class GuessStore:
+    """`{game_id: {pseudo: [target_player_ids]}}` — stockage en mémoire
+    uniquement des devinettes du round en cours (Story 2.5). Même
+    convention que `ConnectionManager` : aucune persistance, l'état vit et
+    meurt avec le process serveur (pas de `Round`/`Score` DB table, cf.
+    Boundaries de spec-2-5-devinette-selection-multiple.md — le scoring
+    lui-même est Story 2.6).
+
+    Clé sur `game_id` (entier, PK `Game`) plutôt que sur le code de partie :
+    les appelants (`_handle_guess_submitted`/`_handle_start_game`) ont déjà
+    l'objet `Game` en main, pas de round-trip supplémentaire pour
+    normaliser un code."""
+
+    def __init__(self) -> None:
+        self._guesses: Dict[int, Dict[str, list[str]]] = {}
+
+    def submit(self, game_id: int, pseudo: str, target_player_ids: list[str]) -> None:
+        """Enregistre la sélection courante de `pseudo` pour ce round,
+        écrasant toute sélection précédente du même joueur (AC3 — dernière
+        soumission gagne, pas d'accumulation)."""
+        self._guesses.setdefault(game_id, {})[pseudo] = target_player_ids
+
+    def reset_round(self, game_id: int) -> None:
+        """Vide les devinettes d'un nouveau round tiré (appelé à la fin
+        d'un `_handle_start_game` réussi) — Story 2.6/2.7 ne doivent jamais
+        scorer contre des devinettes d'un round précédent."""
+        self._guesses.pop(game_id, None)
+
+
+guess_store = GuessStore()

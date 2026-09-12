@@ -69,6 +69,15 @@ export class BlindtestSocket {
     this.send('start_game', {})
   }
 
+  /** Envoie la devinette du joueur (Story 2.5) : sélection multiple de
+   * pseudos parmi les joueurs présents, jamais de texte libre (FR8). Une
+   * resoumission avant la fin du round remplace la précédente côté
+   * serveur (AC3) — ce client n'a rien de spécial à faire pour ça, il
+   * suffit de renvoyer le même message type. */
+  sendGuess(targetPlayerIds: string[]): void {
+    this.send('guess_submitted', { target_player_ids: targetPlayerIds })
+  }
+
   disconnect(): void {
     this.ws?.close()
     this.ws = null

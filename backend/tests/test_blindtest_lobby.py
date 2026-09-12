@@ -17,6 +17,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.blindtest.database import Base, get_db
+from app.blindtest.game_connections import guess_store
 from app.blindtest.game_connections import manager as connection_manager
 from main import app as main_app
 
@@ -49,6 +50,7 @@ def blindtest_client(blindtest_engine):
     yield client
     main_app.dependency_overrides.clear()
     connection_manager._games.clear()
+    guess_store._guesses.clear()
 
 
 def _create_game(client) -> str:
@@ -371,6 +373,190 @@ class TestStartGame:
         # Espace [0, 10000) : collision statistiquement négligeable, ce
         # test peut en théorie flaker mais avec une probabilité infime.
         assert starts[0] != starts[1]
+
+
+def _game_id(engine, game_code: str) -> int:
+    from app.blindtest.models import Game
+
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    db = SessionLocal()
+    try:
+        return db.query(Game).filter(Game.code == game_code).first().id
+    finally:
+        db.close()
+
+
+class TestGuessSubmitted:
+    """Story 2.5 — matrice I/O de spec-2-5-devinette-selection-multiple.md.
+    Aucun message n'est jamais renvoyé/diffusé par le serveur pour
+    `guess_submitted` : chaque test vérifie l'état en observant directement
+    `guess_store` (source de vérité en mémoire, pas de round-trip WS pour
+    lire une devinette dans cette story)."""
+
+    def test_happy_path_stores_guess(self, blindtest_client, blindtest_engine):
+        code = _create_game(blindtest_client)
+        _add_track(blindtest_engine, code)
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
+                ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                ws2.receive_json()
+                ws1.receive_json()
+
+                ws1.send_json({"type": "start_game", "payload": {}})
+                ws1.receive_json()
+                ws2.receive_json()
+
+                ws1.send_json({"type": "guess_submitted", "payload": {"target_player_ids": ["Bob"]}})
+
+                # Pas de réponse attendue : on déclenche un nouveau
+                # broadcast (3e joueur) pour confirmer que ws1 n'a rien
+                # d'autre en attente avant de lire directement guess_store.
+                with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws3:
+                    ws3.send_json({"type": "join", "payload": {"pseudo": "Carol"}})
+                    ws3.receive_json()
+                    ws1.receive_json()  # game_state (roster mis à jour)
+
+                gid = _game_id(blindtest_engine, code)
+                assert guess_store._guesses[gid]["Alice"] == ["Bob"]
+
+    def test_resubmission_replaces_previous_guess(self, blindtest_client, blindtest_engine):
+        code = _create_game(blindtest_client)
+        _add_track(blindtest_engine, code)
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+            ws1.send_json({"type": "start_game", "payload": {}})
+            ws1.receive_json()
+
+            ws1.send_json({"type": "guess_submitted", "payload": {"target_player_ids": ["Alice"]}})
+            ws1.send_json({"type": "guess_submitted", "payload": {"target_player_ids": ["Alice", "Bob"]}})
+
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
+                ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                ws2.receive_json()
+                ws1.receive_json()
+
+                gid = _game_id(blindtest_engine, code)
+                # Le second envoi ("Alice"+"Bob") a été rejeté à l'époque où
+                # Bob n'était pas encore présent : seul le premier ("Alice")
+                # est valide et reste stocké. On confirme l'écrasement
+                # ci-dessous avec une resoumission valide après l'arrivée
+                # de Bob.
+                assert guess_store._guesses[gid]["Alice"] == ["Alice"]
+
+                ws1.send_json({"type": "guess_submitted", "payload": {"target_player_ids": ["Bob"]}})
+                with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws3:
+                    ws3.send_json({"type": "join", "payload": {"pseudo": "Carol"}})
+                    ws3.receive_json()
+                    ws1.receive_json()
+                    ws2.receive_json()
+
+                assert guess_store._guesses[gid]["Alice"] == ["Bob"]
+
+    def test_wrong_phase_is_silently_ignored(self, blindtest_client, blindtest_engine):
+        code = _create_game(blindtest_client)
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+
+            # Toujours en phase "lobby" (aucun start_game envoyé).
+            ws1.send_json({"type": "guess_submitted", "payload": {"target_player_ids": ["Alice"]}})
+
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
+                ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                ws2.receive_json()
+                ws1.receive_json()
+
+            gid = _game_id(blindtest_engine, code)
+            assert guess_store._guesses.get(gid, {}) == {}
+
+    def test_empty_selection_is_silently_ignored(self, blindtest_client, blindtest_engine):
+        code = _create_game(blindtest_client)
+        _add_track(blindtest_engine, code)
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+            ws1.send_json({"type": "start_game", "payload": {}})
+            ws1.receive_json()
+
+            ws1.send_json({"type": "guess_submitted", "payload": {"target_player_ids": []}})
+            ws1.send_json({"type": "guess_submitted", "payload": {}})
+
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
+                ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                ws2.receive_json()
+                ws1.receive_json()
+
+            gid = _game_id(blindtest_engine, code)
+            assert guess_store._guesses.get(gid, {}) == {}
+
+    def test_unknown_pseudo_rejects_whole_submission(self, blindtest_client, blindtest_engine):
+        code = _create_game(blindtest_client)
+        _add_track(blindtest_engine, code)
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+            ws1.send_json({"type": "start_game", "payload": {}})
+            ws1.receive_json()
+
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
+                ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                ws2.receive_json()
+                ws1.receive_json()
+
+                # "Ghost" n'est connecté à aucun socket de cette partie :
+                # la soumission entière doit être rejetée, y compris pour
+                # le nom valide ("Bob") qu'elle contient aussi.
+                ws1.send_json(
+                    {"type": "guess_submitted", "payload": {"target_player_ids": ["Bob", "Ghost"]}}
+                )
+
+                with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws3:
+                    ws3.send_json({"type": "join", "payload": {"pseudo": "Carol"}})
+                    ws3.receive_json()
+                    ws1.receive_json()
+                    ws2.receive_json()
+
+            gid = _game_id(blindtest_engine, code)
+            assert guess_store._guesses.get(gid, {}) == {}
+
+    def test_duplicated_pseudo_is_deduplicated_on_store(self, blindtest_client, blindtest_engine):
+        code = _create_game(blindtest_client)
+        _add_track(blindtest_engine, code)
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
+                ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                ws2.receive_json()
+                ws1.receive_json()
+
+                ws1.send_json({"type": "start_game", "payload": {}})
+                ws1.receive_json()
+                ws2.receive_json()
+
+                ws1.send_json(
+                    {"type": "guess_submitted", "payload": {"target_player_ids": ["Bob", "Bob"]}}
+                )
+
+                with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws3:
+                    ws3.send_json({"type": "join", "payload": {"pseudo": "Carol"}})
+                    ws3.receive_json()
+                    ws1.receive_json()
+                    ws2.receive_json()
+
+                gid = _game_id(blindtest_engine, code)
+                assert guess_store._guesses[gid]["Alice"] == ["Bob"]
 
 
 class TestTwoGamesIsolation:

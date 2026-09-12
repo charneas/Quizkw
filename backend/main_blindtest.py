@@ -15,6 +15,7 @@ from app.auth import require_admin_session
 from app.blindtest import cache, matching, schemas
 from app.blindtest.database import get_db
 from app.blindtest.errors import PrivatePlaylistError, ProviderConfigError, UnrecognizedUrlError
+from app.blindtest.game_connections import guess_store
 from app.blindtest.game_connections import manager as connection_manager
 from app.blindtest.import_pipeline import extract_tracks
 from app.blindtest.models import Game, Playlist, Track
@@ -296,7 +297,43 @@ def _handle_start_game(db: Session, game: Game, requesting_pseudo: str) -> Optio
     game.current_track_id = track.id
     db.commit()
 
+    # Story 2.5 : un nouveau round tiré invalide toute devinette encore en
+    # mémoire pour le round précédent — sans ça, une devinette non
+    # resoumise par un joueur silencieux survivrait au changement de round
+    # et serait scorée à tort par Story 2.6/2.7 (Boundaries de la spec).
+    guess_store.reset_round(game.id)
+
     return {"videoId": track.youtube_video_id, "startSeconds": start_seconds}
+
+
+def _handle_guess_submitted(db: Session, game: Game, pseudo: str, payload: dict, game_code: str) -> None:
+    """Traite un message `guess_submitted` (Story 2.5) : vérifie la phase et
+    la validité de la sélection, puis enregistre la devinette en mémoire
+    (`guess_store`). Aucune diffusion, aucune réponse — un no-op silencieux
+    sur tout échec de validation (même convention que `_handle_start_game`,
+    cf. matrice I/O de la spec) : phase incorrecte, sélection vide/absente,
+    ou tout pseudo listé qui n'est pas actuellement présent dans cette
+    partie (rejet total de la soumission, pas d'application partielle)."""
+    db.refresh(game)
+    if game.phase != "round_started":
+        return
+
+    target_player_ids = payload.get("target_player_ids") if isinstance(payload, dict) else None
+    if not isinstance(target_player_ids, list) or not target_player_ids:
+        return
+    if not all(isinstance(pid, str) for pid in target_player_ids):
+        return
+
+    present_players = set(connection_manager.players(game_code))
+    if not all(pid in present_players for pid in target_player_ids):
+        return
+
+    # Dédoublonne en préservant l'ordre : un pseudo répété (`["Bob","Bob"]`)
+    # ne doit pas être compté plusieurs fois par la règle de score
+    # -1/nom-incorrect de Story 2.6 (revue de code).
+    target_player_ids = list(dict.fromkeys(target_player_ids))
+
+    guess_store.submit(game.id, pseudo, target_player_ids)
 
 
 @game_router.websocket("/blindtest/games/{code}/ws")
@@ -381,6 +418,10 @@ async def game_lobby_ws(websocket: WebSocket, code: str, db: Session = Depends(g
                 round_payload = _handle_start_game(db, game, pseudo)
                 if round_payload is not None:
                     await connection_manager.broadcast(game_code, "round_started", round_payload)
+            elif isinstance(raw, dict) and raw.get("type") == "guess_submitted":
+                # Story 2.5 : ni diffusion ni réponse — la devinette n'est
+                # visible que côté serveur jusqu'au `reveal` de Story 2.6.
+                _handle_guess_submitted(db, game, pseudo, raw.get("payload"), game_code)
     except WebSocketDisconnect:
         pass
     finally:

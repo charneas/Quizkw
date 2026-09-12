@@ -37,6 +37,14 @@ export default function BlindTestLobby() {
   const [roundTrack, setRoundTrack] = useState<{ videoId: string; startSeconds: number } | null>(null)
   const playerContainerId = 'blindtest-hidden-player'
 
+  // Story 2.5 : sélection multiple locale pour la devinette du round en
+  // cours — remise à zéro à chaque nouveau round (`roundTrack` change).
+  const [selectedPlayers, setSelectedPlayers] = useState<string[]>([])
+
+  useEffect(() => {
+    setSelectedPlayers([])
+  }, [roundTrack])
+
   useEffect(() => {
     return () => {
       socketRef.current?.disconnect()
@@ -125,6 +133,15 @@ export default function BlindTestLobby() {
     socketRef.current?.sendStartGame()
   }
 
+  function toggleSelectedPlayer(p: string) {
+    setSelectedPlayers((prev) => (prev.includes(p) ? prev.filter((name) => name !== p) : [...prev, p]))
+  }
+
+  function handleSubmitGuess() {
+    if (selectedPlayers.length === 0) return
+    socketRef.current?.sendGuess(selectedPlayers)
+  }
+
   function handleImportPlaylist() {
     // Même garde anti-double-appel que handleJoin : un second clic avant
     // que le premier import ait fini de se résoudre ne doit pas partir en
@@ -190,6 +207,37 @@ export default function BlindTestLobby() {
             id={playerContainerId}
             style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: '1px', height: '1px' }}
           />
+
+          {/* Story 2.5 : sélection multiple des joueurs présents — jamais de
+              champ texte libre pour nommer une cible (FR8, cf. Boundaries de
+              la spec). */}
+          <div className="space-y-2">
+            <p className="text-text-muted">Qui a importé ce morceau ? (plusieurs choix possibles)</p>
+            <ul className="space-y-1">
+              {players.map((p) => {
+                const isSelected = selectedPlayers.includes(p)
+                return (
+                  <li key={p}>
+                    <button
+                      type="button"
+                      className={`card px-3 py-2 w-full text-left ${isSelected ? 'ring-2 ring-primary' : ''}`}
+                      onClick={() => toggleSelectedPlayer(p)}
+                      aria-pressed={isSelected}
+                    >
+                      {p}
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+            <button
+              className="btn-primary w-full"
+              onClick={handleSubmitGuess}
+              disabled={selectedPlayers.length === 0}
+            >
+              Valider ma réponse
+            </button>
+          </div>
         </div>
       ) : (
         <div className="space-y-4">
