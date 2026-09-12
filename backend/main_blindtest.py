@@ -4,7 +4,8 @@
 branché sur la DB isolée `app.blindtest.database` (AD-7).
 """
 import logging
-from typing import List
+import random
+from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from sqlalchemy.exc import IntegrityError
@@ -258,6 +259,46 @@ def create_game(request: Request, db: Session = Depends(get_db)):
     raise HTTPException(status_code=500, detail="Impossible de générer un code de partie unique")
 
 
+def _handle_start_game(db: Session, game: Game, requesting_pseudo: str) -> Optional[dict]:
+    """Traite un message `start_game` (Story 2.4) : vérifie hôte/phase, tire
+    un morceau éligible du pot de cette partie, calcule un offset de départ
+    aléatoire et fait passer la partie en `round_started`.
+
+    Renvoie le payload `round_started {videoId, startSeconds}` à diffuser,
+    ou `None` si une vérification échoue (non-hôte, phase déjà avancée, pot
+    vide) — l'appelant ne diffuse alors rien (no-op silencieux, cf. matrice
+    I/O : ni close, ni message d'erreur, ces cas sont défense-en-profondeur
+    puisque le frontend ne montre le contrôle qu'à l'hôte)."""
+    db.refresh(game)
+    if requesting_pseudo != game.host_pseudo:
+        return None
+    if game.phase != "lobby":
+        return None
+
+    eligible_tracks = (
+        db.query(Track)
+        .join(Playlist, Track.playlist_id == Playlist.id)
+        .filter(
+            Playlist.game_id == game.id,
+            Track.youtube_video_id.isnot(None),
+            Track.duration_seconds.isnot(None),
+            Track.duration_seconds > 0,
+        )
+        .all()
+    )
+    if not eligible_tracks:
+        return None
+
+    track = random.choice(eligible_tracks)
+    start_seconds = random.randint(0, track.duration_seconds - 1)
+
+    game.phase = "round_started"
+    game.current_track_id = track.id
+    db.commit()
+
+    return {"videoId": track.youtube_video_id, "startSeconds": start_seconds}
+
+
 @game_router.websocket("/blindtest/games/{code}/ws")
 async def game_lobby_ws(websocket: WebSocket, code: str, db: Session = Depends(get_db)):
     """Canal WS de lobby : `join {pseudo}` -> diffusion `game_state
@@ -313,21 +354,44 @@ async def game_lobby_ws(websocket: WebSocket, code: str, db: Session = Depends(g
 
         pseudo = candidate
         connection_manager.connect(game_code, pseudo, websocket)
-        await connection_manager.broadcast_game_state(game_code)
+
+        # Story 2.4 : le premier pseudo à rejoindre le lobby d'une partie
+        # fraîchement créée en devient l'hôte — assigné une seule fois,
+        # jamais réassigné ensuite (colonne DB, survit à une reconnexion
+        # sous le même pseudo).
+        if game.host_pseudo is None:
+            game.host_pseudo = pseudo
+            db.commit()
+
+        await connection_manager.broadcast_game_state(
+            game_code, {"phase": game.phase, "host_pseudo": game.host_pseudo}
+        )
 
         while True:
-            # Story 2.1 n'a rien d'autre à traiter après le join (pas de
-            # round/guess ici) — on ne fait que détecter la déconnexion ou
-            # un message malformé, traité comme une déconnexion pour le
-            # nettoyage (finally).
             try:
-                await websocket.receive_json()
+                raw = await websocket.receive_json()
             except ValueError:
                 await websocket.close(code=WS_CLOSE_INVALID_PSEUDO, reason="Message invalide")
                 return
+
+            # Story 2.4 : dispatch sur le type de message. Tout ce qui n'est
+            # pas `start_game` garde le comportement tolérant no-op de la
+            # Story 2.1 (pas d'autre message client->serveur avant 2.5).
+            if isinstance(raw, dict) and raw.get("type") == "start_game":
+                round_payload = _handle_start_game(db, game, pseudo)
+                if round_payload is not None:
+                    await connection_manager.broadcast(game_code, "round_started", round_payload)
     except WebSocketDisconnect:
         pass
     finally:
         if pseudo is not None:
             connection_manager.disconnect(game_code, pseudo)
-            await connection_manager.broadcast_game_state(game_code)
+            # Re-lire l'état DB avant de diffuser : une autre connexion a pu
+            # démarrer le round entre-temps (`start_game`), et broadcaster
+            # l'objet `game` chargé à la connexion (jamais rafraîchi depuis)
+            # renverrait un `phase: "lobby"` périmé à tous les clients
+            # restants (revue de code).
+            db.refresh(game)
+            await connection_manager.broadcast_game_state(
+                game_code, {"phase": game.phase, "host_pseudo": game.host_pseudo}
+            )

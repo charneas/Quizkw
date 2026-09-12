@@ -6,7 +6,7 @@ table, cf. Design Notes de spec-2-1-lobby-connexion-partie.md). Singleton
 au niveau module — acceptable car ce process est la seule instance serveur
 (AD, voir epic-2-context.md § Technical Decisions).
 """
-from typing import Dict
+from typing import Dict, Optional
 
 from fastapi import WebSocket
 
@@ -38,16 +38,27 @@ class ConnectionManager:
     def players(self, game_code: str) -> list[str]:
         return list(self._games.get(game_code, {}).keys())
 
-    async def broadcast_game_state(self, game_code: str) -> None:
+    async def broadcast_game_state(self, game_code: str, extra: Optional[dict] = None) -> None:
         """Envoie `game_state` à tous les sockets actuellement connectés
-        pour cette partie. Itère sur une copie de la liste des sockets :
-        un envoi qui échoue (socket déjà mort côté client) ne doit pas
-        empêcher les autres destinataires de recevoir la mise à jour."""
+        pour cette partie. `extra` (Story 2.4 : `phase`/`host_pseudo`) est
+        fusionné dans le payload aux côtés de `players` — implémenté en
+        termes de `broadcast` pour ne pas dupliquer la boucle d'envoi."""
         game = self._games.get(game_code, {})
-        payload = {"players": list(game.keys())}
+        # `players` est calculé ici et doit toujours gagner si jamais un
+        # futur appelant passe une clé `players` dans `extra` (revue de
+        # code) — d'où la fusion avec `extra` en premier.
+        payload = {**(extra or {}), "players": list(game.keys())}
+        await self.broadcast(game_code, "game_state", payload)
+
+    async def broadcast(self, game_code: str, msg_type: str, payload: dict) -> None:
+        """Envoie un message arbitraire à tous les sockets actuellement
+        connectés pour cette partie. Itère sur une copie de la liste des
+        sockets : un envoi qui échoue (socket déjà mort côté client) ne doit
+        pas empêcher les autres destinataires de recevoir le message."""
+        game = self._games.get(game_code, {})
         for socket in list(game.values()):
             try:
-                await socket.send_json(_envelope("game_state", payload))
+                await socket.send_json(_envelope(msg_type, payload))
             except Exception:
                 # Le nettoyage du socket mort est géré par le handler WS
                 # lui-même (boucle de réception qui détecte la déconnexion),

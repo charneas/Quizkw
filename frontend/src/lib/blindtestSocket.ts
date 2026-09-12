@@ -1,4 +1,4 @@
-import type { BlindtestGameStatePayload, BlindtestWsEnvelope } from '../types'
+import type { BlindtestGameStatePayload, BlindtestRoundStartedPayload, BlindtestWsEnvelope } from '../types'
 
 /**
  * Client WS minimal pour le lobby blind-test (Story 2.1) : connexion,
@@ -23,6 +23,7 @@ export class BlindtestSocket {
     pseudo: string,
     handlers: {
       onGameState?: (payload: BlindtestGameStatePayload) => void
+      onRoundStarted?: (payload: BlindtestRoundStartedPayload) => void
       onClose?: (event: CloseEvent) => void
       onError?: (event: Event) => void
     } = {},
@@ -43,6 +44,8 @@ export class BlindtestSocket {
       }
       if (envelope.type === 'game_state' && handlers.onGameState) {
         handlers.onGameState(envelope.payload as BlindtestGameStatePayload)
+      } else if (envelope.type === 'round_started' && handlers.onRoundStarted) {
+        handlers.onRoundStarted(envelope.payload as BlindtestRoundStartedPayload)
       }
     }
 
@@ -56,6 +59,14 @@ export class BlindtestSocket {
     // réception (NFR5) — un `ts` client ne ferait que se faire ignorer.
     const envelope: BlindtestWsEnvelope = { type, payload }
     this.ws.send(JSON.stringify(envelope))
+  }
+
+  /** Déclenche le lancement du round (Story 2.4) — n'a d'effet que si
+   * l'appelant est bien `host_pseudo` et que la partie est en `lobby` ;
+   * sinon le serveur ignore silencieusement (défense en profondeur, le
+   * bouton n'est déjà montré qu'à l'hôte). */
+  sendStartGame(): void {
+    this.send('start_game', {})
   }
 
   disconnect(): void {

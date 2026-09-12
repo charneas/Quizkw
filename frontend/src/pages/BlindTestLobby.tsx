@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { BlindtestSocket } from '../lib/blindtestSocket'
+import { createHiddenPlayer, type YouTubePlayer } from '../lib/youtubePlayer'
 import { importBlindtestPlaylist } from '../services/api'
 
 /**
@@ -28,11 +29,49 @@ export default function BlindTestLobby() {
   const [importError, setImportError] = useState<string | null>(null)
   const [importSuccess, setImportSuccess] = useState<string | null>(null)
 
+  // Story 2.4 : phase/hôte poussés par `game_state` (jamais recalculés
+  // côté client, epic-2-context.md) et morceau en cours reçu via
+  // `round_started`.
+  const [phase, setPhase] = useState('lobby')
+  const [hostPseudo, setHostPseudo] = useState<string | null>(null)
+  const [roundTrack, setRoundTrack] = useState<{ videoId: string; startSeconds: number } | null>(null)
+  const playerContainerId = 'blindtest-hidden-player'
+
   useEffect(() => {
     return () => {
       socketRef.current?.disconnect()
     }
   }, [])
+
+  useEffect(() => {
+    if (!roundTrack) return
+    // Un vrai geste utilisateur a déjà eu lieu avant cet effet (le clic
+    // "Rejoindre" du joueur, ou "Démarrer" côté hôte) — au-delà de ça,
+    // l'autoplay reste dépendant du navigateur (cf. Boundaries de la spec,
+    // hors scope d'être garanti ici).
+    let cancelled = false
+    let player: YouTubePlayer | null = null
+    createHiddenPlayer(playerContainerId, roundTrack.videoId, roundTrack.startSeconds)
+      .then((createdPlayer) => {
+        if (cancelled) {
+          // Le round a déjà changé / le composant a démonté pendant que la
+          // création se résolvait : ne pas laisser ce lecteur orphelin
+          // continuer à jouer (revue de code).
+          createdPlayer.destroy()
+          return
+        }
+        player = createdPlayer
+      })
+      .catch(() => {
+        // Échec de chargement du lecteur : pas de message d'erreur dédié
+        // dans cette story (hors scope), on laisse simplement la vue "round
+        // en cours" affichée sans audio plutôt que de crasher.
+      })
+    return () => {
+      cancelled = true
+      player?.destroy()
+    }
+  }, [roundTrack])
 
   function handleJoin() {
     // Garde contre un double-clic/double-appel avant que le premier socket
@@ -56,8 +95,13 @@ export default function BlindTestLobby() {
     socket.connect(code, trimmed, {
       onGameState: (payload) => {
         setPlayers(payload.players)
+        setPhase(payload.phase)
+        setHostPseudo(payload.host_pseudo)
         setJoined(true)
         setIsJoining(false)
+      },
+      onRoundStarted: (payload) => {
+        setRoundTrack({ videoId: payload.videoId, startSeconds: payload.startSeconds })
       },
       onClose: (event) => {
         setJoined(false)
@@ -75,6 +119,10 @@ export default function BlindTestLobby() {
         }
       },
     })
+  }
+
+  function handleStartGame() {
+    socketRef.current?.sendStartGame()
   }
 
   function handleImportPlaylist() {
@@ -131,6 +179,18 @@ export default function BlindTestLobby() {
             Rejoindre
           </button>
         </div>
+      ) : phase === 'round_started' ? (
+        <div className="space-y-4">
+          <p className="text-text-muted">Round en cours — écoute l'extrait et devine qui l'a importé !</p>
+          {/* Lecteur YouTube jamais affiché (blind test) : positionné
+              hors-écran, pas en `display:none`, pour éviter les quirks de
+              suppression d'autoplay sur un iframe caché (cf. Boundaries de
+              la spec). */}
+          <div
+            id={playerContainerId}
+            style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: '1px', height: '1px' }}
+          />
+        </div>
       ) : (
         <div className="space-y-4">
           <div className="space-y-2">
@@ -143,6 +203,12 @@ export default function BlindTestLobby() {
               ))}
             </ul>
           </div>
+
+          {pseudo.trim() === hostPseudo && (
+            <button className="btn-primary w-full" onClick={handleStartGame}>
+              Démarrer la partie
+            </button>
+          )}
 
           <div className="space-y-2">
             <p className="text-text-muted">Importer ta playlist (Spotify, YouTube ou Apple Music) :</p>

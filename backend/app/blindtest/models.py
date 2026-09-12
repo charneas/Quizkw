@@ -80,10 +80,17 @@ class Game(Base):
     présence est dérivée des sockets ouverts (voir `game_connections.py`),
     aucun `Player` DB table tant que rien ne nécessite un état survivant à
     une connexion (cf. Design Notes de la spec).
+
+    Story 2.4 : `host_pseudo` (le premier pseudo à rejoindre le lobby WS de
+    cette partie, jamais réassigné ensuite — survit à une reconnexion sous
+    le même pseudo puisque c'est une colonne DB, pas un état lié à un
+    socket) et `current_track_id` (morceau tiré au dernier `start_game`).
     """
     __tablename__ = "games"
 
     id = Column(Integer, primary_key=True, index=True)
     code = Column(String, unique=True, nullable=False, index=True)
     phase = Column(String, nullable=False, default="lobby")
+    host_pseudo = Column(String, nullable=True)
+    current_track_id = Column(Integer, ForeignKey("tracks.id"), nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
