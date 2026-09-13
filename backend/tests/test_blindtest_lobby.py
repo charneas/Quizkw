@@ -393,6 +393,58 @@ class TestStartGame:
                 msg2 = ws2.receive_json()
                 assert msg2["payload"]["phase"] == "lobby"
 
+    def test_has_unplayed_track_ignores_connection_state(self, blindtest_client, blindtest_engine):
+        """Story 8 (revue de code) : `_has_unplayed_track` (utilisé par
+        `_advance_round` pour distinguer pot réellement épuisé vs
+        temporairement vide) doit voir Bob comme "a un morceau non-joué"
+        même quand il n'est PAS connecté -- c'est tout son but, à l'inverse
+        de `_draw_eligible_track`."""
+        import main_blindtest
+        from app.blindtest.models import Game
+
+        code = _create_game(blindtest_client)
+        _add_track(blindtest_engine, code, owner_pseudo="Bob")
+
+        SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=blindtest_engine)
+        db = SessionLocal()
+        try:
+            game = db.query(Game).filter(Game.code == code).first()
+            # Bob n'a jamais rejoint le lobby WS -- `_draw_eligible_track`
+            # (avec filtre de connexion) le voit comme inéligible...
+            assert main_blindtest._draw_eligible_track(db, game) is None
+            # ...mais `_has_unplayed_track` (sans ce filtre) le voit quand
+            # même comme un morceau non-joué existant.
+            assert main_blindtest._has_unplayed_track(db, game) is True
+        finally:
+            db.close()
+
+    def test_disconnected_owner_pool_shrinks_others_stay_drawable(self, blindtest_client, blindtest_engine):
+        """Story 8 : Bob se déconnecte alors qu'Alice a elle aussi un morceau
+        dans le pot -- le pot rétrécit (le morceau de Bob n'est plus tirable)
+        mais celui d'Alice reste éligible, la partie continue normalement.
+        Scénario plus représentatif que le pot à un seul propriétaire."""
+        code = _create_game(blindtest_client)
+        _add_track(blindtest_engine, code, youtube_video_id="alice-track", owner_pseudo="Alice")
+        _add_track(blindtest_engine, code, youtube_video_id="bob-track", owner_pseudo="Bob")
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws_bob:
+                ws_bob.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                ws_bob.receive_json()
+                ws1.receive_json()  # Alice voit Bob arriver
+            ws1.receive_json()  # Alice voit Bob repartir (Bob déconnecté)
+
+            ws1.send_json({"type": "start_game", "payload": {}})
+            state1 = ws1.receive_json()  # game_state {phase: round_started}
+            assert state1["payload"]["phase"] == "round_started"
+            round1 = ws1.receive_json()
+            assert round1["type"] == "round_started"
+            # Seul le morceau d'Alice (toujours connectée) peut être tiré.
+            assert round1["payload"]["videoId"] == "alice-track"
+
     def test_disconnected_owners_track_is_not_drawable(self, blindtest_client, blindtest_engine):
         """Story 8 (spec-blindtest-integration-ui, CAP-7) : le seul morceau du
         pot appartient à Bob, qui n'est jamais connecté -- le tirage doit se

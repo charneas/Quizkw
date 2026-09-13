@@ -41,6 +41,19 @@ ROUND_GUESS_SECONDS = 30
 ROUNDS_PER_GAME = 15
 REVEAL_DISPLAY_SECONDS = 6
 
+# Story 8 (spec-blindtest-integration-ui, revue de code) : avant Story 8,
+# `_draw_eligible_track` ne pouvait renvoyer `None` en cours de partie que si
+# TOUS les morceaux du pot avaient réellement été joués -- `_advance_round`
+# terminait alors la partie sans risque. Depuis que l'éligibilité dépend
+# aussi de la connexion du propriétaire, `None` peut désormais survenir pour
+# une raison transitoire (reload de page, coupure réseau brève) alors que des
+# morceaux non-joués existent toujours -- terminer la partie direct dans ce
+# cas serait irréversible pour une simple déconnexion passagère. Ces
+# constantes bornent une petite fenêtre de grâce avant de considérer la
+# situation comme définitive.
+TRACK_POOL_RETRY_ATTEMPTS = 3
+TRACK_POOL_RETRY_DELAY_SECONDS = 1.0
+
 # Story 2.6 (revue de code) : référence forte vers la tâche `_round_timer` en
 # vol de chaque partie, indexée par `game_id`. `asyncio.create_task` ne garde
 # qu'une référence faible côté event loop — sans ceci, la tâche peut être
@@ -344,6 +357,29 @@ def _draw_eligible_track(db: Session, game: Game) -> Optional[Track]:
     return random.choice(eligible_tracks)
 
 
+def _has_unplayed_track(db: Session, game: Game) -> bool:
+    """Story 8 (revue de code) : variante de `_draw_eligible_track` SANS le
+    filtre de connexion — sert uniquement à distinguer un pot réellement
+    épuisé (aucun morceau non-joué, peu importe qui est connecté) d'un pot
+    temporairement vide parce que les propriétaires restants sont
+    déconnectés. `_advance_round` s'en sert pour décider si la fin de partie
+    est définitive ou seulement transitoire."""
+    query = (
+        db.query(Track)
+        .join(Playlist, Track.playlist_id == Playlist.id)
+        .filter(
+            Playlist.game_id == game.id,
+            Track.youtube_video_id.isnot(None),
+            Track.duration_seconds.isnot(None),
+            Track.duration_seconds > 0,
+        )
+    )
+    played_ids = played_tracks_store.played_ids(game.id)
+    if played_ids:
+        query = query.filter(Track.id.notin_(played_ids))
+    return query.first() is not None
+
+
 def _handle_start_game(db: Session, game: Game, requesting_pseudo: str) -> Optional[dict]:
     """Traite un message `start_game` (Story 2.4) : vérifie hôte/phase, tire
     un morceau éligible du pot de cette partie, calcule un offset de départ
@@ -593,6 +629,25 @@ async def _advance_round(game_id: int, game_code: str) -> None:
         track: Optional[Track] = None
         if played_tracks_store.count(game.id) < ROUNDS_PER_GAME:
             track = _draw_eligible_track(db, game)
+
+            # Story 8 (revue de code) : `None` ici peut vouloir dire soit un
+            # pot réellement épuisé, soit des morceaux non-joués existants
+            # mais dont les propriétaires sont momentanément déconnectés
+            # (reload de page, coupure réseau brève) -- `_has_unplayed_track`
+            # distingue les deux. Fenêtre de grâce bornée avant de traiter le
+            # second cas comme définitif, pour ne pas terminer la partie sur
+            # un simple aller-retour de connexion.
+            attempt = 0
+            while track is None and attempt < TRACK_POOL_RETRY_ATTEMPTS and _has_unplayed_track(db, game):
+                await asyncio.sleep(TRACK_POOL_RETRY_DELAY_SECONDS)
+                db.refresh(game)
+                if game.phase != "reveal":
+                    # Un autre chemin a déjà fait avancer la partie pendant
+                    # l'attente (défense en profondeur, même garde qu'à
+                    # l'entrée de cette fonction) -- rien de plus à faire ici.
+                    return
+                track = _draw_eligible_track(db, game)
+                attempt += 1
 
         if track is None:
             game.phase = "ended"
