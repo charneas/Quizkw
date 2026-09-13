@@ -380,7 +380,7 @@ export default function BlindTestLobby() {
                 champ texte libre pour nommer une cible (FR8, cf. Boundaries de
                 la spec). */}
             <div className="space-y-2">
-              <p className="text-text-muted">Qui a importé ce morceau ? (plusieurs choix possibles)</p>
+              <p className="text-text-muted">Qui a ajouté ce morceau à sa playlist ? (plusieurs choix possibles)</p>
               <ul className="space-y-1">
                 {players.map((p) => {
                   const isSelected = selectedPlayers.includes(p)
@@ -453,7 +453,7 @@ export default function BlindTestLobby() {
             )}
 
             <div className="space-y-2">
-              <p className="text-text-muted">Importer ta playlist (Spotify ou YouTube) :</p>
+              <p className="text-text-muted">Importer ta playlist (Spotify, Deezer ou YouTube) :</p>
               {importError && <p className="text-sm text-red-500">{importError}</p>}
               {importSuccess && <p className="text-sm text-green-600">{importSuccess}</p>}
               {isImporting && <p className="text-sm text-text-muted">Import en cours… ça peut prendre quelques secondes.</p>}
