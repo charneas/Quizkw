@@ -36,7 +36,12 @@ export default function BlindTestLobby() {
   // `round_started`.
   const [phase, setPhase] = useState('lobby')
   const [hostPseudo, setHostPseudo] = useState<string | null>(null)
-  const [roundTrack, setRoundTrack] = useState<{ videoId: string; startSeconds: number } | null>(null)
+  const [roundTrack, setRoundTrack] = useState<{
+    videoId: string
+    startSeconds: number
+    title: string
+    artist: string
+  } | null>(null)
   const playerContainerId = 'blindtest-hidden-player'
 
   // Story 2.5 : sélection multiple locale pour la devinette du round en
@@ -140,7 +145,12 @@ export default function BlindTestLobby() {
         setIsJoining(false)
       },
       onRoundStarted: (payload) => {
-        setRoundTrack({ videoId: payload.videoId, startSeconds: payload.startSeconds })
+        setRoundTrack({
+          videoId: payload.videoId,
+          startSeconds: payload.startSeconds,
+          title: payload.title,
+          artist: payload.artist,
+        })
       },
       onReveal: (payload) => {
         setReveal(payload)
@@ -288,6 +298,15 @@ export default function BlindTestLobby() {
       ) : phase === 'round_started' ? (
         <div className="space-y-4">
           <p className="text-text-muted">Round en cours — écoute l'extrait et devine qui l'a importé !</p>
+          {/* Story 3 (spec-blindtest-integration-ui) : le titre/artiste ne
+              spoile pas la devinette (deviner la playlist d'origine, jamais
+              le morceau) — affichés en permanence pendant toute la durée du
+              round. */}
+          {roundTrack && (
+            <p className="font-semibold">
+              {roundTrack.title} — {roundTrack.artist}
+            </p>
+          )}
           {/* Lecteur YouTube jamais affiché (blind test) : positionné
               hors-écran, pas en `display:none`, pour éviter les quirks de
               suppression d'autoplay sur un iframe caché (cf. Boundaries de

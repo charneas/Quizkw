@@ -338,7 +338,8 @@ def _handle_start_game(db: Session, game: Game, requesting_pseudo: str) -> Optio
     un morceau éligible du pot de cette partie, calcule un offset de départ
     aléatoire et fait passer la partie en `round_started`.
 
-    Renvoie le payload `round_started {videoId, startSeconds}` à diffuser,
+    Renvoie le payload `round_started {videoId, startSeconds, title, artist}`
+    à diffuser,
     ou `None` si une vérification échoue (non-hôte, phase déjà avancée, pot
     vide) — l'appelant ne diffuse alors rien (no-op silencieux, cf. matrice
     I/O : ni close, ni message d'erreur, ces cas sont défense-en-profondeur
@@ -372,7 +373,12 @@ def _handle_start_game(db: Session, game: Game, requesting_pseudo: str) -> Optio
     # et serait scorée à tort par Story 2.6/2.7 (Boundaries de la spec).
     guess_store.reset_round(game.id)
 
-    return {"videoId": track.youtube_video_id, "startSeconds": start_seconds}
+    return {
+        "videoId": track.youtube_video_id,
+        "startSeconds": start_seconds,
+        "title": track.title,
+        "artist": track.artist,
+    }
 
 
 def _resolve_owner_pseudo(db: Session, game: Game) -> Optional[str]:
@@ -610,7 +616,14 @@ async def _advance_round(game_id: int, game_code: str) -> None:
             game_code, {"phase": "round_started", "host_pseudo": game.host_pseudo}
         )
         await connection_manager.broadcast(
-            game_code, "round_started", {"videoId": track.youtube_video_id, "startSeconds": start_seconds}
+            game_code,
+            "round_started",
+            {
+                "videoId": track.youtube_video_id,
+                "startSeconds": start_seconds,
+                "title": track.title,
+                "artist": track.artist,
+            },
         )
         _schedule_round_timer(game.id, game_code, track.id)
     except Exception:

@@ -299,6 +299,8 @@ class TestStartGame:
                     assert msg["type"] == "round_started"
                     assert msg["payload"]["videoId"] == "abc123"
                     assert 0 <= msg["payload"]["startSeconds"] < 100
+                    assert msg["payload"]["title"] == "Titre"
+                    assert msg["payload"]["artist"] == "Artiste"
 
     def test_non_host_start_game_is_silently_ignored(self, blindtest_client, blindtest_engine):
         code = _create_game(blindtest_client)
@@ -1029,6 +1031,8 @@ class TestRoundAdvancement:
                 # Ne rejoue jamais le morceau déjà tiré au round 1.
                 assert round2_1["payload"]["videoId"] != first_video_id
                 assert round2_1["payload"]["videoId"] in ("track-a", "track-b")
+                assert round2_1["payload"]["title"] == "Titre"
+                assert round2_1["payload"]["artist"] == "Artiste"
 
     def test_pot_exhausted_early_ends_game_with_final_scores(
         self, blindtest_client, blindtest_engine, monkeypatch

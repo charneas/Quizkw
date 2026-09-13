@@ -381,6 +381,8 @@ export interface BlindtestGameStatePayload {
 export interface BlindtestRoundStartedPayload {
   videoId: string
   startSeconds: number
+  title: string
+  artist: string
 }
 
 // Story 2.6 : payload de `reveal`, poussé par le serveur à la clôture du
