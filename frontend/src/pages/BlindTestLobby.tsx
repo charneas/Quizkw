@@ -269,6 +269,21 @@ export default function BlindTestLobby() {
 
         {error && <p className="text-sm text-red-500">{error}</p>}
 
+        {/* Bug corrigé (page blanche en prod, 2026-09-13) : ce conteneur
+            n'était monté que pendant `phase === 'round_started'`, alors que
+            le lecteur YouTube lui-même (créé/détruit selon `roundTrack`,
+            pas `phase`) reste actif après la fin du round — React démontait
+            le conteneur sous les pieds du lecteur encore vivant, et
+            `player.destroy()` plantait ensuite sur un noeud DOM déjà
+            disparu (`NotFoundError: Failed to execute 'removeChild'`),
+            sans error boundary pour l'amortir. Toujours monté maintenant :
+            seul le cycle de vie impératif du lecteur (`createHiddenPlayer`/
+            `destroy`) possède ce noeud, React ne le monte/démonte plus. */}
+        <div
+          id={playerContainerId}
+          style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: '1px', height: '1px' }}
+        />
+
         {!joined ? (
           <div className="flex gap-2">
             <input
@@ -361,38 +376,6 @@ export default function BlindTestLobby() {
               </p>
             )}
 
-            {/* Story 4 (spec-blindtest-integration-ui) : scoreboard visible
-                pendant tout le round, pas seulement au reveal/ended. Merge du
-                roster complet (`players`) avec les scores partiels connus
-                (`score_store` n'a que les pseudos déjà scorés) pour que chaque
-                joueur présent apparaisse, à 0 par défaut. `Scoreboard.tsx` ne
-                lit que `.id`/`.name`/`.score` — les autres champs `Team` sont
-                des valeurs de remplissage sans effet sur le rendu. */}
-            <Scoreboard
-              teams={players.map((p) => ({
-                // `Team.id` sert de clé React dans `Scoreboard.tsx` (pas de
-                // vrai id numérique côté blindtest, pas de `Player` DB table).
-                // Dérivé du pseudo (hash stable), pas de l'index dans
-                // `players` : `players` vient de `Object.keys` du dict de
-                // connexions côté serveur, dont l'ordre bouge à chaque
-                // (re)connexion — un id basé sur l'index ferait remonter
-                // toute la liste sans raison à chaque reconnexion d'un tiers.
-                id: hashPseudo(p),
-                name: p,
-                score: scores[p] ?? 0,
-                game_session_id: 0,
-                players: [],
-              }))}
-            />
-            {/* Lecteur YouTube jamais affiché (blind test) : positionné
-                hors-écran, pas en `display:none`, pour éviter les quirks de
-                suppression d'autoplay sur un iframe caché (cf. Boundaries de
-                la spec). */}
-            <div
-              id={playerContainerId}
-              style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: '1px', height: '1px' }}
-            />
-
             {/* Story 2.5 : sélection multiple des joueurs présents — jamais de
                 champ texte libre pour nommer une cible (FR8, cf. Boundaries de
                 la spec). */}
@@ -423,6 +406,32 @@ export default function BlindTestLobby() {
                 Valider ma réponse
               </button>
             </div>
+
+            {/* Story 4 (spec-blindtest-integration-ui) : scoreboard visible
+                pendant tout le round, pas seulement au reveal/ended. Placé
+                en bas (retour utilisateur) : en haut, avant la devinette,
+                son rôle n'était pas clair. Merge du roster complet
+                (`players`) avec les scores partiels connus (`score_store`
+                n'a que les pseudos déjà scorés) pour que chaque joueur
+                présent apparaisse, à 0 par défaut. `Scoreboard.tsx` ne lit
+                que `.id`/`.name`/`.score` — les autres champs `Team` sont
+                des valeurs de remplissage sans effet sur le rendu. */}
+            <Scoreboard
+              teams={players.map((p) => ({
+                // `Team.id` sert de clé React dans `Scoreboard.tsx` (pas de
+                // vrai id numérique côté blindtest, pas de `Player` DB table).
+                // Dérivé du pseudo (hash stable), pas de l'index dans
+                // `players` : `players` vient de `Object.keys` du dict de
+                // connexions côté serveur, dont l'ordre bouge à chaque
+                // (re)connexion — un id basé sur l'index ferait remonter
+                // toute la liste sans raison à chaque reconnexion d'un tiers.
+                id: hashPseudo(p),
+                name: p,
+                score: scores[p] ?? 0,
+                game_session_id: 0,
+                players: [],
+              }))}
+            />
           </div>
         ) : (
           <div className="space-y-4">

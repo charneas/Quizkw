@@ -1,4 +1,5 @@
 import { Routes, Route } from 'react-router-dom'
+import ErrorBoundary from './components/ErrorBoundary'
 import ThemeToggle from './components/ThemeToggle'
 import AccountButton from './components/AccountButton'
 import { DiscordAccountProvider } from './contexts/DiscordAccountContext'
@@ -30,6 +31,7 @@ function App() {
       <div className="min-h-screen bg-bg">
         <ThemeToggle />
         <AccountButton />
+        <ErrorBoundary>
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/lobby/:code" element={<Lobby />} />
@@ -56,6 +58,7 @@ function App() {
           <Route path="/admin/stats" element={<AdminStats />} />
           <Route path="/proposer" element={<Propositions />} />
         </Routes>
+        </ErrorBoundary>
       </div>
     </DiscordAccountProvider>
   )
