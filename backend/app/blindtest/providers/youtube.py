@@ -18,6 +18,18 @@ import httpx
 from app.blindtest.errors import PrivatePlaylistError, ProviderConfigError, UnrecognizedUrlError
 from app.blindtest.extraction_types import ExtractedTrack
 
+# Retour utilisateur (2026-09-13) : les chaînes auto-générées "Topic" de
+# YouTube Music (uploads officiels sans clip) ont pour `videoOwnerChannelTitle`
+# littéralement "{Artiste} - Topic" — sans ce nettoyage, l'artiste affiché
+# porte ce suffixe technique sur la quasi-totalité des imports YouTube Music.
+_TOPIC_CHANNEL_SUFFIX = " - Topic"
+
+
+def _clean_artist(channel_title: str) -> str:
+    if channel_title.endswith(_TOPIC_CHANNEL_SUFFIX):
+        return channel_title[: -len(_TOPIC_CHANNEL_SUFFIX)]
+    return channel_title
+
 _API_BASE = "https://www.googleapis.com/youtube/v3/playlistItems"
 
 _YOUTUBE_HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be", "music.youtube.com"}
@@ -99,7 +111,7 @@ def fetch_tracks(url: str) -> List[ExtractedTrack]:
                     continue  # item retiré/privé dans une playlist par ailleurs publique
                 tracks.append(ExtractedTrack(
                     title=title,
-                    artist=snippet.get("videoOwnerChannelTitle") or "",
+                    artist=_clean_artist(snippet.get("videoOwnerChannelTitle") or ""),
                     youtube_video_id=video_id,
                 ))
 

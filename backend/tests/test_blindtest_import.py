@@ -196,6 +196,42 @@ class TestYoutubeImport:
         assert resp.status_code == 201
         assert resp.json()["provider"] == "youtube"
 
+    def test_topic_channel_suffix_stripped_from_artist(self):
+        """Retour utilisateur (2026-09-13) : les chaînes auto-générées
+        "Topic" de YouTube Music (uploads officiels sans clip) ont pour
+        `videoOwnerChannelTitle` littéralement "{Artiste} - Topic" -- doit
+        être nettoyé, un nom de chaîne sans ce suffixe reste inchangé."""
+        from app.blindtest.providers import youtube
+
+        resp = MagicMock(status_code=200)
+        resp.json.return_value = {
+            "items": [
+                {
+                    "snippet": {
+                        "title": "Song A",
+                        "videoOwnerChannelTitle": "Real Artist - Topic",
+                        "resourceId": {"videoId": "vid-a"},
+                    }
+                },
+                {
+                    "snippet": {
+                        "title": "Song B",
+                        "videoOwnerChannelTitle": "Some Channel",
+                        "resourceId": {"videoId": "vid-b"},
+                    }
+                },
+            ],
+            "nextPageToken": None,
+        }
+
+        with patch("httpx.Client") as client_cls, \
+             patch.dict(os.environ, {"YOUTUBE_API_KEY": "fake-key"}):
+            client_cls.return_value.__enter__.return_value.get.return_value = resp
+            tracks = youtube.fetch_tracks(YOUTUBE_URL)
+
+        assert tracks[0].artist == "Real Artist"
+        assert tracks[1].artist == "Some Channel"
+
     def test_pagination_beyond_max_pages_truncates_instead_of_failing(self):
         """Une playlist dépassant `_MAX_PAGES` (ex. "Titres likés" avec des
         milliers d'entrées) doit être tronquée à ce qu'on a déjà collecté,
