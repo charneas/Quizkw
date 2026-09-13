@@ -267,204 +267,204 @@ export default function BlindTestLobby() {
             jamais en fond de grande surface). */}
         <h1 className="text-xl font-semibold text-accent">Blind test — Lobby {code}</h1>
 
-      {error && <p className="text-sm text-red-500">{error}</p>}
+        {error && <p className="text-sm text-red-500">{error}</p>}
 
-      {!joined ? (
-        <div className="flex gap-2">
-          <input
-            type="text"
-            className="input-field flex-1"
-            placeholder="Ton pseudo"
-            value={pseudo}
-            onChange={(e) => setPseudo(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleJoin()}
-            disabled={isJoining}
-          />
-          <button className="btn-primary" onClick={handleJoin} disabled={isJoining}>
-            Rejoindre
-          </button>
-        </div>
-      ) : phase === 'ended' && finalScores ? (
-        <div className="space-y-4">
-          <p className="text-text-muted">Partie terminée — classement final :</p>
-          <ul className="space-y-1">
-            {Object.entries(finalScores)
-              .sort(([, a], [, b]) => b - a)
-              .map(([playerPseudo, score], index) => (
-                <li key={playerPseudo} className="card px-3 py-2 flex justify-between">
-                  <span>
-                    {index + 1}. {playerPseudo}
-                  </span>
-                  <span>{score}</span>
-                </li>
-              ))}
-          </ul>
-        </div>
-      ) : phase === 'next_round' ? (
-        // Story 2.7 : bref indicateur transitoire entre le `game_state
-        // {phase: next_round}` et le `round_started` qui suit — purement
-        // informatif, aucune action joueur possible ici (NFR5).
-        <p className="text-text-muted">Round suivant...</p>
-      ) : reveal ? (
-        <div className="space-y-4">
-          <p className="text-text-muted">
-            Le morceau avait été importé par <strong>{reveal.owner_pseudo}</strong>.
-          </p>
-          <div className="space-y-2">
-            <p className="text-text-muted">Scores cumulés :</p>
+        {!joined ? (
+          <div className="flex gap-2">
+            <input
+              type="text"
+              className="input-field flex-1"
+              placeholder="Ton pseudo"
+              value={pseudo}
+              onChange={(e) => setPseudo(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleJoin()}
+              disabled={isJoining}
+            />
+            <button className="btn-primary" onClick={handleJoin} disabled={isJoining}>
+              Rejoindre
+            </button>
+          </div>
+        ) : phase === 'ended' && finalScores ? (
+          <div className="space-y-4">
+            <p className="text-text-muted">Partie terminée — classement final :</p>
             <ul className="space-y-1">
-              {Object.entries(reveal.scores)
+              {Object.entries(finalScores)
                 .sort(([, a], [, b]) => b - a)
-                .map(([playerPseudo, score]) => {
-                  // Optional-chaining défensif (revue de code) : un payload
-                  // `reveal` sans `deltas` (nice-to-have, ne doit jamais faire
-                  // planter l'écran) dégrade silencieusement à 0 plutôt que de
-                  // lever une TypeError sur un accès direct.
-                  const delta = reveal.deltas?.[playerPseudo] ?? 0
-                  return (
-                    <li key={playerPseudo} className="card px-3 py-2 flex justify-between items-center">
-                      <span>{playerPseudo}</span>
-                      <span className="flex items-center gap-2">
-                        {/* Story 5 (spec-blindtest-integration-ui, nice-to-have) :
-                            clé basée sur `roundTrack` (identifiant unique du
-                            round, stable pendant tout l'affichage du reveal)
-                            plutôt que sur `delta` — deux rounds consécutifs
-                            avec le même delta (ex: 0 puis 0) ne rejoueraient
-                            pas l'animation `.animate-fade-in` sinon (déjà
-                            respectueuse de prefers-reduced-motion). */}
-                        <span
-                          key={`${playerPseudo}-${roundTrack?.videoId ?? ''}`}
-                          className={`animate-fade-in text-sm font-semibold ${
-                            delta > 0 ? 'text-success' : delta < 0 ? 'text-danger' : 'text-text-muted'
-                          }`}
-                        >
-                          {delta > 0 ? `+${delta}` : delta}
+                .map(([playerPseudo, score], index) => (
+                  <li key={playerPseudo} className="card px-3 py-2 flex justify-between">
+                    <span>
+                      {index + 1}. {playerPseudo}
+                    </span>
+                    <span>{score}</span>
+                  </li>
+                ))}
+            </ul>
+          </div>
+        ) : phase === 'next_round' ? (
+          // Story 2.7 : bref indicateur transitoire entre le `game_state
+          // {phase: next_round}` et le `round_started` qui suit — purement
+          // informatif, aucune action joueur possible ici (NFR5).
+          <p className="text-text-muted">Round suivant...</p>
+        ) : reveal ? (
+          <div className="space-y-4">
+            <p className="text-text-muted">
+              Le morceau avait été importé par <strong>{reveal.owner_pseudo}</strong>.
+            </p>
+            <div className="space-y-2">
+              <p className="text-text-muted">Scores cumulés :</p>
+              <ul className="space-y-1">
+                {Object.entries(reveal.scores)
+                  .sort(([, a], [, b]) => b - a)
+                  .map(([playerPseudo, score]) => {
+                    // Optional-chaining défensif (revue de code) : un payload
+                    // `reveal` sans `deltas` (nice-to-have, ne doit jamais faire
+                    // planter l'écran) dégrade silencieusement à 0 plutôt que de
+                    // lever une TypeError sur un accès direct.
+                    const delta = reveal.deltas?.[playerPseudo] ?? 0
+                    return (
+                      <li key={playerPseudo} className="card px-3 py-2 flex justify-between items-center">
+                        <span>{playerPseudo}</span>
+                        <span className="flex items-center gap-2">
+                          {/* Story 5 (spec-blindtest-integration-ui, nice-to-have) :
+                              clé basée sur `roundTrack` (identifiant unique du
+                              round, stable pendant tout l'affichage du reveal)
+                              plutôt que sur `delta` — deux rounds consécutifs
+                              avec le même delta (ex: 0 puis 0) ne rejoueraient
+                              pas l'animation `.animate-fade-in` sinon (déjà
+                              respectueuse de prefers-reduced-motion). */}
+                          <span
+                            key={`${playerPseudo}-${roundTrack?.videoId ?? ''}`}
+                            className={`animate-fade-in text-sm font-semibold ${
+                              delta > 0 ? 'text-success' : delta < 0 ? 'text-danger' : 'text-text-muted'
+                            }`}
+                          >
+                            {delta > 0 ? `+${delta}` : delta}
+                          </span>
+                          <span>{score}</span>
                         </span>
-                        <span>{score}</span>
-                      </span>
+                      </li>
+                    )
+                  })}
+              </ul>
+            </div>
+          </div>
+        ) : phase === 'round_started' ? (
+          <div className="space-y-4">
+            <p className="text-text-muted">Round en cours — écoute l'extrait et devine qui l'a importé !</p>
+            {/* Story 3 (spec-blindtest-integration-ui) : le titre/artiste ne
+                spoile pas la devinette (deviner la playlist d'origine, jamais
+                le morceau) — affichés en permanence pendant toute la durée du
+                round. */}
+            {roundTrack && (
+              <p className="font-semibold">
+                {roundTrack.title} — {roundTrack.artist}
+              </p>
+            )}
+
+            {/* Story 4 (spec-blindtest-integration-ui) : scoreboard visible
+                pendant tout le round, pas seulement au reveal/ended. Merge du
+                roster complet (`players`) avec les scores partiels connus
+                (`score_store` n'a que les pseudos déjà scorés) pour que chaque
+                joueur présent apparaisse, à 0 par défaut. `Scoreboard.tsx` ne
+                lit que `.id`/`.name`/`.score` — les autres champs `Team` sont
+                des valeurs de remplissage sans effet sur le rendu. */}
+            <Scoreboard
+              teams={players.map((p) => ({
+                // `Team.id` sert de clé React dans `Scoreboard.tsx` (pas de
+                // vrai id numérique côté blindtest, pas de `Player` DB table).
+                // Dérivé du pseudo (hash stable), pas de l'index dans
+                // `players` : `players` vient de `Object.keys` du dict de
+                // connexions côté serveur, dont l'ordre bouge à chaque
+                // (re)connexion — un id basé sur l'index ferait remonter
+                // toute la liste sans raison à chaque reconnexion d'un tiers.
+                id: hashPseudo(p),
+                name: p,
+                score: scores[p] ?? 0,
+                game_session_id: 0,
+                players: [],
+              }))}
+            />
+            {/* Lecteur YouTube jamais affiché (blind test) : positionné
+                hors-écran, pas en `display:none`, pour éviter les quirks de
+                suppression d'autoplay sur un iframe caché (cf. Boundaries de
+                la spec). */}
+            <div
+              id={playerContainerId}
+              style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: '1px', height: '1px' }}
+            />
+
+            {/* Story 2.5 : sélection multiple des joueurs présents — jamais de
+                champ texte libre pour nommer une cible (FR8, cf. Boundaries de
+                la spec). */}
+            <div className="space-y-2">
+              <p className="text-text-muted">Qui a importé ce morceau ? (plusieurs choix possibles)</p>
+              <ul className="space-y-1">
+                {players.map((p) => {
+                  const isSelected = selectedPlayers.includes(p)
+                  return (
+                    <li key={p}>
+                      <button
+                        type="button"
+                        className={`card px-3 py-2 w-full text-left ${isSelected ? 'ring-2 ring-primary' : ''}`}
+                        onClick={() => toggleSelectedPlayer(p)}
+                        aria-pressed={isSelected}
+                      >
+                        {p}
+                      </button>
                     </li>
                   )
                 })}
-            </ul>
-          </div>
-        </div>
-      ) : phase === 'round_started' ? (
-        <div className="space-y-4">
-          <p className="text-text-muted">Round en cours — écoute l'extrait et devine qui l'a importé !</p>
-          {/* Story 3 (spec-blindtest-integration-ui) : le titre/artiste ne
-              spoile pas la devinette (deviner la playlist d'origine, jamais
-              le morceau) — affichés en permanence pendant toute la durée du
-              round. */}
-          {roundTrack && (
-            <p className="font-semibold">
-              {roundTrack.title} — {roundTrack.artist}
-            </p>
-          )}
-
-          {/* Story 4 (spec-blindtest-integration-ui) : scoreboard visible
-              pendant tout le round, pas seulement au reveal/ended. Merge du
-              roster complet (`players`) avec les scores partiels connus
-              (`score_store` n'a que les pseudos déjà scorés) pour que chaque
-              joueur présent apparaisse, à 0 par défaut. `Scoreboard.tsx` ne
-              lit que `.id`/`.name`/`.score` — les autres champs `Team` sont
-              des valeurs de remplissage sans effet sur le rendu. */}
-          <Scoreboard
-            teams={players.map((p) => ({
-              // `Team.id` sert de clé React dans `Scoreboard.tsx` (pas de
-              // vrai id numérique côté blindtest, pas de `Player` DB table).
-              // Dérivé du pseudo (hash stable), pas de l'index dans
-              // `players` : `players` vient de `Object.keys` du dict de
-              // connexions côté serveur, dont l'ordre bouge à chaque
-              // (re)connexion — un id basé sur l'index ferait remonter
-              // toute la liste sans raison à chaque reconnexion d'un tiers.
-              id: hashPseudo(p),
-              name: p,
-              score: scores[p] ?? 0,
-              game_session_id: 0,
-              players: [],
-            }))}
-          />
-          {/* Lecteur YouTube jamais affiché (blind test) : positionné
-              hors-écran, pas en `display:none`, pour éviter les quirks de
-              suppression d'autoplay sur un iframe caché (cf. Boundaries de
-              la spec). */}
-          <div
-            id={playerContainerId}
-            style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: '1px', height: '1px' }}
-          />
-
-          {/* Story 2.5 : sélection multiple des joueurs présents — jamais de
-              champ texte libre pour nommer une cible (FR8, cf. Boundaries de
-              la spec). */}
-          <div className="space-y-2">
-            <p className="text-text-muted">Qui a importé ce morceau ? (plusieurs choix possibles)</p>
-            <ul className="space-y-1">
-              {players.map((p) => {
-                const isSelected = selectedPlayers.includes(p)
-                return (
-                  <li key={p}>
-                    <button
-                      type="button"
-                      className={`card px-3 py-2 w-full text-left ${isSelected ? 'ring-2 ring-primary' : ''}`}
-                      onClick={() => toggleSelectedPlayer(p)}
-                      aria-pressed={isSelected}
-                    >
-                      {p}
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
-            <button
-              className="btn-primary w-full"
-              onClick={handleSubmitGuess}
-              disabled={selectedPlayers.length === 0}
-            >
-              Valider ma réponse
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <p className="text-text-muted">Joueurs présents :</p>
-            <ul className="space-y-1">
-              {players.map((p) => (
-                <li key={p} className="card px-3 py-2">
-                  {p}
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {pseudo.trim() === hostPseudo && (
-            <button className="btn-primary w-full" onClick={handleStartGame}>
-              Démarrer la partie
-            </button>
-          )}
-
-          <div className="space-y-2">
-            <p className="text-text-muted">Importer ta playlist (Spotify, YouTube ou Apple Music) :</p>
-            {importError && <p className="text-sm text-red-500">{importError}</p>}
-            {importSuccess && <p className="text-sm text-green-600">{importSuccess}</p>}
-            {isImporting && <p className="text-sm text-text-muted">Import en cours… ça peut prendre quelques secondes.</p>}
-            <div className="flex gap-2">
-              <input
-                type="text"
-                className="input-field flex-1"
-                placeholder="Lien de la playlist"
-                value={playlistUrl}
-                onChange={(e) => setPlaylistUrl(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleImportPlaylist()}
-                disabled={isImporting}
-              />
-              <button className="btn-primary" onClick={handleImportPlaylist} disabled={isImporting}>
-                {isImporting ? 'Import…' : 'Importer'}
+              </ul>
+              <button
+                className="btn-primary w-full"
+                onClick={handleSubmitGuess}
+                disabled={selectedPlayers.length === 0}
+              >
+                Valider ma réponse
               </button>
             </div>
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <p className="text-text-muted">Joueurs présents :</p>
+              <ul className="space-y-1">
+                {players.map((p) => (
+                  <li key={p} className="card px-3 py-2">
+                    {p}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {pseudo.trim() === hostPseudo && (
+              <button className="btn-primary w-full" onClick={handleStartGame}>
+                Démarrer la partie
+              </button>
+            )}
+
+            <div className="space-y-2">
+              <p className="text-text-muted">Importer ta playlist (Spotify, YouTube ou Apple Music) :</p>
+              {importError && <p className="text-sm text-red-500">{importError}</p>}
+              {importSuccess && <p className="text-sm text-green-600">{importSuccess}</p>}
+              {isImporting && <p className="text-sm text-text-muted">Import en cours… ça peut prendre quelques secondes.</p>}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  className="input-field flex-1"
+                  placeholder="Lien de la playlist"
+                  value={playlistUrl}
+                  onChange={(e) => setPlaylistUrl(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleImportPlaylist()}
+                  disabled={isImporting}
+                />
+                <button className="btn-primary" onClick={handleImportPlaylist} disabled={isImporting}>
+                  {isImporting ? 'Import…' : 'Importer'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
