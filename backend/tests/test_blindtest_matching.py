@@ -658,3 +658,45 @@ class TestImportThenPollIntegration:
     def test_get_unknown_playlist_returns_404(self, blindtest_client):
         resp = blindtest_client.get("/blindtest/playlists/999999")
         assert resp.status_code == 404
+
+    def test_soundcloud_import_resolves_youtube_video_id_via_generic_matching(
+        self, blindtest_client, blindtest_session_factory
+    ):
+        """Story 2 : preuve bout-en-bout que le pipeline générique de
+        matching (`matching.match_playlist_tracks`), déjà exercé pour
+        Spotify/YouTube, fonctionne aussi pour un morceau importé depuis
+        SoundCloud — sans aucune modification de `matching.py`. Le provider
+        SoundCloud est mocké (Story 1 le couvre déjà isolément) ; seule la
+        résolution `source_url` -> `youtube_video_id` du morceau importé
+        est vérifiée ici."""
+        soundcloud_set_url = "https://soundcloud.com/someuser/sets/some-set"
+        fake_tracks = [
+            ExtractedTrack(
+                title="Song A",
+                artist="Artist A",
+                source_url="https://soundcloud.com/someuser/song-a",
+            ),
+        ]
+        with patch("app.blindtest.providers.soundcloud.fetch_tracks", return_value=fake_tracks), \
+             patch("app.blindtest.matching.SessionLocal", blindtest_session_factory), \
+             patch(
+                 "app.blindtest.matching.resolve_via_idonthavespotify",
+                 return_value="resolved-vid",
+             ) as idonthavespotify_mock, \
+             patch("app.blindtest.matching.fetch_video_duration", return_value=180):
+            post_resp = blindtest_client.post("/blindtest/playlists", json={"url": soundcloud_set_url})
+
+        assert post_resp.status_code == 201
+        assert post_resp.json()["provider"] == "soundcloud"
+        playlist_id = post_resp.json()["id"]
+
+        # Preuve que le morceau SoundCloud est bien passé par le chemin
+        # `resolve_via_idonthavespotify` avec son PROPRE `source_url` (pas
+        # celui de la playlist) — coeur du pipeline générique de matching.
+        idonthavespotify_mock.assert_called_once_with("https://soundcloud.com/someuser/song-a")
+
+        get_resp = blindtest_client.get(f"/blindtest/playlists/{playlist_id}")
+        assert get_resp.status_code == 200
+        data = get_resp.json()
+        assert data["tracks"][0]["youtube_video_id"] == "resolved-vid"
+        assert data["tracks"][0]["duration_seconds"] == 180

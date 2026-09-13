@@ -411,6 +411,49 @@ class TestSoundCloudImport:
             with pytest.raises(ProviderConfigError):
                 soundcloud.fetch_tracks(SOUNDCLOUD_SET_URL)
 
+    def test_import_pipeline_detects_soundcloud_and_routes_extraction(self):
+        """Story 2 : `import_pipeline.detect_provider`/`extract_tracks`
+        doivent router une URL de set SoundCloud vers le provider
+        `soundcloud` enregistré dans `_PROVIDERS` — sans ça une URL
+        SoundCloud réelle échoue en `UnrecognizedUrlError` malgré un
+        provider fonctionnel et testé isolément (Story 1)."""
+        from app.blindtest import import_pipeline
+
+        assert import_pipeline.detect_provider(SOUNDCLOUD_SET_URL) == "soundcloud"
+
+        fake_tracks = [
+            ExtractedTrack(title="Song A", artist="Artist A", source_url="https://soundcloud.com/someuser/song-a"),
+        ]
+        with patch("app.blindtest.providers.soundcloud.fetch_tracks", return_value=fake_tracks) as fetch_mock:
+            provider, tracks = import_pipeline.extract_tracks(SOUNDCLOUD_SET_URL)
+
+        assert provider == "soundcloud"
+        assert tracks == fake_tracks
+        fetch_mock.assert_called_once_with(SOUNDCLOUD_SET_URL)
+
+    def test_valid_soundcloud_set_persists_playlist_and_tracks(self, blindtest_client, blindtest_engine):
+        """Bout-en-bout via le router `/blindtest/playlists` : preuve que le
+        provider SoundCloud enregistré dans `_PROVIDERS` est bien atteignable
+        depuis l'endpoint d'import public, pas seulement depuis
+        `import_pipeline` directement."""
+        fake_tracks = [
+            ExtractedTrack(title="Song A", artist="Artist A", source_url="https://soundcloud.com/someuser/song-a"),
+            ExtractedTrack(title="Song B", artist="Artist B"),
+        ]
+        with patch("app.blindtest.providers.soundcloud.fetch_tracks", return_value=fake_tracks), \
+             patch("app.blindtest.matching.match_playlist_tracks"):
+            resp = blindtest_client.post("/blindtest/playlists", json={"url": SOUNDCLOUD_SET_URL})
+
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["provider"] == "soundcloud"
+        assert len(data["tracks"]) == 2
+        assert data["tracks"][0]["title"] == "Song A"
+
+        playlists, tracks = _count_rows(blindtest_engine)
+        assert playlists == 1
+        assert tracks == 2
+
     def test_token_malformed_json_raises_config_error(self):
         """Un JSON malformé (ou absence de `access_token`) dans la réponse
         de token ne doit pas fuir en `ValueError`/`KeyError` brut."""
