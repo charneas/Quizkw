@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import Home from './Home'
@@ -124,6 +124,64 @@ describe('Home + AccountButton — état partagé (Story O.2.1, revue de code)',
     fireEvent.click(await screen.findByRole('button', { name: 'Se déconnecter' }))
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Connexion' })).toBeInTheDocument())
+  })
+})
+
+describe('Home — carte Blindtest (spec-blindtest-integration-ui, story 1)', () => {
+  beforeEach(() => {
+    vi.spyOn(api, 'fetchDiscordAccount').mockResolvedValue(null)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  function renderHomeWithBlindtestRoute() {
+    return render(
+      <DiscordAccountProvider>
+        <MemoryRouter initialEntries={['/']}>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/blindtest/:code" element={<p>Blindtest lobby page</p>} />
+          </Routes>
+        </MemoryRouter>
+      </DiscordAccountProvider>
+    )
+  }
+
+  function getBlindtestCard() {
+    const heading = screen.getByText('🎵 Blindtest')
+    return heading.closest('.card') as HTMLElement
+  }
+
+  it('désactive le bouton Rejoindre tant que le code est vide', async () => {
+    renderHomeWithBlindtestRoute()
+    const card = getBlindtestCard()
+    expect(await within(card).findByRole('button', { name: 'Rejoindre' })).toBeDisabled()
+  })
+
+  it('navigue vers /blindtest/<CODE> (majuscule) au clic sur Rejoindre', async () => {
+    renderHomeWithBlindtestRoute()
+    const card = getBlindtestCard()
+    const input = within(card).getByPlaceholderText('Code de la partie')
+    const button = within(card).getByRole('button', { name: 'Rejoindre' })
+
+    fireEvent.change(input, { target: { value: 'abc123' } })
+    expect(button).not.toBeDisabled()
+    fireEvent.click(button)
+
+    expect(await screen.findByText('Blindtest lobby page')).toBeInTheDocument()
+  })
+
+  it('navigue vers /blindtest/<CODE> à la touche Entrée', async () => {
+    renderHomeWithBlindtestRoute()
+    const card = getBlindtestCard()
+    const input = within(card).getByPlaceholderText('Code de la partie')
+
+    fireEvent.change(input, { target: { value: 'xyz789' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    expect(await screen.findByText('Blindtest lobby page')).toBeInTheDocument()
   })
 })
 
