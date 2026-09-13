@@ -183,6 +183,29 @@ describe('Home — carte Blindtest (spec-blindtest-integration-ui, story 1)', ()
 
     expect(await screen.findByText('Blindtest lobby page')).toBeInTheDocument()
   })
+
+  it('crée une partie blindtest et navigue vers /blindtest/<code> retourné par le backend (story 2)', async () => {
+    vi.spyOn(api, 'createBlindtestGame').mockResolvedValue({ id: 1, code: 'ZQ7K2P' })
+    renderHomeWithBlindtestRoute()
+    const card = getBlindtestCard()
+    const button = within(card).getByRole('button', { name: 'Créer une partie' })
+
+    fireEvent.click(button)
+
+    expect(await screen.findByText('Blindtest lobby page')).toBeInTheDocument()
+  })
+
+  it("affiche une erreur inline et réactive le bouton quand la création échoue (story 2)", async () => {
+    vi.spyOn(api, 'createBlindtestGame').mockRejectedValue(new Error('Erreur serveur'))
+    renderHomeWithBlindtestRoute()
+    const card = getBlindtestCard()
+    const button = within(card).getByRole('button', { name: 'Créer une partie' })
+
+    fireEvent.click(button)
+
+    expect(await within(card).findByText('Erreur serveur')).toBeInTheDocument()
+    expect(within(card).getByRole('button', { name: 'Créer une partie' })).not.toBeDisabled()
+  })
 })
 
 describe('Game — non-régression : bouton Connexion absent en partie', () => {

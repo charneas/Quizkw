@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { createGame, storeHostToken, joinPublicQueue } from '../services/api'
+import { createGame, createBlindtestGame, storeHostToken, joinPublicQueue } from '../services/api'
 import { pluralJoueurs } from '../utils/pluralize'
 import { useDiscordAccount } from '../contexts/DiscordAccountContext'
 
@@ -18,6 +18,8 @@ function Home() {
   const navigate = useNavigate()
   const [joinCode, setJoinCode] = useState('')
   const [blindtestCode, setBlindtestCode] = useState('')
+  const [isCreatingBlindtest, setIsCreatingBlindtest] = useState(false)
+  const [blindtestCreateError, setBlindtestCreateError] = useState('')
   const [totalPlayers, setTotalPlayers] = useState(6)
   const [playersPerTeam, setPlayersPerTeam] = useState(2)
   const [questionCount, setQuestionCount] = useState(20)
@@ -79,6 +81,19 @@ function Home() {
   const handleJoinBlindtest = () => {
     if (blindtestCode.trim()) {
       navigate(`/blindtest/${blindtestCode.trim().toUpperCase()}`)
+    }
+  }
+
+  const handleCreateBlindtestGame = async () => {
+    setIsCreatingBlindtest(true)
+    setBlindtestCreateError('')
+    try {
+      const result = await createBlindtestGame()
+      navigate(`/blindtest/${result.code}`)
+    } catch (err) {
+      setBlindtestCreateError(err instanceof Error ? err.message : 'Erreur lors de la création')
+    } finally {
+      setIsCreatingBlindtest(false)
     }
   }
 
@@ -187,6 +202,22 @@ function Home() {
               Rejoindre
             </button>
           </div>
+          {/* Story 2 (spec-blindtest-integration-ui) : créer une partie
+              blindtest en self-serve, symétrique à handleCreateGame côté
+              quiz — sans champs de configuration (aucun réglage à la
+              création côté blindtest). */}
+          <button
+            onClick={handleCreateBlindtestGame}
+            disabled={isCreatingBlindtest}
+            className="btn-secondary w-full mt-3 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isCreatingBlindtest ? '⏳ Création...' : 'Créer une partie'}
+          </button>
+          {blindtestCreateError && (
+            <div className="text-danger text-sm text-center bg-danger/10 rounded-lg p-2 mt-3">
+              {blindtestCreateError}
+            </div>
+          )}
         </div>
 
         {/* Jouer avec des inconnus (spec-rooms-publiques) : file d'attente
