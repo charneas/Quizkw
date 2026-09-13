@@ -133,6 +133,25 @@ class TestYoutubeImport:
         assert data["provider"] == "youtube"
         assert data["tracks"][0]["youtube_video_id"] == "vid123"
 
+    def test_music_youtube_com_playlist_is_recognized(self, blindtest_client, blindtest_engine):
+        """`music.youtube.com` (YouTube Music) partage le même identifiant de
+        playlist et la même API `playlistItems.list` qu'une playlist YouTube
+        classique — doit être détecté comme provider `youtube`, pas rejeté
+        en `UnrecognizedUrlError` (bug corrigé : host absent de
+        `_YOUTUBE_HOSTS`)."""
+        fake_tracks = [
+            ExtractedTrack(title="Vid A", artist="Channel A", youtube_video_id="vid123"),
+        ]
+        with patch("app.blindtest.providers.youtube.fetch_tracks", return_value=fake_tracks), \
+             patch("app.blindtest.matching.match_playlist_tracks"):
+            resp = blindtest_client.post(
+                "/blindtest/playlists",
+                json={"url": "https://music.youtube.com/playlist?list=PLxyz123"},
+            )
+
+        assert resp.status_code == 201
+        assert resp.json()["provider"] == "youtube"
+
     def test_failure_after_first_track_cache_store_leaves_no_partial_write(self, blindtest_client, blindtest_engine):
         """`cache.store()` (appelé pour le premier morceau, déjà résolu en
         YouTube direct) ne doit plus commiter en interne : si la boucle

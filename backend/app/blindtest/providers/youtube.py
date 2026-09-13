@@ -3,8 +3,11 @@
 YouTube : `youtube_video_id` est peuplé directement, aucun matching requis
 (contrairement à Spotify/Apple Music, résolus en Story 1.2).
 
-Détection : host `youtube.com`/`www.youtube.com`/`m.youtube.com`/`youtu.be`
-avec un paramètre `list=`.
+Détection : host `youtube.com`/`www.youtube.com`/`m.youtube.com`/`youtu.be`/
+`music.youtube.com` avec un paramètre `list=` — une playlist YouTube Music
+partage le même identifiant de playlist et la même API `playlistItems.list`
+qu'une playlist YouTube classique, aucune branche d'extraction distincte
+n'est nécessaire.
 """
 import os
 from typing import List, Optional
@@ -17,7 +20,7 @@ from app.blindtest.extraction_types import ExtractedTrack
 
 _API_BASE = "https://www.googleapis.com/youtube/v3/playlistItems"
 
-_YOUTUBE_HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"}
+_YOUTUBE_HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be", "music.youtube.com"}
 _MAX_PAGES = 50
 
 
