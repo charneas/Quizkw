@@ -312,12 +312,23 @@ def _draw_eligible_track(db: Session, game: Game) -> Optional[Track]:
     suivants. Le filtre `notin_` n'est appliqué que si l'ensemble est
     non-vide : une clause `NOT IN ()` vide se comporte différemment (parfois
     toujours fausse) selon les moteurs SQL, mieux vaut l'éviter explicitement
-    plutôt que de compter sur SQLAlchemy pour bien la neutraliser."""
+    plutôt que de compter sur SQLAlchemy pour bien la neutraliser.
+
+    Story 8 (spec-blindtest-integration-ui) : exclut aussi tout morceau dont
+    le propriétaire (`Playlist.owner_pseudo`) n'est plus connecté à cette
+    partie. Comme l'éligibilité est recalculée à chaque tirage (rien n'est
+    mis en cache), ce filtre retire ET réintègre automatiquement les
+    morceaux d'un joueur au fil de ses déconnexions/reconnexions, sans état
+    supplémentaire à gérer. `.in_([])` (aucun joueur connecté) est un SQL
+    bien défini — contrairement au piège `notin_([])` documenté ci-dessus,
+    pas besoin de garde explicite ici."""
+    connected_pseudos = connection_manager.players(game.code)
     query = (
         db.query(Track)
         .join(Playlist, Track.playlist_id == Playlist.id)
         .filter(
             Playlist.game_id == game.id,
+            Playlist.owner_pseudo.in_(connected_pseudos),
             Track.youtube_video_id.isnot(None),
             Track.duration_seconds.isnot(None),
             Track.duration_seconds > 0,

@@ -393,6 +393,57 @@ class TestStartGame:
                 msg2 = ws2.receive_json()
                 assert msg2["payload"]["phase"] == "lobby"
 
+    def test_disconnected_owners_track_is_not_drawable(self, blindtest_client, blindtest_engine):
+        """Story 8 (spec-blindtest-integration-ui, CAP-7) : le seul morceau du
+        pot appartient à Bob, qui n'est jamais connecté -- le tirage doit se
+        comporter comme un pot vide (aucun round ne démarre)."""
+        code = _create_game(blindtest_client)
+        _add_track(blindtest_engine, code, owner_pseudo="Bob")
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+
+            ws1.send_json({"type": "start_game", "payload": {}})
+
+            # Même vérification que test_empty_pot_is_silently_ignored : un
+            # nouveau joignant doit voir la partie toujours en `lobby`.
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
+                ws2.send_json({"type": "join", "payload": {"pseudo": "Carol"}})
+                msg2 = ws2.receive_json()
+                assert msg2["payload"]["phase"] == "lobby"
+
+    def test_reconnected_owners_track_becomes_drawable_again(self, blindtest_client, blindtest_engine):
+        """Story 8 (CAP-8, nice-to-have) : le morceau de Bob redevient tirable
+        dès qu'il se reconnecte, sans action explicite de "réintégration"."""
+        code = _create_game(blindtest_client)
+        _add_track(blindtest_engine, code, owner_pseudo="Bob")
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+
+            # Bob rejoint puis repart aussitôt -- son morceau redevient
+            # inéligible (couvert par le test précédent), avant de revenir.
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws_bob_gone:
+                ws_bob_gone.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                ws_bob_gone.receive_json()
+                ws1.receive_json()  # Alice voit Bob arriver
+            ws1.receive_json()  # Alice voit Bob repartir
+
+            # Bob se reconnecte -- son morceau redevient éligible.
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws_bob_back:
+                ws_bob_back.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                ws_bob_back.receive_json()
+                ws1.receive_json()  # Alice voit Bob revenir
+
+                ws1.send_json({"type": "start_game", "payload": {}})
+                state1 = ws1.receive_json()  # game_state {phase: round_started}
+                assert state1["payload"]["phase"] == "round_started"
+                round1 = ws1.receive_json()
+                assert round1["type"] == "round_started"
+                assert round1["payload"]["videoId"] == "abc123"
+
     def test_duplicate_start_is_a_noop(self, blindtest_client, blindtest_engine):
         code = _create_game(blindtest_client)
         _add_track(blindtest_engine, code)
