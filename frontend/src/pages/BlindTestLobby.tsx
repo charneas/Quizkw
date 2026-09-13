@@ -6,6 +6,18 @@ import { importBlindtestPlaylist } from '../services/api'
 import Scoreboard from '../components/Scoreboard'
 import type { BlindtestRevealPayload } from '../types'
 
+// Story 4 (spec-blindtest-integration-ui) : hash déterministe d'un pseudo,
+// utilisé comme `Team.id` (React key) pour le scoreboard réutilisé — stable
+// d'un render à l'autre pour un même pseudo, contrairement à un index de
+// tableau dont l'ordre dépend de `Object.keys` côté serveur.
+function hashPseudo(pseudo: string): number {
+  let hash = 0
+  for (let i = 0; i < pseudo.length; i++) {
+    hash = (hash * 31 + pseudo.charCodeAt(i)) | 0
+  }
+  return hash
+}
+
 /**
  * Lobby blind-test (Story 2.1) : saisie de pseudo + bouton pour rejoindre,
  * puis liste des joueurs présents mise à jour en temps réel via
@@ -325,11 +337,15 @@ export default function BlindTestLobby() {
               lit que `.id`/`.name`/`.score` — les autres champs `Team` sont
               des valeurs de remplissage sans effet sur le rendu. */}
           <Scoreboard
-            teams={players.map((p, index) => ({
-              // `Team.id` sert de clé React dans `Scoreboard.tsx` — un id
-              // constant dupliquerait la clé entre joueurs (pas de vrai
-              // id numérique côté blindtest, pas de `Player` DB table).
-              id: index,
+            teams={players.map((p) => ({
+              // `Team.id` sert de clé React dans `Scoreboard.tsx` (pas de
+              // vrai id numérique côté blindtest, pas de `Player` DB table).
+              // Dérivé du pseudo (hash stable), pas de l'index dans
+              // `players` : `players` vient de `Object.keys` du dict de
+              // connexions côté serveur, dont l'ordre bouge à chaque
+              // (re)connexion — un id basé sur l'index ferait remonter
+              // toute la liste sans raison à chaque reconnexion d'un tiers.
+              id: hashPseudo(p),
               name: p,
               score: scores[p] ?? 0,
               game_session_id: 0,

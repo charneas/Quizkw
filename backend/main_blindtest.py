@@ -578,6 +578,12 @@ async def _advance_round(game_id: int, game_code: str) -> None:
         if track is None:
             game.phase = "ended"
             db.commit()
+            # `final_scores` (Story 2.7, classement terminal) et `scores`
+            # (Story 4, `game_id=` ci-dessous) portent volontairement le même
+            # contenu ici : `final_scores` reste le contrat existant/testé
+            # pour l'écran `ended`, `scores` est le contrat générique ajouté
+            # par Story 4 pour le scoreboard permanent des autres phases —
+            # aucune divergence possible, les deux lisent `score_store.snapshot`.
             await connection_manager.broadcast_game_state(
                 game_code,
                 {
