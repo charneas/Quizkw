@@ -131,9 +131,6 @@ backlog détaillé.
 - `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` : credentials Client
   Credentials Spotify (app-level, pas d'OAuth utilisateur) pour l'import de
   playlists Spotify.
-- `SOUNDCLOUD_CLIENT_ID` / `SOUNDCLOUD_CLIENT_SECRET` : credentials Client
-  Credentials SoundCloud (app-level, pas d'OAuth utilisateur) pour l'import
-  de sets SoundCloud.
 - `YOUTUBE_API_KEY` : clé API YouTube Data pour l'import de playlists
   YouTube.
 - `IDONTHAVESPOTIFY_BASE_URL` : URL de base du service self-hosted
