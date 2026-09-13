@@ -246,18 +246,26 @@ export default function BlindTestLobby() {
   }
 
   return (
-    <div className="max-w-md mx-auto p-6 space-y-4">
-      {/* Story 1 (spec-blindtest-integration-ui) : visible dans toutes les
-          phases (partagent ce même retour racine) pour laisser un moyen de
-          sortir de l'écran blindtest à tout moment. */}
-      <button
-        onClick={() => navigate('/')}
-        className="text-text-muted text-sm hover:text-text underline"
-      >
-        ← Retour à l'accueil
-      </button>
+    // Story 6 (spec-blindtest-integration-ui) : même système de layout
+    // plein écran que Home.tsx (min-h-screen flex) au lieu d'un conteneur
+    // sans notion de hauteur — corrige le rendu "tout tassé en haut".
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="max-w-md w-full space-y-4">
+        {/* Story 1 (spec-blindtest-integration-ui) : visible dans toutes les
+            phases (partagent ce même retour racine) pour laisser un moyen de
+            sortir de l'écran blindtest à tout moment. */}
+        <button
+          onClick={() => navigate('/')}
+          className="text-text-muted text-sm hover:text-text underline"
+        >
+          ← Retour à l'accueil
+        </button>
 
-      <h1 className="text-xl font-semibold">Blind test — Lobby {code}</h1>
+        {/* Story 6 : `text-accent` (magenta Neon Pit Lane) comme identité de
+            section blindtest — usage restreint au texte/bordures, jamais en
+            fond de bouton (DESIGN.md Do's/Don'ts : accent parcimonieux,
+            jamais en fond de grande surface). */}
+        <h1 className="text-xl font-semibold text-accent">Blind test — Lobby {code}</h1>
 
       {error && <p className="text-sm text-red-500">{error}</p>}
 
@@ -457,6 +465,7 @@ export default function BlindTestLobby() {
           </div>
         </div>
       )}
+      </div>
     </div>
   )
 }

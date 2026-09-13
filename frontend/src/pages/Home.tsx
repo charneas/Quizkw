@@ -182,8 +182,12 @@ function Home() {
             une partie blindtest par code — mirroir exact de la carte
             "Rejoindre une partie" ci-dessus, aucune copie explicative sur la
             création (manuelle pour l'instant, hors scope). */}
+        {/* Story 6 (spec-blindtest-integration-ui) : `text-accent` (magenta
+            Neon Pit Lane) sur le titre, seule touche de couleur distincte du
+            quiz — usage restreint au texte, jamais en fond (DESIGN.md
+            Do's/Don'ts). */}
         <div className="card">
-          <h2 className="text-xl font-semibold mb-4">🎵 Blindtest</h2>
+          <h2 className="text-xl font-semibold mb-4 text-accent">🎵 Blindtest</h2>
           <div className="flex flex-col sm:flex-row gap-3">
             <input
               type="text"
