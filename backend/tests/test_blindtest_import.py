@@ -117,6 +117,31 @@ class TestSpotifyImport:
         assert playlists == 0
         assert tracks == 0
 
+    def test_spotify_premium_required_403_is_config_error_not_private_playlist(self):
+        """Régression : Spotify répond 403 avec un corps mentionnant
+        "premium subscription" quand le compte propriétaire de l'app n'a pas
+        Premium — rien à voir avec la playlist ciblée (peut être publique et
+        valide). Doit lever ProviderConfigError (503, message actionnable),
+        jamais PrivatePlaylistError (422, message trompeur "privée/introuvable")."""
+        from app.blindtest.providers import spotify
+
+        token_resp = MagicMock(status_code=200)
+        token_resp.json.return_value = {"access_token": "fake-token"}
+
+        premium_resp = MagicMock(status_code=403)
+        premium_resp.text = "Active premium subscription required for the owner of the app."
+
+        with patch("httpx.Client") as client_cls, \
+             patch.dict(os.environ, {"SPOTIFY_CLIENT_ID": "id", "SPOTIFY_CLIENT_SECRET": "secret"}):
+            mock_client = client_cls.return_value.__enter__.return_value
+            mock_client.post.return_value = token_resp
+            mock_client.get.return_value = premium_resp
+
+            with pytest.raises(ProviderConfigError) as exc_info:
+                spotify.fetch_tracks(SPOTIFY_URL)
+
+        assert "Premium" in str(exc_info.value)
+
 
 class TestYoutubeImport:
     def test_valid_youtube_playlist_tracks_already_have_video_id(self, blindtest_client, blindtest_engine):

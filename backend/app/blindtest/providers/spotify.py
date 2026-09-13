@@ -70,6 +70,17 @@ def fetch_tracks(url: str) -> List[ExtractedTrack]:
                 raise PrivatePlaylistError("Playlist Spotify : trop de pages, extraction interrompue")
 
             resp = client.get(next_url, headers=headers)
+            if resp.status_code == 403 and "premium subscription" in resp.text.lower():
+                # Restriction Spotify (2024+) : l'endpoint playlists/{id}/tracks
+                # exige que le compte propriétaire de l'app (SPOTIFY_CLIENT_ID)
+                # ait un abonnement Premium actif — n'a rien à voir avec la
+                # playlist ciblée (peut être publique et parfaitement valide).
+                # Ne pas confondre avec une vraie playlist privée/introuvable.
+                raise ProviderConfigError(
+                    "spotify",
+                    "compte Spotify associé à SPOTIFY_CLIENT_ID sans abonnement Premium actif "
+                    "(requis par l'API Spotify pour lister les morceaux d'une playlist)",
+                )
             if resp.status_code in (403, 404):
                 raise PrivatePlaylistError("Playlist Spotify privée, introuvable ou supprimée")
             resp.raise_for_status()
