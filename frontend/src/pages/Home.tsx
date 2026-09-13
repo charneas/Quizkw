@@ -17,6 +17,7 @@ const WHEEL_FREQUENCY_OPTIONS = [5, 10]
 function Home() {
   const navigate = useNavigate()
   const [joinCode, setJoinCode] = useState('')
+  const [blindtestCode, setBlindtestCode] = useState('')
   const [totalPlayers, setTotalPlayers] = useState(6)
   const [playersPerTeam, setPlayersPerTeam] = useState(2)
   const [questionCount, setQuestionCount] = useState(20)
@@ -72,6 +73,12 @@ function Home() {
   const handleJoinGame = () => {
     if (joinCode.trim()) {
       navigate(`/lobby/${joinCode.trim().toUpperCase()}`)
+    }
+  }
+
+  const handleJoinBlindtest = () => {
+    if (blindtestCode.trim()) {
+      navigate(`/blindtest/${blindtestCode.trim().toUpperCase()}`)
     }
   }
 
@@ -149,6 +156,32 @@ function Home() {
             <button
               onClick={handleJoinGame}
               disabled={!joinCode.trim()}
+              className="btn-primary whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Rejoindre
+            </button>
+          </div>
+        </div>
+
+        {/* Blindtest (spec-blindtest-integration-ui, story 1) : rejoindre
+            une partie blindtest par code — mirroir exact de la carte
+            "Rejoindre une partie" ci-dessus, aucune copie explicative sur la
+            création (manuelle pour l'instant, hors scope). */}
+        <div className="card">
+          <h2 className="text-xl font-semibold mb-4">🎵 Blindtest</h2>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <input
+              type="text"
+              placeholder="Code de la partie"
+              value={blindtestCode}
+              onChange={(e) => setBlindtestCode(e.target.value.toUpperCase())}
+              onKeyDown={(e) => e.key === 'Enter' && handleJoinBlindtest()}
+              className="input-field uppercase tracking-widest text-center text-lg"
+              maxLength={6}
+            />
+            <button
+              onClick={handleJoinBlindtest}
+              disabled={!blindtestCode.trim()}
               className="btn-primary whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Rejoindre

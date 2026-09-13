@@ -49,8 +49,9 @@ function App() {
           <Route path="/admin/propositions/rejected" element={<AdminPropositionsRejected />} />
           <Route path="/admin/propositions/:id/edit" element={<AdminPropositionEdit />} />
           <Route path="/admin/blindtest" element={<AdminBlindtestReconciliation />} />
-          {/* Story 2.1 : atteignable directement par URL avec un code, pas
-              de point d'entrée dans la navigation existante (hors scope). */}
+          {/* Story 1 (spec-blindtest-integration-ui) : accessible depuis la
+              carte "Blindtest" de la home (rejoindre par code), en plus de
+              l'accès direct par URL. */}
           <Route path="/blindtest/:code" element={<BlindTestLobby />} />
           <Route path="/admin/stats" element={<AdminStats />} />
           <Route path="/proposer" element={<Propositions />} />

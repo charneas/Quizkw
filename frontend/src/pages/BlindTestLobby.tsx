@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { BlindtestSocket } from '../lib/blindtestSocket'
 import { createHiddenPlayer, type YouTubePlayer } from '../lib/youtubePlayer'
 import { importBlindtestPlaylist } from '../services/api'
@@ -8,9 +8,9 @@ import type { BlindtestRevealPayload } from '../types'
 /**
  * Lobby blind-test (Story 2.1) : saisie de pseudo + bouton pour rejoindre,
  * puis liste des joueurs présents mise à jour en temps réel via
- * `game_state`. Atteint directement par URL avec un code (`/blindtest/:code`)
- * — pas de point d'entrée dans la navigation existante, hors scope de cette
- * story (cf. Code Map de la spec).
+ * `game_state`. Atteint par URL avec un code (`/blindtest/:code`), y compris
+ * depuis la carte "Blindtest" de la home (spec-blindtest-integration-ui,
+ * story 1).
  *
  * Story 2.2 : une fois `joined`, un formulaire d'import de playlist scopé
  * à cette partie/pseudo apparaît (mirroir du pattern pseudo-form ci-dessus :
@@ -18,6 +18,7 @@ import type { BlindtestRevealPayload } from '../types'
  */
 export default function BlindTestLobby() {
   const { code = '' } = useParams<{ code: string }>()
+  const navigate = useNavigate()
   const [pseudo, setPseudo] = useState('')
   const [joined, setJoined] = useState(false)
   const [isJoining, setIsJoining] = useState(false)
@@ -215,6 +216,16 @@ export default function BlindTestLobby() {
 
   return (
     <div className="max-w-md mx-auto p-6 space-y-4">
+      {/* Story 1 (spec-blindtest-integration-ui) : visible dans toutes les
+          phases (partagent ce même retour racine) pour laisser un moyen de
+          sortir de l'écran blindtest à tout moment. */}
+      <button
+        onClick={() => navigate('/')}
+        className="text-text-muted text-sm hover:text-text underline"
+      >
+        ← Retour à l'accueil
+      </button>
+
       <h1 className="text-xl font-semibold">Blind test — Lobby {code}</h1>
 
       {error && <p className="text-sm text-red-500">{error}</p>}
