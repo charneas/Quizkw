@@ -378,6 +378,16 @@ export interface BlindtestRoundStartedPayload {
   startSeconds: number
 }
 
+// Story 2.6 : payload de `reveal`, poussé par le serveur à la clôture du
+// round (tous les joueurs présents non-propriétaires ont répondu, ou
+// minuteur serveur écoulé). `scores` est toujours le snapshot cumulatif
+// complet (tous les joueurs présents, propriétaire inclus), jamais un delta
+// de round (epic-2-context.md : convention "état complet" de `game_state`).
+export interface BlindtestRevealPayload {
+  owner_pseudo: string
+  scores: Record<string, number>
+}
+
 // === Blind-test — import de playlist scopé à une partie (Story 2.2) ===
 
 export interface BlindtestTrack {

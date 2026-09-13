@@ -3,6 +3,7 @@
 `main_games.py` pour la forme (APIRouter, Depends(get_db), limiter) mais
 branché sur la DB isolée `app.blindtest.database` (AD-7).
 """
+import asyncio
 import logging
 import random
 from typing import List, Optional
@@ -13,9 +14,9 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.auth import require_admin_session
 from app.blindtest import cache, matching, schemas
-from app.blindtest.database import get_db
+from app.blindtest.database import SessionLocal, get_db
 from app.blindtest.errors import PrivatePlaylistError, ProviderConfigError, UnrecognizedUrlError
-from app.blindtest.game_connections import guess_store
+from app.blindtest.game_connections import guess_store, score_store
 from app.blindtest.game_connections import manager as connection_manager
 from app.blindtest.import_pipeline import extract_tracks
 from app.blindtest.models import Game, Playlist, Track
@@ -25,6 +26,37 @@ from app.rate_limit import limiter
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Story 2.6 : durée fixe (secondes) du minuteur serveur qui clôture un round
+# si tous les joueurs présents non-propriétaires n'ont pas répondu avant.
+# Module-level pour être monkeypatché par les tests (valeur réduite sur le
+# chemin de test qui exerce réellement le timeout).
+ROUND_GUESS_SECONDS = 30
+
+# Story 2.6 (revue de code) : référence forte vers la tâche `_round_timer` en
+# vol de chaque partie, indexée par `game_id`. `asyncio.create_task` ne garde
+# qu'une référence faible côté event loop — sans ceci, la tâche peut être
+# ramassée par le GC avant de se déclencher (piège documenté d'asyncio),
+# désactivant silencieusement le filet de sécurité de clôture en production.
+# Indexer par `game_id` (plutôt qu'un simple `set`) permet aussi d'annuler
+# immédiatement le minuteur d'un round clôturé par avance (`_close_round`,
+# via `_cancel_round_timer`) au lieu de le laisser dormir inutilement jusqu'à
+# `ROUND_GUESS_SECONDS` — sans ça, une connexion de test (ou un client réel)
+# qui se ferme pendant que la tâche est encore en vol attend sa fin avant de
+# pouvoir se terminer (constaté : ~30s de plus par test concerné).
+_round_timer_tasks: dict = {}
+
+
+def _cancel_round_timer(game_id: int) -> None:
+    """Annule la tâche `_round_timer` encore en vol pour `game_id`, si elle
+    existe. Ne s'auto-annule jamais : quand `_close_round` est appelé DEPUIS
+    `_round_timer` lui-même (clôture par timeout), la tâche courante EST
+    cette tâche — l'annuler ferait lever `CancelledError` au prochain
+    `await` (le `broadcast` du `reveal` juste après), empêchant le message
+    d'être envoyé."""
+    task = _round_timer_tasks.pop(game_id, None)
+    if task is not None and not task.done() and task is not asyncio.current_task():
+        task.cancel()
 
 # Codes de fermeture WS custom (plage 4400-4409, réservée à l'usage
 # applicatif par la RFC 6455) — cf. Design Notes de
@@ -306,27 +338,149 @@ def _handle_start_game(db: Session, game: Game, requesting_pseudo: str) -> Optio
     return {"videoId": track.youtube_video_id, "startSeconds": start_seconds}
 
 
-def _handle_guess_submitted(db: Session, game: Game, pseudo: str, payload: dict, game_code: str) -> None:
+def _resolve_owner_pseudo(db: Session, game: Game) -> Optional[str]:
+    """Résout le vrai propriétaire du round en cours : `game.current_track_id`
+    -> `Track` -> `Track.playlist_id` -> `Playlist.owner_pseudo`. `None` si
+    `current_track_id` n'est pas renseigné (défensif, ne devrait pas arriver
+    une fois `phase == "round_started"`)."""
+    if game.current_track_id is None:
+        return None
+    track = db.query(Track).filter(Track.id == game.current_track_id).first()
+    if track is None:
+        return None
+    playlist = db.query(Playlist).filter(Playlist.id == track.playlist_id).first()
+    if playlist is None:
+        return None
+    return playlist.owner_pseudo
+
+
+def _close_round(db: Session, game: Game, game_code: str) -> Optional[dict]:
+    """Clôture le round en cours (Story 2.6) : calcule et cumule le score de
+    chaque joueur présent non-propriétaire à partir de sa devinette stockée
+    (`guess_store`), fait passer la partie en phase `reveal` et renvoie le
+    payload `reveal {owner_pseudo, scores}` à diffuser.
+
+    Transition à usage unique (mirroir de `_handle_start_game`) : si la
+    partie n'est plus en `round_started` au moment de l'appel (déjà clôturée
+    par l'autre chemin d'appel — clôture anticipée vs minuteur), no-op
+    silencieux qui renvoie `None` — c'est ce qui rend inoffensif un minuteur
+    qui se déclenche après une clôture anticipée, et vice versa.
+
+    La clôture anticipée et le minuteur tournent sur deux sessions DB
+    distinctes : un `SELECT` (`db.refresh`) puis un `if` séparé serait un
+    check-then-act non atomique — les deux pourraient lire `round_started`
+    avant que l'un des deux n'ait commité la transition, et scorer tout le
+    monde deux fois (revue de code, race confirmée par exécutions répétées).
+    La transition de phase sert donc elle-même de verrou : l'`UPDATE ...
+    WHERE phase = 'round_started'` ne peut affecter une ligne que pour un
+    seul appelant, quel que soit le nombre de sessions qui le tentent en
+    même temps."""
+    claimed = (
+        db.query(Game)
+        .filter(Game.id == game.id, Game.phase == "round_started")
+        .update({"phase": "reveal"})
+    )
+    db.commit()
+    if claimed == 0:
+        return None
+
+    # Round réellement clôturé par CET appel : si un minuteur est encore en
+    # vol pour cette partie, l'annuler tout de suite plutôt que de le
+    # laisser dormir pour rien jusqu'à `ROUND_GUESS_SECONDS` (revue de code
+    # — voir le commentaire de `_round_timer_tasks`).
+    _cancel_round_timer(game.id)
+
+    # Pas de `db.refresh(game)` ici (revue de code) : les deux appelants ont
+    # déjà un `game.current_track_id` à jour avant d'entrer dans cette
+    # fonction (refresh explicite juste avant dans `_handle_guess_submitted`,
+    # lecture fraîche dans `_round_timer`), et ce champ ne change jamais tant
+    # que `round_started` — un second aller-retour DB ici n'apporterait rien
+    # et ajoute une fenêtre de contention inutile avec l'autre session sur
+    # la même connexion (StaticPool des tests).
+    owner_pseudo = _resolve_owner_pseudo(db, game)
+
+    # Union des joueurs actuellement présents et de ceux ayant une devinette
+    # stockée pour ce round (revue de code) : un joueur qui a soumis une
+    # devinette valide puis s'est déconnecté avant la clôture doit tout de
+    # même être scoré — seule la vérification "tous ont répondu" de
+    # `_handle_guess_submitted` doit se limiter aux joueurs actuellement
+    # présents (un non-répondant déconnecté ne doit plus bloquer la
+    # clôture).
+    scoreable_pseudos = set(connection_manager.players(game_code)) | guess_store.known_pseudos(game.id)
+
+    for pseudo in scoreable_pseudos:
+        if pseudo == owner_pseudo:
+            # Le propriétaire n'est pas scoré sur son propre round, mais on
+            # garantit tout de même sa présence dans le snapshot (Boundaries
+            # de la spec) via un ajout à delta 0.
+            score_store.add(game.id, pseudo, 0)
+            continue
+
+        guess = guess_store.get_guess(game.id, pseudo) or []
+        delta = 2 if owner_pseudo in guess else 0
+        delta -= sum(1 for name in guess if name != owner_pseudo)
+        score_store.add(game.id, pseudo, delta)
+
+    return {"owner_pseudo": owner_pseudo, "scores": score_store.snapshot(game.id)}
+
+
+async def _round_timer(game_id: int, game_code: str, track_id: int) -> None:
+    """Minuteur serveur (Story 2.6) : clôture le round après
+    `ROUND_GUESS_SECONDS` si personne ne l'a déjà fait via la clôture
+    anticipée de `_handle_guess_submitted`. Tâche de fond démarrée juste
+    après un `start_game` réussi — ne peut pas réutiliser la session DB
+    scopée à une requête/connexion WS (celle-ci peut fermer avant que le
+    minuteur ne se déclenche), d'où sa propre `SessionLocal()` ouverte et
+    fermée entièrement ici (cf. Design Notes de la spec)."""
+    await asyncio.sleep(ROUND_GUESS_SECONDS)
+
+    db = SessionLocal()
+    try:
+        game = db.query(Game).filter(Game.id == game_id).first()
+        if game is None or game.phase != "round_started" or game.current_track_id != track_id:
+            # Défense en profondeur en plus du guard de phase dans
+            # `_close_round` : cette épopée n'avance jamais vers un second
+            # round dans cette story, mais la vérification ne coûte rien et
+            # reste correcte une fois la Story 2.7 ajoutée.
+            return
+        payload = _close_round(db, game, game_code)
+        if payload is not None:
+            await connection_manager.broadcast(game_code, "reveal", payload)
+    except Exception:
+        # Tâche de fond détachée : rien d'autre n'observe une exception levée
+        # ici, on se contente de la journaliser.
+        logger.exception("Erreur dans le minuteur de round (game_id=%s)", game_id)
+    finally:
+        db.close()
+
+
+def _handle_guess_submitted(db: Session, game: Game, pseudo: str, payload: dict, game_code: str) -> Optional[dict]:
     """Traite un message `guess_submitted` (Story 2.5) : vérifie la phase et
     la validité de la sélection, puis enregistre la devinette en mémoire
-    (`guess_store`). Aucune diffusion, aucune réponse — un no-op silencieux
-    sur tout échec de validation (même convention que `_handle_start_game`,
-    cf. matrice I/O de la spec) : phase incorrecte, sélection vide/absente,
-    ou tout pseudo listé qui n'est pas actuellement présent dans cette
-    partie (rejet total de la soumission, pas d'application partielle)."""
+    (`guess_store`). Un no-op silencieux sur tout échec de validation (même
+    convention que `_handle_start_game`, cf. matrice I/O de la spec) : phase
+    incorrecte, sélection vide/absente, ou tout pseudo listé qui n'est pas
+    actuellement présent dans cette partie (rejet total de la soumission,
+    pas d'application partielle) — renvoie alors `None`.
+
+    Story 2.6 : après un enregistrement réussi, vérifie la clôture anticipée
+    — si tous les joueurs présents non-propriétaires ont désormais une
+    devinette stockée, clôture le round via `_close_round` et renvoie son
+    payload `reveal` (ou `None` si une course a déjà clôturé le round
+    entre-temps, ou si tout le monde n'a pas encore répondu)."""
     db.refresh(game)
     if game.phase != "round_started":
-        return
+        return None
 
     target_player_ids = payload.get("target_player_ids") if isinstance(payload, dict) else None
     if not isinstance(target_player_ids, list) or not target_player_ids:
-        return
+        return None
     if not all(isinstance(pid, str) for pid in target_player_ids):
-        return
+        return None
 
     present_players = set(connection_manager.players(game_code))
     if not all(pid in present_players for pid in target_player_ids):
-        return
+        return None
 
     # Dédoublonne en préservant l'ordre : un pseudo répété (`["Bob","Bob"]`)
     # ne doit pas être compté plusieurs fois par la règle de score
@@ -334,6 +488,13 @@ def _handle_guess_submitted(db: Session, game: Game, pseudo: str, payload: dict,
     target_player_ids = list(dict.fromkeys(target_player_ids))
 
     guess_store.submit(game.id, pseudo, target_player_ids)
+
+    owner_pseudo = _resolve_owner_pseudo(db, game)
+    non_owner_present = {p for p in present_players if p != owner_pseudo}
+    if non_owner_present and non_owner_present.issubset(guess_store.known_pseudos(game.id)):
+        return _close_round(db, game, game_code)
+
+    return None
 
 
 @game_router.websocket("/blindtest/games/{code}/ws")
@@ -418,10 +579,30 @@ async def game_lobby_ws(websocket: WebSocket, code: str, db: Session = Depends(g
                 round_payload = _handle_start_game(db, game, pseudo)
                 if round_payload is not None:
                     await connection_manager.broadcast(game_code, "round_started", round_payload)
+                    # Story 2.6 : minuteur de clôture démarré en tâche de
+                    # fond juste après un tirage réussi — sa propre session
+                    # DB (`SessionLocal`), indépendante de celle de cette
+                    # connexion WS qui peut fermer avant qu'il ne se
+                    # déclenche (cf. Design Notes de la spec).
+                    timer_task = asyncio.create_task(
+                        _round_timer(game.id, game_code, game.current_track_id)
+                    )
+                    _round_timer_tasks[game.id] = timer_task
+                    timer_task.add_done_callback(
+                        lambda t, gid=game.id: (
+                            _round_timer_tasks.pop(gid, None)
+                            if _round_timer_tasks.get(gid) is t
+                            else None
+                        )
+                    )
             elif isinstance(raw, dict) and raw.get("type") == "guess_submitted":
-                # Story 2.5 : ni diffusion ni réponse — la devinette n'est
-                # visible que côté serveur jusqu'au `reveal` de Story 2.6.
-                _handle_guess_submitted(db, game, pseudo, raw.get("payload"), game_code)
+                # Story 2.5 : aucune diffusion pour l'enregistrement de la
+                # devinette elle-même — Story 2.6 : si cette soumission
+                # clôture le round (tous les joueurs présents non-
+                # propriétaires ont répondu), diffuser le `reveal` résultant.
+                reveal_payload = _handle_guess_submitted(db, game, pseudo, raw.get("payload"), game_code)
+                if reveal_payload is not None:
+                    await connection_manager.broadcast(game_code, "reveal", reveal_payload)
     except WebSocketDisconnect:
         pass
     finally:

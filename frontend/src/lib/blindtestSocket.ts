@@ -1,4 +1,9 @@
-import type { BlindtestGameStatePayload, BlindtestRoundStartedPayload, BlindtestWsEnvelope } from '../types'
+import type {
+  BlindtestGameStatePayload,
+  BlindtestRevealPayload,
+  BlindtestRoundStartedPayload,
+  BlindtestWsEnvelope,
+} from '../types'
 
 /**
  * Client WS minimal pour le lobby blind-test (Story 2.1) : connexion,
@@ -24,6 +29,7 @@ export class BlindtestSocket {
     handlers: {
       onGameState?: (payload: BlindtestGameStatePayload) => void
       onRoundStarted?: (payload: BlindtestRoundStartedPayload) => void
+      onReveal?: (payload: BlindtestRevealPayload) => void
       onClose?: (event: CloseEvent) => void
       onError?: (event: Event) => void
     } = {},
@@ -46,6 +52,8 @@ export class BlindtestSocket {
         handlers.onGameState(envelope.payload as BlindtestGameStatePayload)
       } else if (envelope.type === 'round_started' && handlers.onRoundStarted) {
         handlers.onRoundStarted(envelope.payload as BlindtestRoundStartedPayload)
+      } else if (envelope.type === 'reveal' && handlers.onReveal) {
+        handlers.onReveal(envelope.payload as BlindtestRevealPayload)
       }
     }
 

@@ -108,5 +108,47 @@ class GuessStore:
         scorer contre des devinettes d'un round précédent."""
         self._guesses.pop(game_id, None)
 
+    def get_guess(self, game_id: int, pseudo: str) -> Optional[list[str]]:
+        """Lit la devinette stockée de `pseudo` pour le round en cours de
+        `game_id`, ou `None` si ce joueur n'a rien soumis (Story 2.6 —
+        premier accesseur en lecture, `submit`/`reset_round` suffisaient
+        jusqu'ici)."""
+        return self._guesses.get(game_id, {}).get(pseudo)
+
+    def known_pseudos(self, game_id: int) -> set[str]:
+        """Pseudos ayant une devinette stockée pour le round en cours de
+        `game_id` — utilisé par la clôture anticipée (Story 2.6) pour
+        détecter que tous les joueurs présents non-propriétaires ont
+        répondu."""
+        return set(self._guesses.get(game_id, {}).keys())
+
 
 guess_store = GuessStore()
+
+
+class ScoreStore:
+    """`{game_id: {pseudo: int}}` — score cumulatif en mémoire uniquement
+    (Story 2.6), même convention que `GuessStore`/`ConnectionManager` :
+    aucune persistance, l'état vit et meurt avec le process serveur (pas de
+    `Score` DB table, cf. Boundaries de spec-2-6-reveal-score-cumule.md).
+    Contrairement à `GuessStore`, jamais réinitialisé entre rounds — le
+    score doit s'accumuler depuis le début de la partie."""
+
+    def __init__(self) -> None:
+        self._scores: Dict[int, Dict[str, int]] = {}
+
+    def add(self, game_id: int, pseudo: str, delta: int) -> None:
+        """Crée paresseusement l'entrée de `pseudo` à 0 puis ajoute `delta`
+        (peut être négatif, pas de plancher à zéro). Appelé aussi avec
+        `delta=0` uniquement pour garantir la présence d'un joueur dans le
+        snapshot (ex. le propriétaire sur son propre round)."""
+        game_scores = self._scores.setdefault(game_id, {})
+        game_scores[pseudo] = game_scores.get(pseudo, 0) + delta
+
+    def snapshot(self, game_id: int) -> dict:
+        """Copie du score cumulatif de tous les joueurs scorés jusqu'ici
+        pour cette partie — payload `reveal.scores`."""
+        return dict(self._scores.get(game_id, {}))
+
+
+score_store = ScoreStore()

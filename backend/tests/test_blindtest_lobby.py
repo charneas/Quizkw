@@ -12,26 +12,49 @@ os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from app.blindtest.database import Base, get_db
-from app.blindtest.game_connections import guess_store
+from app.blindtest.game_connections import guess_store, score_store
 from app.blindtest.game_connections import manager as connection_manager
 from main import app as main_app
 
 
 @pytest.fixture
-def blindtest_engine():
+def blindtest_engine(tmp_path):
+    # Story 2.6 (revue de code) : un fichier SQLite réel sous `tmp_path`
+    # plutôt qu'un `:memory:` partagé via `StaticPool`. Les connexions WS de
+    # ce fichier de tests tournent chacune sur son propre thread OS réel
+    # (chaque `websocket_connect()` de `starlette.testclient` ouvre son
+    # propre portail/thread tant que le `TestClient` n'est pas utilisé en
+    # `with`) ; `StaticPool` forçait plusieurs `Session` SQLAlchemy
+    # indépendantes à partager UNE seule connexion DBAPI sqlite3 brute entre
+    # ces threads, ce qui corrompait sporadiquement l'état de session de
+    # SQLAlchemy sous écriture concurrente réelle (minuteur de round vs
+    # clôture anticipée d'un autre joueur) — observé en boucle comme
+    # `InvalidRequestError: Could not refresh instance`. Un fichier réel
+    # donne une connexion DBAPI distincte par session/thread (pool normal),
+    # avec le verrouillage natif de SQLite (+ `busy_timeout`, même rationale
+    # que `app/blindtest/database.py`) pour sérialiser les écritures — ce
+    # qui reflète aussi fidèlement la prod (fichier `blindtest.db`), jamais
+    # un `:memory:`.
+    db_path = tmp_path / "blindtest_test.db"
     engine = create_engine(
-        "sqlite:///:memory:",
+        f"sqlite:///{db_path}",
         connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
     )
+
+    @event.listens_for(engine, "connect")
+    def _set_sqlite_busy_timeout(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA busy_timeout = 5000")
+        cursor.close()
+
     Base.metadata.create_all(bind=engine)
     yield engine
     Base.metadata.drop_all(bind=engine)
+    engine.dispose()
 
 
 @pytest.fixture
@@ -51,6 +74,7 @@ def blindtest_client(blindtest_engine):
     main_app.dependency_overrides.clear()
     connection_manager._games.clear()
     guess_store._guesses.clear()
+    score_store._scores.clear()
 
 
 def _create_game(client) -> str:
@@ -213,17 +237,21 @@ class TestDisconnect:
             assert msg1["payload"]["players"] == ["Alice"]
 
 
-def _add_track(engine, game_code: str, *, youtube_video_id="abc123", duration_seconds=100) -> None:
+def _add_track(engine, game_code: str, *, youtube_video_id="abc123", duration_seconds=100, owner_pseudo="Alice") -> None:
     """Insère directement une `Playlist`+`Track` scopées à `game_code`, sans
     passer par le pipeline d'import (hors scope de cette story) — juste ce
-    qu'il faut pour rendre un morceau éligible (ou non) au tirage de round."""
+    qu'il faut pour rendre un morceau éligible (ou non) au tirage de round.
+
+    `owner_pseudo` (Story 2.6) était jusqu'ici toujours "Alice" en dur —
+    rendu surchargeable pour les tests de reveal/score qui ont besoin d'un
+    propriétaire distinct de l'hôte."""
     from app.blindtest.models import Game, Playlist, Track
 
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     db = SessionLocal()
     try:
         game = db.query(Game).filter(Game.code == game_code).first()
-        playlist = Playlist(source_url="https://example.com", provider="youtube", game_id=game.id, owner_pseudo="Alice")
+        playlist = Playlist(source_url="https://example.com", provider="youtube", game_id=game.id, owner_pseudo=owner_pseudo)
         db.add(playlist)
         db.flush()
         db.add(Track(
@@ -557,6 +585,323 @@ class TestGuessSubmitted:
 
                 gid = _game_id(blindtest_engine, code)
                 assert guess_store._guesses[gid]["Alice"] == ["Bob"]
+
+
+@pytest.fixture
+def blindtest_timer(blindtest_engine, monkeypatch):
+    """Story 2.6 : pointe `main_blindtest.SessionLocal` (utilisé par
+    `_round_timer`, tâche de fond qui ne peut pas réutiliser la session
+    scopée-requête de `get_db`) vers le sessionmaker de la DB de test —
+    mirroir de `override_get_db` de `blindtest_client` mais pour le chemin
+    minuteur, seul à exercer réellement `SessionLocal` (cf. Design Notes de
+    la spec : sans ce monkeypatch, la tâche de fond écrirait silencieusement
+    dans le vrai `blindtest.db` de dev).
+
+    Laisse `ROUND_GUESS_SECONDS` à une valeur volontairement courte mais
+    encore confortable (1s) — assez pour ne jamais se déclencher pendant
+    l'exécution normale d'un test (même un flux à 3 sockets), tout en
+    gardant le coût d'un round non explicitement clôturé avant la fin du
+    test raisonnable. Les tests qui veulent exercer le déclenchement réel du
+    minuteur réduisent `ROUND_GUESS_SECONDS` eux-mêmes, localement (revue de
+    code : un `0.05s` partagé par toute la classe créait une vraie course
+    avec les tests à 3 sockets — le minuteur pouvait se déclencher avant la
+    fin de leur séquence WS et désynchroniser l'ordre de réception attendu
+    par le test, jusqu'au blocage).
+
+    Note : `_close_round` annule activement le minuteur encore en vol dès
+    qu'un round se clôture par avance (`_cancel_round_timer`), mais dans cet
+    environnement de test (event loop porté par le thread `anyio`
+    `BlockingPortal` de `TestClient`), la livraison de l'annulation à la
+    tâche endormie s'est révélée retardée jusqu'à l'écoulement naturel de
+    `ROUND_GUESS_SECONDS` plutôt qu'immédiate — d'où le choix d'une valeur
+    courte ici plutôt que de compter sur l'annulation pour garder les tests
+    rapides. `task.cancel()` reste correct et utile en production (event
+    loop mono-thread standard, sans ce détail d'implémentation du portail de
+    test)."""
+    import main_blindtest
+
+    test_session_local = sessionmaker(autocommit=False, autoflush=False, bind=blindtest_engine)
+    monkeypatch.setattr(main_blindtest, "SessionLocal", test_session_local)
+    monkeypatch.setattr(main_blindtest, "ROUND_GUESS_SECONDS", 1)
+
+
+@pytest.mark.usefixtures("blindtest_timer")
+class TestReveal:
+    """Story 2.6 — matrice I/O de spec-2-6-reveal-score-cumule.md.
+
+    `blindtest_timer` est appliqué à toute la classe (pas seulement aux
+    tests qui exercent explicitement le chemin minuteur) : même les tests
+    qui clôturent via la clôture anticipée démarrent quand même un vrai
+    `_round_timer` en tâche de fond (`_handle_start_game` -> `game_lobby_ws`)
+    — sans ce monkeypatch, ce minuteur réel toucherait le vrai
+    `SessionLocal`/`blindtest.db` de dev (même s'il n'a pas le temps de se
+    déclencher avant la fin du test)."""
+
+    def test_all_answered_closes_round_and_broadcasts_reveal(self, blindtest_client, blindtest_engine):
+        code = _create_game(blindtest_client)
+        _add_track(blindtest_engine, code, owner_pseudo="Alice")
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
+                ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                ws2.receive_json()
+                ws1.receive_json()
+
+                ws1.send_json({"type": "start_game", "payload": {}})
+                ws1.receive_json()  # round_started
+                ws2.receive_json()  # round_started
+
+                # Alice est le propriétaire réel : le seul joueur qui doit
+                # répondre pour clôturer est Bob.
+                ws2.send_json({"type": "guess_submitted", "payload": {"target_player_ids": ["Alice"]}})
+
+                reveal1 = ws1.receive_json()
+                reveal2 = ws2.receive_json()
+                for reveal in (reveal1, reveal2):
+                    assert reveal["type"] == "reveal"
+                    assert reveal["payload"]["owner_pseudo"] == "Alice"
+                    # Owner trouvé seul -> +2 net pour Bob ; Alice (propriétaire,
+                    # non scorée) présente au score 0.
+                    assert reveal["payload"]["scores"] == {"Bob": 2, "Alice": 0}
+
+    def test_owner_plus_wrong_name_nets_plus_one(self, blindtest_client, blindtest_engine):
+        code = _create_game(blindtest_client)
+        _add_track(blindtest_engine, code, owner_pseudo="Alice")
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
+                ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                ws2.receive_json()
+                ws1.receive_json()
+
+                ws1.send_json({"type": "start_game", "payload": {}})
+                ws1.receive_json()
+                ws2.receive_json()
+
+                ws2.send_json(
+                    {"type": "guess_submitted", "payload": {"target_player_ids": ["Alice", "Bob"]}}
+                )
+
+                reveal1 = ws1.receive_json()
+                ws2.receive_json()
+                # +2 (owner trouvé) - 1 (nom incorrect "Bob") = +1 net.
+                assert reveal1["payload"]["scores"]["Bob"] == 1
+
+    def test_owner_missed_wrong_names_nets_negative_no_floor(self, blindtest_client, blindtest_engine):
+        code = _create_game(blindtest_client)
+        _add_track(blindtest_engine, code, owner_pseudo="Alice")
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
+                ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                ws2.receive_json()
+                ws1.receive_json()
+
+                with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws3:
+                    ws3.send_json({"type": "join", "payload": {"pseudo": "Carol"}})
+                    ws3.receive_json()
+                    ws1.receive_json()
+                    ws2.receive_json()
+
+                    ws1.send_json({"type": "start_game", "payload": {}})
+                    ws1.receive_json()
+                    ws2.receive_json()
+                    ws3.receive_json()
+
+                    # Bob et Carol devinent tous les deux sans trouver Alice.
+                    ws2.send_json(
+                        {"type": "guess_submitted", "payload": {"target_player_ids": ["Bob", "Carol"]}}
+                    )
+                    ws3.send_json(
+                        {"type": "guess_submitted", "payload": {"target_player_ids": ["Bob"]}}
+                    )
+
+                    reveal1 = ws1.receive_json()
+                    ws2.receive_json()
+                    ws3.receive_json()
+                    # Bob : 2 noms incorrects sélectionnés (Bob, Carol) -> -2.
+                    assert reveal1["payload"]["scores"]["Bob"] == -2
+                    # Carol : 1 nom incorrect ("Bob") -> -1.
+                    assert reveal1["payload"]["scores"]["Carol"] == -1
+
+    def test_no_guess_scores_zero(self, blindtest_client, blindtest_engine, blindtest_timer, monkeypatch):
+        """Un joueur présent non-propriétaire qui ne soumet jamais de
+        devinette valide (ici : une sélection vide, rejetée en silence par
+        la validation de Story 2.5, donc jamais stockée dans `guess_store`)
+        ne peut donc jamais déclencher la clôture anticipée lui-même — seul
+        le minuteur peut clôturer ce round, et ce joueur doit alors être
+        scoré à 0 (pas de bonus, pas de malus).
+
+        Ce test veut vraiment que le minuteur se déclenche : override local
+        de `ROUND_GUESS_SECONDS` à une valeur courte (`blindtest_timer` la
+        laisse à 10s par défaut pour ne jamais racer les tests qui n'en ont
+        pas besoin)."""
+        import time
+        import main_blindtest
+
+        monkeypatch.setattr(main_blindtest, "ROUND_GUESS_SECONDS", 0.05)
+
+        code = _create_game(blindtest_client)
+        _add_track(blindtest_engine, code, owner_pseudo="Alice")
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
+                ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                ws2.receive_json()
+                ws1.receive_json()
+
+                ws1.send_json({"type": "start_game", "payload": {}})
+                ws1.receive_json()
+                ws2.receive_json()
+
+                # Sélection vide : no-op silencieux (Story 2.5), jamais
+                # stockée -> Bob ne peut jamais déclencher la clôture
+                # anticipée lui-même.
+                ws2.send_json({"type": "guess_submitted", "payload": {"target_player_ids": []}})
+
+                # Laisse le minuteur (0.05s, `blindtest_timer`) clôturer.
+                time.sleep(0.3)
+
+                reveal1 = ws1.receive_json()
+                reveal2 = ws2.receive_json()
+                for reveal in (reveal1, reveal2):
+                    assert reveal["type"] == "reveal"
+                    assert reveal["payload"]["scores"]["Bob"] == 0
+
+    def test_double_close_is_a_noop(self, blindtest_client, blindtest_engine, blindtest_timer, monkeypatch):
+        """Le minuteur (déclenché rapidement via un override local de
+        `ROUND_GUESS_SECONDS`) se déclenche après une clôture anticipée déjà
+        survenue : no-op silencieux, pas de second `reveal`."""
+        import time
+        import main_blindtest
+
+        monkeypatch.setattr(main_blindtest, "ROUND_GUESS_SECONDS", 0.05)
+
+        code = _create_game(blindtest_client)
+        _add_track(blindtest_engine, code, owner_pseudo="Alice")
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
+                ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                ws2.receive_json()
+                ws1.receive_json()
+
+                ws1.send_json({"type": "start_game", "payload": {}})
+                ws1.receive_json()
+                ws2.receive_json()
+
+                ws2.send_json({"type": "guess_submitted", "payload": {"target_player_ids": ["Alice"]}})
+
+                reveal1 = ws1.receive_json()
+                assert reveal1["type"] == "reveal"
+                ws2.receive_json()
+
+                # Laisse le minuteur (0.05s) se déclencher : il doit trouver
+                # la partie déjà hors `round_started` et ne rien rediffuser.
+                time.sleep(0.3)
+
+                with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws3:
+                    ws3.send_json({"type": "join", "payload": {"pseudo": "Carol"}})
+                    ws3.receive_json()
+                    ws1.receive_json()
+                    ws2.receive_json()
+
+                    gid = _game_id(blindtest_engine, code)
+                    assert score_store.snapshot(gid) == {"Bob": 2, "Alice": 0}
+
+    def test_timeout_closes_round_when_not_all_answered(self, blindtest_client, blindtest_engine, blindtest_timer, monkeypatch):
+        import time
+        import main_blindtest
+
+        monkeypatch.setattr(main_blindtest, "ROUND_GUESS_SECONDS", 0.05)
+
+        code = _create_game(blindtest_client)
+        _add_track(blindtest_engine, code, owner_pseudo="Alice")
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
+                ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                ws2.receive_json()
+                ws1.receive_json()
+
+                ws1.send_json({"type": "start_game", "payload": {}})
+                ws1.receive_json()
+                ws2.receive_json()
+
+                # Personne ne répond : seul le minuteur peut clôturer.
+                reveal1 = ws1.receive_json()
+                reveal2 = ws2.receive_json()
+                for reveal in (reveal1, reveal2):
+                    assert reveal["type"] == "reveal"
+                    assert reveal["payload"]["owner_pseudo"] == "Alice"
+                    assert reveal["payload"]["scores"] == {"Bob": 0, "Alice": 0}
+
+    def test_guess_from_disconnected_player_is_still_scored(self, blindtest_client, blindtest_engine):
+        """Revue de code : un joueur qui soumet une devinette valide puis se
+        déconnecte avant la clôture du round doit tout de même être scoré —
+        `_close_round` ne doit pas se limiter aux joueurs actuellement
+        présents (`connection_manager.players`), sinon sa devinette stockée
+        dans `guess_store` serait silencieusement ignorée.
+
+        Simule la déconnexion en injectant directement l'état plutôt qu'en
+        fermant un vrai socket WS pendant qu'un round est actif : fermer une
+        connexion réelle à ce moment précis s'est révélé être une source de
+        flakiness/blocage de l'infrastructure de test (ordre d'arrivée des
+        diffusions asynchrones), sans rapport avec la logique de score
+        elle-même testée ici (déjà vérifiée par lecture directe du code :
+        `scoreable_pseudos` dans `_close_round` fait l'union des joueurs
+        présents et de `guess_store.known_pseudos`)."""
+        code = _create_game(blindtest_client)
+        _add_track(blindtest_engine, code, owner_pseudo="Alice")
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws3:
+                ws3.send_json({"type": "join", "payload": {"pseudo": "Carol"}})
+                ws3.receive_json()
+                ws1.receive_json()
+
+                ws1.send_json({"type": "start_game", "payload": {}})
+                ws1.receive_json()
+                ws3.receive_json()
+
+                # Bob a répondu correctement (+2) puis s'est déconnecté avant
+                # la clôture : jamais réellement connecté via WS dans ce
+                # test, seule sa devinette stockée doit compter.
+                gid = _game_id(blindtest_engine, code)
+                guess_store.submit(gid, "Bob", ["Alice"])
+
+                # Carol répond à son tour : Bob n'étant pas dans le roster
+                # présent, la vérification "tous ont répondu" ne porte que
+                # sur Carol -> clôture anticipée malgré l'absence de Bob.
+                ws3.send_json({"type": "guess_submitted", "payload": {"target_player_ids": ["Alice"]}})
+
+                reveal1 = ws1.receive_json()
+                reveal3 = ws3.receive_json()
+                for reveal in (reveal1, reveal3):
+                    assert reveal["type"] == "reveal"
+                    # Bob a bien été scoré (+2) malgré sa déconnexion.
+                    assert reveal["payload"]["scores"]["Bob"] == 2
 
 
 class TestTwoGamesIsolation:

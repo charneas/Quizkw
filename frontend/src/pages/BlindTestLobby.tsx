@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import { BlindtestSocket } from '../lib/blindtestSocket'
 import { createHiddenPlayer, type YouTubePlayer } from '../lib/youtubePlayer'
 import { importBlindtestPlaylist } from '../services/api'
+import type { BlindtestRevealPayload } from '../types'
 
 /**
  * Lobby blind-test (Story 2.1) : saisie de pseudo + bouton pour rejoindre,
@@ -41,8 +42,15 @@ export default function BlindTestLobby() {
   // cours — remise à zéro à chaque nouveau round (`roundTrack` change).
   const [selectedPlayers, setSelectedPlayers] = useState<string[]>([])
 
+  // Story 2.6 : reveal (propriétaire réel + score cumulatif de chaque
+  // joueur présent) reçu à la clôture du round — remis à `null` à chaque
+  // nouveau round tiré (`roundTrack` change), avant qu'un éventuel nouveau
+  // `reveal` n'arrive pour ce round-là.
+  const [reveal, setReveal] = useState<BlindtestRevealPayload | null>(null)
+
   useEffect(() => {
     setSelectedPlayers([])
+    setReveal(null)
   }, [roundTrack])
 
   useEffect(() => {
@@ -110,6 +118,9 @@ export default function BlindTestLobby() {
       },
       onRoundStarted: (payload) => {
         setRoundTrack({ videoId: payload.videoId, startSeconds: payload.startSeconds })
+      },
+      onReveal: (payload) => {
+        setReveal(payload)
       },
       onClose: (event) => {
         setJoined(false)
@@ -195,6 +206,25 @@ export default function BlindTestLobby() {
           <button className="btn-primary" onClick={handleJoin} disabled={isJoining}>
             Rejoindre
           </button>
+        </div>
+      ) : reveal ? (
+        <div className="space-y-4">
+          <p className="text-text-muted">
+            Le morceau avait été importé par <strong>{reveal.owner_pseudo}</strong>.
+          </p>
+          <div className="space-y-2">
+            <p className="text-text-muted">Scores cumulés :</p>
+            <ul className="space-y-1">
+              {Object.entries(reveal.scores)
+                .sort(([, a], [, b]) => b - a)
+                .map(([playerPseudo, score]) => (
+                  <li key={playerPseudo} className="card px-3 py-2 flex justify-between">
+                    <span>{playerPseudo}</span>
+                    <span>{score}</span>
+                  </li>
+                ))}
+            </ul>
+          </div>
         </div>
       ) : phase === 'round_started' ? (
         <div className="space-y-4">
