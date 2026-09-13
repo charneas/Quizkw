@@ -237,6 +237,60 @@ class TestDisconnect:
             msg1 = ws1.receive_json()
             assert msg1["payload"]["players"] == ["Alice"]
 
+    def test_non_host_disconnect_does_not_reassign_host(self, blindtest_client):
+        """Story 7 : seul le départ de l'hôte doit déclencher une
+        réassignation — un non-hôte qui part ne doit rien changer."""
+        code = _create_game(blindtest_client)
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
+                ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                ws2.receive_json()
+                ws1.receive_json()
+
+            # Bob (non-hôte) part -> Alice reste hôte.
+            msg1 = ws1.receive_json()
+            assert msg1["payload"]["host_pseudo"] == "Alice"
+
+    def test_host_disconnect_reassigns_to_remaining_player(self, blindtest_client):
+        """Story 7 : l'hôte qui part transfère son statut au premier joueur
+        encore connecté, sans bloquer la partie.
+
+        Bob ouvre son socket EN PREMIER (bloc `with` extérieur) mais envoie
+        son `join` APRÈS Alice -- l'ordre d'imbrication des `with` contrôle
+        l'ORDRE DE FERMETURE (le bloc intérieur se ferme en premier), pas
+        l'ordre des messages. Ça permet de fermer le socket d'Alice (hôte)
+        pendant que celui de Bob reste ouvert, sans appel `.close()` manuel
+        (source du hang observé en tentant cette approche)."""
+        code = _create_game(blindtest_client)
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+                ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+                ws1.receive_json()
+
+                ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                ws2.receive_json()
+                ws1.receive_json()
+
+            # Sortie du bloc intérieur -> le socket d'Alice (hôte) se ferme,
+            # celui de Bob reste ouvert.
+            msg2 = ws2.receive_json()
+            assert msg2["payload"]["host_pseudo"] == "Bob"
+            assert msg2["payload"]["players"] == ["Bob"]
+
+    def test_last_player_disconnect_leaves_stale_host_with_no_one_to_reassign(self, blindtest_client):
+        """Story 7 : si l'hôte part alors que plus personne n'est connecté,
+        rien à réassigner -- host_pseudo reste tel quel (partie abandonnée,
+        pas de broadcast à personne)."""
+        code = _create_game(blindtest_client)
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+        # Aucune exception à la fermeture du dernier socket -- c'est tout ce
+        # que ce cas peut vérifier (aucun autre client à qui broadcaster).
+
 
 def _add_track(engine, game_code: str, *, youtube_video_id="abc123", duration_seconds=100, owner_pseudo="Alice") -> None:
     """Insère directement une `Playlist`+`Track` scopées à `game_code`, sans
