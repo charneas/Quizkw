@@ -16,7 +16,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from app.blindtest.database import Base, get_db
-from app.blindtest.game_connections import guess_store, score_store
+from app.blindtest.game_connections import guess_store, played_tracks_store, score_store
 from app.blindtest.game_connections import manager as connection_manager
 from main import app as main_app
 
@@ -75,6 +75,7 @@ def blindtest_client(blindtest_engine):
     connection_manager._games.clear()
     guess_store._guesses.clear()
     score_store._scores.clear()
+    played_tracks_store._played.clear()
 
 
 def _create_game(client) -> str:
@@ -282,6 +283,16 @@ class TestStartGame:
 
                 ws1.send_json({"type": "start_game", "payload": {}})
 
+                # Revue de code : `start_game` diffuse désormais aussi
+                # `game_state {phase: "round_started"}` (seul canal par
+                # lequel le client met à jour `phase`) juste avant le
+                # `round_started` lui-même.
+                state1 = ws1.receive_json()
+                state2 = ws2.receive_json()
+                for state in (state1, state2):
+                    assert state["type"] == "game_state"
+                    assert state["payload"]["phase"] == "round_started"
+
                 msg1 = ws1.receive_json()
                 msg2 = ws2.receive_json()
                 for msg in (msg1, msg2):
@@ -335,6 +346,8 @@ class TestStartGame:
             ws1.receive_json()
 
             ws1.send_json({"type": "start_game", "payload": {}})
+            first_state = ws1.receive_json()  # game_state {phase: round_started}
+            assert first_state["type"] == "game_state"
             first = ws1.receive_json()
             assert first["type"] == "round_started"
 
@@ -368,7 +381,9 @@ class TestStartGame:
                 ws1.receive_json()  # game_state (roster à jour) pour Alice
 
                 ws1.send_json({"type": "start_game", "payload": {}})
+                ws1.receive_json()  # game_state {phase: round_started} pour Alice
                 ws1.receive_json()  # round_started pour Alice
+                ws2.receive_json()  # game_state {phase: round_started} pour Bob
                 ws2.receive_json()  # round_started pour Bob
 
                 # Bob (ws2, une connexion distincte de celle qui a démarré le
@@ -395,6 +410,7 @@ class TestStartGame:
                 ws.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
                 ws.receive_json()
                 ws.send_json({"type": "start_game", "payload": {}})
+                ws.receive_json()  # game_state {phase: round_started}
                 msg = ws.receive_json()
                 starts.append(msg["payload"]["startSeconds"])
 
@@ -435,7 +451,9 @@ class TestGuessSubmitted:
                 ws1.receive_json()
 
                 ws1.send_json({"type": "start_game", "payload": {}})
+                ws1.receive_json()  # game_state {phase: round_started}
                 ws1.receive_json()
+                ws2.receive_json()  # game_state {phase: round_started}
                 ws2.receive_json()
 
                 ws1.send_json({"type": "guess_submitted", "payload": {"target_player_ids": ["Bob"]}})
@@ -459,6 +477,7 @@ class TestGuessSubmitted:
             ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
             ws1.receive_json()
             ws1.send_json({"type": "start_game", "payload": {}})
+            ws1.receive_json()  # game_state {phase: round_started}
             ws1.receive_json()
 
             ws1.send_json({"type": "guess_submitted", "payload": {"target_player_ids": ["Alice"]}})
@@ -512,6 +531,7 @@ class TestGuessSubmitted:
             ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
             ws1.receive_json()
             ws1.send_json({"type": "start_game", "payload": {}})
+            ws1.receive_json()  # game_state {phase: round_started}
             ws1.receive_json()
 
             ws1.send_json({"type": "guess_submitted", "payload": {"target_player_ids": []}})
@@ -533,6 +553,7 @@ class TestGuessSubmitted:
             ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
             ws1.receive_json()
             ws1.send_json({"type": "start_game", "payload": {}})
+            ws1.receive_json()  # game_state {phase: round_started}
             ws1.receive_json()
 
             with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
@@ -570,7 +591,9 @@ class TestGuessSubmitted:
                 ws1.receive_json()
 
                 ws1.send_json({"type": "start_game", "payload": {}})
+                ws1.receive_json()  # game_state {phase: round_started}
                 ws1.receive_json()
+                ws2.receive_json()  # game_state {phase: round_started}
                 ws2.receive_json()
 
                 ws1.send_json(
@@ -617,12 +640,24 @@ def blindtest_timer(blindtest_engine, monkeypatch):
     courte ici plutôt que de compter sur l'annulation pour garder les tests
     rapides. `task.cancel()` reste correct et utile en production (event
     loop mono-thread standard, sans ce détail d'implémentation du portail de
-    test)."""
+    test).
+
+    Story 2.7 (revue de code) : `REVEAL_DISPLAY_SECONDS` (par défaut 6s,
+    utilisé par `_advance_round`, désormais une tâche de fond détachée au
+    même titre que `_round_timer` — cf. Code Map) est réduit ici pour la
+    même raison et à la même valeur que `ROUND_GUESS_SECONDS` ci-dessus :
+    sans ce monkeypatch, tout `TestReveal` qui clôture un round (la classe
+    entière le fait) laisserait échapper un `_advance_round` réel de 6s vers
+    la moulinette async — qui touche alors `main_blindtest.SessionLocal` une
+    fois ce test (et son override `blindtest_engine`) déjà démonté, pointant
+    potentiellement vers le vrai `blindtest.db` de dev si ce monkeypatch a
+    lui-même déjà été défait entre-temps par un test suivant."""
     import main_blindtest
 
     test_session_local = sessionmaker(autocommit=False, autoflush=False, bind=blindtest_engine)
     monkeypatch.setattr(main_blindtest, "SessionLocal", test_session_local)
     monkeypatch.setattr(main_blindtest, "ROUND_GUESS_SECONDS", 1)
+    monkeypatch.setattr(main_blindtest, "REVEAL_DISPLAY_SECONDS", 1)
 
 
 @pytest.mark.usefixtures("blindtest_timer")
@@ -651,7 +686,9 @@ class TestReveal:
                 ws1.receive_json()
 
                 ws1.send_json({"type": "start_game", "payload": {}})
+                ws1.receive_json()  # game_state {phase: round_started}
                 ws1.receive_json()  # round_started
+                ws2.receive_json()  # game_state {phase: round_started}
                 ws2.receive_json()  # round_started
 
                 # Alice est le propriétaire réel : le seul joueur qui doit
@@ -681,7 +718,9 @@ class TestReveal:
                 ws1.receive_json()
 
                 ws1.send_json({"type": "start_game", "payload": {}})
+                ws1.receive_json()  # game_state {phase: round_started}
                 ws1.receive_json()
+                ws2.receive_json()  # game_state {phase: round_started}
                 ws2.receive_json()
 
                 ws2.send_json(
@@ -713,8 +752,11 @@ class TestReveal:
                     ws2.receive_json()
 
                     ws1.send_json({"type": "start_game", "payload": {}})
+                    ws1.receive_json()  # game_state {phase: round_started}
                     ws1.receive_json()
+                    ws2.receive_json()  # game_state {phase: round_started}
                     ws2.receive_json()
+                    ws3.receive_json()  # game_state {phase: round_started}
                     ws3.receive_json()
 
                     # Bob et Carol devinent tous les deux sans trouver Alice.
@@ -763,7 +805,9 @@ class TestReveal:
                 ws1.receive_json()
 
                 ws1.send_json({"type": "start_game", "payload": {}})
+                ws1.receive_json()  # game_state {phase: round_started}
                 ws1.receive_json()
+                ws2.receive_json()  # game_state {phase: round_started}
                 ws2.receive_json()
 
                 # Sélection vide : no-op silencieux (Story 2.5), jamais
@@ -802,7 +846,9 @@ class TestReveal:
                 ws1.receive_json()
 
                 ws1.send_json({"type": "start_game", "payload": {}})
+                ws1.receive_json()  # game_state {phase: round_started}
                 ws1.receive_json()
+                ws2.receive_json()  # game_state {phase: round_started}
                 ws2.receive_json()
 
                 ws2.send_json({"type": "guess_submitted", "payload": {"target_player_ids": ["Alice"]}})
@@ -843,7 +889,9 @@ class TestReveal:
                 ws1.receive_json()
 
                 ws1.send_json({"type": "start_game", "payload": {}})
+                ws1.receive_json()  # game_state {phase: round_started}
                 ws1.receive_json()
+                ws2.receive_json()  # game_state {phase: round_started}
                 ws2.receive_json()
 
                 # Personne ne répond : seul le minuteur peut clôturer.
@@ -882,7 +930,9 @@ class TestReveal:
                 ws1.receive_json()
 
                 ws1.send_json({"type": "start_game", "payload": {}})
+                ws1.receive_json()  # game_state {phase: round_started}
                 ws1.receive_json()
+                ws3.receive_json()  # game_state {phase: round_started}
                 ws3.receive_json()
 
                 # Bob a répondu correctement (+2) puis s'est déconnecté avant
@@ -902,6 +952,260 @@ class TestReveal:
                     assert reveal["type"] == "reveal"
                     # Bob a bien été scoré (+2) malgré sa déconnexion.
                     assert reveal["payload"]["scores"]["Bob"] == 2
+
+
+@pytest.mark.usefixtures("blindtest_timer")
+class TestRoundAdvancement:
+    """Story 2.7 — matrice I/O de
+    spec-2-7-enchainement-classement-final.md.
+
+    `blindtest_timer` (mirroir de `TestReveal`) redirige `SessionLocal` vers
+    la DB de test pour tout minuteur de round encore en vol, et garde
+    `ROUND_GUESS_SECONDS` à une valeur courte-mais-sûre (1s, jamais exercée
+    directement ici — la clôture se fait toujours par soumission complète).
+    `REVEAL_DISPLAY_SECONDS` (6s par défaut, bien trop long pour un test) est
+    en revanche systématiquement réduit localement, chaque test exerçant
+    réellement la pause avant enchaînement."""
+
+    def test_untried_track_remaining_advances_to_next_round(self, blindtest_client, blindtest_engine, monkeypatch):
+        """I/O matrix : pot a plus d'un morceau non-encore-tiré, cap non
+        atteint -> `game_state {phase: next_round}` puis `round_started`
+        avec un morceau jamais tiré plus tôt dans cette partie (couvre aussi
+        le scénario "un morceau ne se répète jamais" pour ce cas)."""
+        import main_blindtest
+
+        monkeypatch.setattr(main_blindtest, "REVEAL_DISPLAY_SECONDS", 0.05)
+
+        code = _create_game(blindtest_client)
+        _add_track(blindtest_engine, code, youtube_video_id="track-a")
+        _add_track(blindtest_engine, code, youtube_video_id="track-b")
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
+                ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                ws2.receive_json()
+                ws1.receive_json()
+
+                ws1.send_json({"type": "start_game", "payload": {}})
+                ws1.receive_json()  # game_state {phase: round_started}
+                ws2.receive_json()  # game_state {phase: round_started}
+                round1_1 = ws1.receive_json()
+                round1_2 = ws2.receive_json()
+                assert round1_1["payload"]["videoId"] == round1_2["payload"]["videoId"]
+                first_video_id = round1_1["payload"]["videoId"]
+
+                ws2.send_json({"type": "guess_submitted", "payload": {"target_player_ids": ["Alice"]}})
+
+                reveal1 = ws1.receive_json()
+                reveal2 = ws2.receive_json()
+                assert reveal1["type"] == "reveal"
+                assert reveal2["type"] == "reveal"
+
+                next_state1 = ws1.receive_json()
+                next_state2 = ws2.receive_json()
+                for state in (next_state1, next_state2):
+                    assert state["type"] == "game_state"
+                    assert state["payload"]["phase"] == "next_round"
+
+                # `_advance_round` diffuse aussi `game_state {phase:
+                # round_started}` juste avant le `round_started` du round 2
+                # (même correctif que pour le round 1 — sans lui, `phase`
+                # restait bloqué à "next_round" côté client, rendant la
+                # partie injouable au-delà du premier round).
+                round_started_state1 = ws1.receive_json()
+                round_started_state2 = ws2.receive_json()
+                for state in (round_started_state1, round_started_state2):
+                    assert state["type"] == "game_state"
+                    assert state["payload"]["phase"] == "round_started"
+
+                round2_1 = ws1.receive_json()
+                round2_2 = ws2.receive_json()
+                for msg in (round2_1, round2_2):
+                    assert msg["type"] == "round_started"
+                assert round2_1["payload"]["videoId"] == round2_2["payload"]["videoId"]
+                # Ne rejoue jamais le morceau déjà tiré au round 1.
+                assert round2_1["payload"]["videoId"] != first_video_id
+                assert round2_1["payload"]["videoId"] in ("track-a", "track-b")
+
+    def test_pot_exhausted_early_ends_game_with_final_scores(
+        self, blindtest_client, blindtest_engine, monkeypatch
+    ):
+        """I/O matrix : pot exhausté avant le cap de 15 rounds -> `game_state
+        {phase: ended}` avec `final_scores`, quel que soit le nombre de
+        rounds réellement joués."""
+        import main_blindtest
+
+        monkeypatch.setattr(main_blindtest, "REVEAL_DISPLAY_SECONDS", 0.05)
+
+        code = _create_game(blindtest_client)
+        # Un seul morceau éligible dans tout le pot : une fois tiré au round
+        # 1, plus aucun morceau non-encore-tiré ne reste -> fin de partie dès
+        # la clôture de ce round, bien avant `ROUNDS_PER_GAME`.
+        _add_track(blindtest_engine, code, youtube_video_id="only-track")
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
+                ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                ws2.receive_json()
+                ws1.receive_json()
+
+                ws1.send_json({"type": "start_game", "payload": {}})
+                ws1.receive_json()  # game_state {phase: round_started}
+                ws1.receive_json()
+                ws2.receive_json()  # game_state {phase: round_started}
+                ws2.receive_json()
+
+                ws2.send_json({"type": "guess_submitted", "payload": {"target_player_ids": ["Alice"]}})
+
+                ws1.receive_json()  # reveal
+                ws2.receive_json()  # reveal
+
+                ended1 = ws1.receive_json()
+                ended2 = ws2.receive_json()
+                for msg in (ended1, ended2):
+                    assert msg["type"] == "game_state"
+                    assert msg["payload"]["phase"] == "ended"
+                    assert msg["payload"]["final_scores"] == {"Bob": 2, "Alice": 0}
+
+    def test_cap_reached_ends_game_regardless_of_remaining_pot(
+        self, blindtest_client, blindtest_engine, monkeypatch
+    ):
+        """I/O matrix : le 15e round vient de se clôturer -> `game_state
+        {phase: ended}` avec `final_scores`, même si le pot a encore des
+        morceaux non-tirés.
+
+        Pré-remplit `played_tracks_store` avec 14 ids fictifs plutôt que de
+        rejouer 14 rounds réels via WS (hors scope de ce test, coûteux et
+        redondant avec `test_untried_track_remaining_advances_to_next_round`
+        qui exerce déjà l'enchaînement round-à-round) : ce round réel devient
+        ainsi le 15e joué pour cette partie dès son propre enregistrement
+        dans `played_tracks_store`."""
+        import main_blindtest
+
+        monkeypatch.setattr(main_blindtest, "REVEAL_DISPLAY_SECONDS", 0.05)
+
+        code = _create_game(blindtest_client)
+        # Deux morceaux éligibles : le pot n'est PAS épuisé, seul le cap doit
+        # déclencher la fin de partie ici.
+        _add_track(blindtest_engine, code, youtube_video_id="track-a")
+        _add_track(blindtest_engine, code, youtube_video_id="track-b")
+        gid = _game_id(blindtest_engine, code)
+        for fake_track_id in range(-14, 0):
+            played_tracks_store.add(gid, fake_track_id)
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
+                ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                ws2.receive_json()
+                ws1.receive_json()
+
+                ws1.send_json({"type": "start_game", "payload": {}})
+                ws1.receive_json()  # game_state {phase: round_started}
+                ws1.receive_json()
+                ws2.receive_json()  # game_state {phase: round_started}
+                ws2.receive_json()
+
+                ws2.send_json({"type": "guess_submitted", "payload": {"target_player_ids": ["Alice"]}})
+
+                ws1.receive_json()  # reveal
+                ws2.receive_json()  # reveal
+
+                ended1 = ws1.receive_json()
+                ended2 = ws2.receive_json()
+                for msg in (ended1, ended2):
+                    assert msg["type"] == "game_state"
+                    assert msg["payload"]["phase"] == "ended"
+                    assert msg["payload"]["final_scores"] == {"Bob": 2, "Alice": 0}
+
+    def test_late_joiner_after_end_sees_final_scores(self, blindtest_client, blindtest_engine, monkeypatch):
+        """I/O matrix : un client qui rejoint après la fin de partie reçoit
+        `final_scores` dans son propre `game_state` (push de jointure)."""
+        import main_blindtest
+
+        monkeypatch.setattr(main_blindtest, "REVEAL_DISPLAY_SECONDS", 0.05)
+
+        code = _create_game(blindtest_client)
+        _add_track(blindtest_engine, code, youtube_video_id="only-track")
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
+                ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                ws2.receive_json()
+                ws1.receive_json()
+
+                ws1.send_json({"type": "start_game", "payload": {}})
+                ws1.receive_json()  # game_state {phase: round_started}
+                ws1.receive_json()
+                ws2.receive_json()  # game_state {phase: round_started}
+                ws2.receive_json()
+
+                ws2.send_json({"type": "guess_submitted", "payload": {"target_player_ids": ["Alice"]}})
+
+                ws1.receive_json()  # reveal
+                ws2.receive_json()  # reveal
+                ws1.receive_json()  # game_state ended
+                ws2.receive_json()  # game_state ended
+
+                with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws3:
+                    ws3.send_json({"type": "join", "payload": {"pseudo": "Carol"}})
+                    join_state = ws3.receive_json()
+                    assert join_state["payload"]["phase"] == "ended"
+                    assert join_state["payload"]["final_scores"] == {"Bob": 2, "Alice": 0}
+
+    def test_ended_game_ignores_start_game(self, blindtest_client, blindtest_engine, monkeypatch):
+        """Boundaries de la spec : une fois `phase == "ended"`, aucun nouveau
+        round ne peut jamais redémarrer sur cette partie (mirroir du garde
+        `phase == "lobby"` déjà en place pour `start_game`, satisfait ici
+        sans code additionnel puisque `ended != "lobby"`)."""
+        import main_blindtest
+
+        monkeypatch.setattr(main_blindtest, "REVEAL_DISPLAY_SECONDS", 0.05)
+
+        code = _create_game(blindtest_client)
+        _add_track(blindtest_engine, code, youtube_video_id="only-track")
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
+                ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                ws2.receive_json()
+                ws1.receive_json()
+
+                ws1.send_json({"type": "start_game", "payload": {}})
+                ws1.receive_json()  # game_state {phase: round_started}
+                ws1.receive_json()
+                ws2.receive_json()  # game_state {phase: round_started}
+                ws2.receive_json()
+
+                ws2.send_json({"type": "guess_submitted", "payload": {"target_player_ids": ["Alice"]}})
+
+                ws1.receive_json()  # reveal
+                ws2.receive_json()  # reveal
+                ws1.receive_json()  # game_state ended
+                ws2.receive_json()  # game_state ended
+
+                ws1.send_json({"type": "start_game", "payload": {}})
+
+                # Aucun nouveau `round_started` : confirmé via un nouveau
+                # joignant, dont le `game_state` doit rester `ended`.
+                with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws3:
+                    ws3.send_json({"type": "join", "payload": {"pseudo": "Carol"}})
+                    join_state = ws3.receive_json()
+                    assert join_state["payload"]["phase"] == "ended"
 
 
 class TestTwoGamesIsolation:

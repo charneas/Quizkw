@@ -48,6 +48,12 @@ export default function BlindTestLobby() {
   // `reveal` n'arrive pour ce round-là.
   const [reveal, setReveal] = useState<BlindtestRevealPayload | null>(null)
 
+  // Story 2.7 : classement final cumulatif, poussé dans `game_state` une
+  // fois `phase === "ended"` — état terminal permanent (jamais remis à
+  // `null` une fois reçu, contrairement à `reveal` qui se remet à zéro à
+  // chaque nouveau round : `ended` ne connaît plus de round suivant).
+  const [finalScores, setFinalScores] = useState<Record<string, number> | null>(null)
+
   useEffect(() => {
     setSelectedPlayers([])
     setReveal(null)
@@ -113,6 +119,22 @@ export default function BlindTestLobby() {
         setPlayers(payload.players)
         setPhase(payload.phase)
         setHostPseudo(payload.host_pseudo)
+        // Story 2.7 : `final_scores` n'arrive que sur ce `game_state`-là
+        // (fin de partie automatique, ou (re)join pendant `ended`) — ne
+        // touche `finalScores` que lorsqu'il est réellement présent, pour
+        // ne jamais l'effacer sur un `game_state` intermédiaire (roster mis
+        // à jour, `next_round`, ...) reçu après la fin de partie.
+        if (payload.final_scores) {
+          setFinalScores(payload.final_scores)
+        }
+        if (payload.phase === 'ended') {
+          // Revue de code : sans ceci, le lecteur YouTube caché du dernier
+          // round joué continue de tourner (audio) derrière l'écran de
+          // classement final — le nettoyage du lecteur ne se déclenche que
+          // sur un *changement* de `roundTrack`, jamais sur un simple
+          // changement de `phase`.
+          setRoundTrack(null)
+        }
         setJoined(true)
         setIsJoining(false)
       },
@@ -207,6 +229,27 @@ export default function BlindTestLobby() {
             Rejoindre
           </button>
         </div>
+      ) : phase === 'ended' && finalScores ? (
+        <div className="space-y-4">
+          <p className="text-text-muted">Partie terminée — classement final :</p>
+          <ul className="space-y-1">
+            {Object.entries(finalScores)
+              .sort(([, a], [, b]) => b - a)
+              .map(([playerPseudo, score], index) => (
+                <li key={playerPseudo} className="card px-3 py-2 flex justify-between">
+                  <span>
+                    {index + 1}. {playerPseudo}
+                  </span>
+                  <span>{score}</span>
+                </li>
+              ))}
+          </ul>
+        </div>
+      ) : phase === 'next_round' ? (
+        // Story 2.7 : bref indicateur transitoire entre le `game_state
+        // {phase: next_round}` et le `round_started` qui suit — purement
+        // informatif, aucune action joueur possible ici (NFR5).
+        <p className="text-text-muted">Round suivant...</p>
       ) : reveal ? (
         <div className="space-y-4">
           <p className="text-text-muted">

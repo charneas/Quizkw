@@ -152,3 +152,41 @@ class ScoreStore:
 
 
 score_store = ScoreStore()
+
+
+class PlayedTracksStore:
+    """`{game_id: list[int]}` — pistes déjà tirées en mémoire uniquement
+    (Story 2.7), même convention que `GuessStore`/`ScoreStore` : aucune
+    persistance, l'état vit et meurt avec le process serveur (pas de table
+    DB d'historique des rounds, cf. Boundaries de
+    spec-2-7-enchainement-classement-final.md). Jamais réinitialisé au
+    cours d'une partie (comme `ScoreStore`) — un morceau déjà tiré ne doit
+    jamais repasser dans le pot éligible tant que la partie dure.
+
+    Une `list` (pas un `set`) comme valeur : `count()` (nombre de rounds
+    déjà joués, utilisé pour la limite `ROUNDS_PER_GAME`) doit compter
+    chaque tirage, y compris si un même id y figurait deux fois par erreur
+    ailleurs — `played_ids()` dérive l'ensemble pour le filtre d'exclusion
+    de la requête."""
+
+    def __init__(self) -> None:
+        self._played: Dict[int, list[int]] = {}
+
+    def add(self, game_id: int, track_id: int) -> None:
+        """Enregistre un morceau tiré pour cette partie (appelé juste après
+        le commit qui fait passer la partie en `round_started`, pour chaque
+        round, y compris le premier — cf. Code Map)."""
+        self._played.setdefault(game_id, []).append(track_id)
+
+    def played_ids(self, game_id: int) -> set[int]:
+        """Ensemble des ids déjà tirés pour cette partie — utilisé pour
+        exclure ces morceaux du tirage suivant (`Track.id.notin_(...)`)."""
+        return set(self._played.get(game_id, []))
+
+    def count(self, game_id: int) -> int:
+        """Nombre de rounds déjà tirés pour cette partie — dérive le compte
+        de rounds joués sans colonne DB dédiée (cf. Approach de la spec)."""
+        return len(self._played.get(game_id, []))
+
+
+played_tracks_store = PlayedTracksStore()

@@ -369,6 +369,11 @@ export interface BlindtestGameStatePayload {
   // vérité affichée).
   phase: string
   host_pseudo: string | null
+  // Story 2.7 : classement cumulatif final, présent uniquement quand
+  // `phase === "ended"` (poussé à la fin de partie automatique ET à tout
+  // (re)joignant qui rejoint/se reconnecte après coup — état terminal
+  // permanent, cf. Boundaries de spec-2-7-enchainement-classement-final.md).
+  final_scores?: Record<string, number>
 }
 
 // Story 2.4 : payload de `round_started`, poussé par le serveur au host
