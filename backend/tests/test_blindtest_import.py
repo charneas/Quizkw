@@ -64,6 +64,7 @@ def _count_rows(blindtest_engine):
 
 SPOTIFY_URL = "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M"
 YOUTUBE_URL = "https://www.youtube.com/playlist?list=PLxyz123"
+DEEZER_URL = "https://www.deezer.com/playlist/908622995"
 
 
 class TestSpotifyImport:
@@ -583,6 +584,154 @@ class TestScopedImport:
             assert playlists == 2
         finally:
             connection_manager._games.pop("SHARED", None)
+
+
+class TestDeezerImport:
+    def test_matches_playlist_url(self):
+        from app.blindtest.providers import deezer
+
+        assert deezer.matches(DEEZER_URL) is True
+
+    def test_matches_playlist_url_with_locale_prefix(self):
+        from app.blindtest.providers import deezer
+
+        assert deezer.matches("https://www.deezer.com/fr/playlist/908622995") is True
+
+    def test_matches_returns_false_for_artist_url(self):
+        from app.blindtest.providers import deezer
+
+        assert deezer.matches("https://www.deezer.com/artist/27") is False
+
+    def test_matches_returns_false_for_album_url(self):
+        from app.blindtest.providers import deezer
+
+        assert deezer.matches("https://www.deezer.com/album/302127") is False
+
+    def test_fetch_tracks_happy_path_single_page(self):
+        from app.blindtest.providers import deezer
+
+        page = MagicMock(status_code=200)
+        page.json.return_value = {
+            "data": [
+                {
+                    "title": "Song A",
+                    "artist": {"name": "Artist A"},
+                    "isrc": "ISRC1",
+                    "link": "https://www.deezer.com/track/1",
+                },
+                {
+                    "title": "Song B",
+                    "artist": {"name": "Artist B"},
+                    "isrc": "ISRC2",
+                    "link": "https://www.deezer.com/track/2",
+                },
+            ],
+            "total": 2,
+        }
+
+        with patch("httpx.Client") as client_cls:
+            client_cls.return_value.__enter__.return_value.get.return_value = page
+            tracks = deezer.fetch_tracks(DEEZER_URL)
+
+        assert len(tracks) == 2
+        assert tracks[0].title == "Song A"
+        assert tracks[0].artist == "Artist A"
+        assert tracks[0].isrc == "ISRC1"
+        assert tracks[0].source_url == "https://www.deezer.com/track/1"
+
+    def test_fetch_tracks_follows_pagination_until_next_absent(self):
+        from app.blindtest.providers import deezer
+
+        page1 = MagicMock(status_code=200)
+        page1.json.return_value = {
+            "data": [{"title": "Song A", "artist": {"name": "Artist A"}, "isrc": None, "link": None}],
+            "total": 2,
+            "next": "https://api.deezer.com/playlist/908622995/tracks?index=1",
+        }
+        page2 = MagicMock(status_code=200)
+        page2.json.return_value = {
+            "data": [{"title": "Song B", "artist": {"name": "Artist B"}, "isrc": None, "link": None}],
+            "total": 2,
+        }
+
+        with patch("httpx.Client") as client_cls:
+            client_cls.return_value.__enter__.return_value.get.side_effect = [page1, page2]
+            tracks = deezer.fetch_tracks(DEEZER_URL)
+
+        assert [t.title for t in tracks] == ["Song A", "Song B"]
+
+    def test_error_body_with_http_200_raises_private_playlist_error(self):
+        """Deezer répond toujours HTTP 200, y compris en erreur — la clé
+        top-level `"error"` du corps JSON est le seul signal fiable."""
+        from app.blindtest.providers import deezer
+
+        resp = MagicMock(status_code=200)
+        resp.json.return_value = {"error": {"type": "DataException", "message": "no data", "code": 800}}
+
+        with patch("httpx.Client") as client_cls:
+            client_cls.return_value.__enter__.return_value.get.return_value = resp
+
+            with pytest.raises(PrivatePlaylistError):
+                deezer.fetch_tracks(DEEZER_URL)
+
+    def test_fetch_tracks_skips_non_dict_item_in_data(self):
+        """Un item non-dict (ex. `null`) dans `data` ne doit pas faire
+        planter l'extraction avec un AttributeError — il est simplement
+        ignoré, comme les items sans titre/artiste."""
+        from app.blindtest.providers import deezer
+
+        page = MagicMock(status_code=200)
+        page.json.return_value = {
+            "data": [
+                None,
+                {"title": "Song A", "artist": {"name": "Artist A"}, "isrc": "ISRC1", "link": "https://www.deezer.com/track/1"},
+            ],
+            "total": 2,
+        }
+
+        with patch("httpx.Client") as client_cls:
+            client_cls.return_value.__enter__.return_value.get.return_value = page
+            tracks = deezer.fetch_tracks(DEEZER_URL)
+
+        assert len(tracks) == 1
+        assert tracks[0].title == "Song A"
+
+    def test_empty_tracks_raises_private_playlist_error(self):
+        from app.blindtest.providers import deezer
+
+        resp = MagicMock(status_code=200)
+        resp.json.return_value = {"data": [], "total": 0}
+
+        with patch("httpx.Client") as client_cls:
+            client_cls.return_value.__enter__.return_value.get.return_value = resp
+
+            with pytest.raises(PrivatePlaylistError):
+                deezer.fetch_tracks(DEEZER_URL)
+
+    def test_import_pipeline_detects_deezer(self):
+        from app.blindtest import import_pipeline
+
+        assert import_pipeline.detect_provider(DEEZER_URL) == "deezer"
+
+    def test_valid_deezer_playlist_persists_playlist_and_tracks(self, blindtest_client, blindtest_engine):
+        fake_tracks = [
+            ExtractedTrack(title="Song A", artist="Artist A", isrc="ISRC1", source_url="https://www.deezer.com/track/1"),
+            ExtractedTrack(title="Song B", artist="Artist B", isrc=None),
+        ]
+        with patch("app.blindtest.providers.deezer.fetch_tracks", return_value=fake_tracks), \
+             patch("app.blindtest.matching.match_playlist_tracks"):
+            resp = blindtest_client.post("/blindtest/playlists", json={"url": DEEZER_URL})
+
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["provider"] == "deezer"
+        assert len(data["tracks"]) == 2
+        assert data["tracks"][0]["title"] == "Song A"
+        assert data["tracks"][0]["isrc"] == "ISRC1"
+
+        playlists, tracks = _count_rows(blindtest_engine)
+        assert playlists == 1
+        assert tracks == 2
 
 
 class TestDbIsolation:

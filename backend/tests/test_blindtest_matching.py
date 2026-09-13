@@ -655,6 +655,45 @@ class TestImportThenPollIntegration:
         assert data["tracks"][0]["youtube_video_id"] == "resolved-vid"
         assert data["tracks"][0]["duration_seconds"] == 180
 
+    def test_deezer_import_resolves_youtube_video_id_via_generic_matching(
+        self, blindtest_client, blindtest_session_factory
+    ):
+        """Story 1 (CAP-2) : preuve bout-en-bout que le pipeline générique de
+        matching (`matching.match_playlist_tracks`), déjà exercé pour
+        Spotify/YouTube, fonctionne aussi pour un morceau importé depuis
+        Deezer — sans aucune modification de `matching.py`. Le provider
+        Deezer est mocké (les tests unitaires le couvrent isolément) ; seule
+        la résolution `source_url` -> `youtube_video_id` du morceau importé
+        est vérifiée ici."""
+        deezer_url = "https://www.deezer.com/playlist/908622995"
+        fake_tracks = [
+            ExtractedTrack(
+                title="Song A",
+                artist="Artist A",
+                source_url="https://www.deezer.com/track/123",
+            ),
+        ]
+        with patch("app.blindtest.providers.deezer.fetch_tracks", return_value=fake_tracks), \
+             patch("app.blindtest.matching.SessionLocal", blindtest_session_factory), \
+             patch(
+                 "app.blindtest.matching.resolve_via_idonthavespotify",
+                 return_value="resolved-vid",
+             ) as idonthavespotify_mock, \
+             patch("app.blindtest.matching.fetch_video_duration", return_value=180):
+            post_resp = blindtest_client.post("/blindtest/playlists", json={"url": deezer_url})
+
+        assert post_resp.status_code == 201
+        assert post_resp.json()["provider"] == "deezer"
+        playlist_id = post_resp.json()["id"]
+
+        idonthavespotify_mock.assert_called_once_with("https://www.deezer.com/track/123")
+
+        get_resp = blindtest_client.get(f"/blindtest/playlists/{playlist_id}")
+        assert get_resp.status_code == 200
+        data = get_resp.json()
+        assert data["tracks"][0]["youtube_video_id"] == "resolved-vid"
+        assert data["tracks"][0]["duration_seconds"] == 180
+
     def test_get_unknown_playlist_returns_404(self, blindtest_client):
         resp = blindtest_client.get("/blindtest/playlists/999999")
         assert resp.status_code == 404
