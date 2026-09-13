@@ -12,6 +12,7 @@ os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -141,6 +142,290 @@ class TestSpotifyImport:
                 spotify.fetch_tracks(SPOTIFY_URL)
 
         assert "Premium" in str(exc_info.value)
+
+
+SOUNDCLOUD_SET_URL = "https://soundcloud.com/someuser/sets/some-set"
+SOUNDCLOUD_TRACK_URL = "https://soundcloud.com/someuser/some-track"
+
+
+class TestSoundCloudImport:
+    def test_matches_set_url_true(self):
+        from app.blindtest.providers import soundcloud
+
+        assert soundcloud.matches(SOUNDCLOUD_SET_URL) is True
+
+    def test_matches_isolated_track_url_false(self):
+        from app.blindtest.providers import soundcloud
+
+        assert soundcloud.matches(SOUNDCLOUD_TRACK_URL) is False
+
+    def test_happy_path_single_page(self):
+        from app.blindtest.providers import soundcloud
+
+        token_resp = MagicMock(status_code=200)
+        token_resp.json.return_value = {"access_token": "fake-token"}
+
+        resolve_resp = MagicMock(status_code=200)
+        resolve_resp.json.return_value = {
+            "tracks": [
+                {
+                    "title": "Song A",
+                    "publisher_metadata": {"artist": "Artist A"},
+                    "user": {"username": "uploader-a"},
+                    "permalink_url": "https://soundcloud.com/someuser/song-a",
+                },
+                {
+                    "title": "Song B",
+                    "publisher_metadata": None,
+                    "user": {"username": "Uploader B"},
+                    "permalink_url": "https://soundcloud.com/someuser/song-b",
+                },
+            ],
+            "next_href": None,
+        }
+
+        with patch("httpx.Client") as client_cls, \
+             patch.dict(os.environ, {"SOUNDCLOUD_CLIENT_ID": "id", "SOUNDCLOUD_CLIENT_SECRET": "secret"}):
+            mock_client = client_cls.return_value.__enter__.return_value
+            mock_client.post.return_value = token_resp
+            mock_client.get.return_value = resolve_resp
+
+            tracks = soundcloud.fetch_tracks(SOUNDCLOUD_SET_URL)
+
+        assert len(tracks) == 2
+        assert tracks[0].title == "Song A"
+        assert tracks[0].artist == "Artist A"
+        assert tracks[0].source_url == "https://soundcloud.com/someuser/song-a"
+        assert tracks[1].artist == "Uploader B"
+
+    def test_pagination_aggregates_all_pages(self):
+        from app.blindtest.providers import soundcloud
+
+        token_resp = MagicMock(status_code=200)
+        token_resp.json.return_value = {"access_token": "fake-token"}
+
+        resolve_resp = MagicMock(status_code=200)
+        resolve_resp.json.return_value = {
+            "tracks": [
+                {
+                    "title": "Song A",
+                    "publisher_metadata": {"artist": "Artist A"},
+                    "user": {"username": "uploader-a"},
+                    "permalink_url": "https://soundcloud.com/someuser/song-a",
+                },
+            ],
+            "next_href": "https://api-v2.soundcloud.com/resolve?url=x&offset=1",
+        }
+
+        page2_resp = MagicMock(status_code=200)
+        page2_resp.json.return_value = {
+            "collection": [
+                {
+                    "title": "Song B",
+                    "publisher_metadata": {"artist": "Artist B"},
+                    "user": {"username": "uploader-b"},
+                    "permalink_url": "https://soundcloud.com/someuser/song-b",
+                },
+            ],
+            "next_href": None,
+        }
+
+        with patch("httpx.Client") as client_cls, \
+             patch.dict(os.environ, {"SOUNDCLOUD_CLIENT_ID": "id", "SOUNDCLOUD_CLIENT_SECRET": "secret"}):
+            mock_client = client_cls.return_value.__enter__.return_value
+            mock_client.post.return_value = token_resp
+            mock_client.get.side_effect = [resolve_resp, page2_resp]
+
+            tracks = soundcloud.fetch_tracks(SOUNDCLOUD_SET_URL)
+
+        assert len(tracks) == 2
+        assert tracks[0].title == "Song A"
+        assert tracks[1].title == "Song B"
+
+    def test_missing_credentials_raises_config_error_before_network_resolve(self):
+        from app.blindtest.providers import soundcloud
+
+        with patch("httpx.Client") as client_cls, \
+             patch.dict(os.environ, {}, clear=True):
+            mock_client = client_cls.return_value.__enter__.return_value
+
+            with pytest.raises(ProviderConfigError) as exc_info:
+                soundcloud.fetch_tracks(SOUNDCLOUD_SET_URL)
+
+            mock_client.get.assert_not_called()
+
+        assert "SOUNDCLOUD_CLIENT_ID" in str(exc_info.value)
+
+    def test_rejected_credentials_raises_config_error(self):
+        from app.blindtest.providers import soundcloud
+
+        token_resp = MagicMock(status_code=401)
+
+        with patch("httpx.Client") as client_cls, \
+             patch.dict(os.environ, {"SOUNDCLOUD_CLIENT_ID": "id", "SOUNDCLOUD_CLIENT_SECRET": "secret"}):
+            mock_client = client_cls.return_value.__enter__.return_value
+            mock_client.post.return_value = token_resp
+
+            with pytest.raises(ProviderConfigError):
+                soundcloud.fetch_tracks(SOUNDCLOUD_SET_URL)
+
+    def test_private_or_not_found_set_raises_private_playlist_error(self):
+        from app.blindtest.providers import soundcloud
+
+        token_resp = MagicMock(status_code=200)
+        token_resp.json.return_value = {"access_token": "fake-token"}
+
+        resolve_resp = MagicMock(status_code=404)
+
+        with patch("httpx.Client") as client_cls, \
+             patch.dict(os.environ, {"SOUNDCLOUD_CLIENT_ID": "id", "SOUNDCLOUD_CLIENT_SECRET": "secret"}):
+            mock_client = client_cls.return_value.__enter__.return_value
+            mock_client.post.return_value = token_resp
+            mock_client.get.return_value = resolve_resp
+
+            with pytest.raises(PrivatePlaylistError):
+                soundcloud.fetch_tracks(SOUNDCLOUD_SET_URL)
+
+    def test_empty_set_raises_private_playlist_error(self):
+        from app.blindtest.providers import soundcloud
+
+        token_resp = MagicMock(status_code=200)
+        token_resp.json.return_value = {"access_token": "fake-token"}
+
+        resolve_resp = MagicMock(status_code=200)
+        resolve_resp.json.return_value = {"tracks": [], "next_href": None}
+
+        with patch("httpx.Client") as client_cls, \
+             patch.dict(os.environ, {"SOUNDCLOUD_CLIENT_ID": "id", "SOUNDCLOUD_CLIENT_SECRET": "secret"}):
+            mock_client = client_cls.return_value.__enter__.return_value
+            mock_client.post.return_value = token_resp
+            mock_client.get.return_value = resolve_resp
+
+            with pytest.raises(PrivatePlaylistError):
+                soundcloud.fetch_tracks(SOUNDCLOUD_SET_URL)
+
+    def test_track_missing_artist_is_skipped(self):
+        from app.blindtest.providers import soundcloud
+
+        token_resp = MagicMock(status_code=200)
+        token_resp.json.return_value = {"access_token": "fake-token"}
+
+        resolve_resp = MagicMock(status_code=200)
+        resolve_resp.json.return_value = {
+            "tracks": [
+                {
+                    "title": "No Artist Song",
+                    "publisher_metadata": None,
+                    "user": {},
+                    "permalink_url": "https://soundcloud.com/someuser/no-artist",
+                },
+                {
+                    "title": "Valid Song",
+                    "publisher_metadata": {"artist": "Real Artist"},
+                    "user": {"username": "uploader"},
+                    "permalink_url": "https://soundcloud.com/someuser/valid-song",
+                },
+            ],
+            "next_href": None,
+        }
+
+        with patch("httpx.Client") as client_cls, \
+             patch.dict(os.environ, {"SOUNDCLOUD_CLIENT_ID": "id", "SOUNDCLOUD_CLIENT_SECRET": "secret"}):
+            mock_client = client_cls.return_value.__enter__.return_value
+            mock_client.post.return_value = token_resp
+            mock_client.get.return_value = resolve_resp
+
+            tracks = soundcloud.fetch_tracks(SOUNDCLOUD_SET_URL)
+
+        assert len(tracks) == 1
+        assert tracks[0].title == "Valid Song"
+
+    def test_none_track_entry_is_skipped(self):
+        """SoundCloud renvoie des placeholders `null` pour les morceaux
+        inaccessibles dans un set par ailleurs public — doit être ignoré
+        comme un morceau sans titre/artiste, pas planter en AttributeError."""
+        from app.blindtest.providers import soundcloud
+
+        token_resp = MagicMock(status_code=200)
+        token_resp.json.return_value = {"access_token": "fake-token"}
+
+        resolve_resp = MagicMock(status_code=200)
+        resolve_resp.json.return_value = {
+            "tracks": [
+                None,
+                {
+                    "title": "Valid Song",
+                    "publisher_metadata": {"artist": "Real Artist"},
+                    "user": {"username": "uploader"},
+                    "permalink_url": "https://soundcloud.com/someuser/valid-song",
+                },
+            ],
+            "next_href": None,
+        }
+
+        with patch("httpx.Client") as client_cls, \
+             patch.dict(os.environ, {"SOUNDCLOUD_CLIENT_ID": "id", "SOUNDCLOUD_CLIENT_SECRET": "secret"}):
+            mock_client = client_cls.return_value.__enter__.return_value
+            mock_client.post.return_value = token_resp
+            mock_client.get.return_value = resolve_resp
+
+            tracks = soundcloud.fetch_tracks(SOUNDCLOUD_SET_URL)
+
+        assert len(tracks) == 1
+        assert tracks[0].title == "Valid Song"
+
+    def test_resolve_non_403_404_error_status_raises_private_playlist_error(self):
+        """Un statut d'erreur autre que 403/404 (ex. 401/500) ne doit pas
+        laisser fuir `httpx.HTTPStatusError` via `raise_for_status()` — traité
+        comme 403/404 (`PrivatePlaylistError`), conformément à la règle
+        "jamais d'exception httpx brute qui fuit"."""
+        from app.blindtest.providers import soundcloud
+
+        token_resp = MagicMock(status_code=200)
+        token_resp.json.return_value = {"access_token": "fake-token"}
+
+        resolve_resp = MagicMock(status_code=500)
+        resolve_resp.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "server error", request=MagicMock(), response=resolve_resp
+        )
+
+        with patch("httpx.Client") as client_cls, \
+             patch.dict(os.environ, {"SOUNDCLOUD_CLIENT_ID": "id", "SOUNDCLOUD_CLIENT_SECRET": "secret"}):
+            mock_client = client_cls.return_value.__enter__.return_value
+            mock_client.post.return_value = token_resp
+            mock_client.get.return_value = resolve_resp
+
+            with pytest.raises(PrivatePlaylistError):
+                soundcloud.fetch_tracks(SOUNDCLOUD_SET_URL)
+
+    def test_token_network_error_raises_config_error(self):
+        """Une erreur réseau (timeout/connect) sur l'appel de token ne doit
+        pas fuir en tant qu'exception httpx brute."""
+        from app.blindtest.providers import soundcloud
+
+        with patch("httpx.Client") as client_cls, \
+             patch.dict(os.environ, {"SOUNDCLOUD_CLIENT_ID": "id", "SOUNDCLOUD_CLIENT_SECRET": "secret"}):
+            mock_client = client_cls.return_value.__enter__.return_value
+            mock_client.post.side_effect = httpx.ConnectError("connection refused")
+
+            with pytest.raises(ProviderConfigError):
+                soundcloud.fetch_tracks(SOUNDCLOUD_SET_URL)
+
+    def test_token_malformed_json_raises_config_error(self):
+        """Un JSON malformé (ou absence de `access_token`) dans la réponse
+        de token ne doit pas fuir en `ValueError`/`KeyError` brut."""
+        from app.blindtest.providers import soundcloud
+
+        token_resp = MagicMock(status_code=200)
+        token_resp.json.side_effect = ValueError("not json")
+
+        with patch("httpx.Client") as client_cls, \
+             patch.dict(os.environ, {"SOUNDCLOUD_CLIENT_ID": "id", "SOUNDCLOUD_CLIENT_SECRET": "secret"}):
+            mock_client = client_cls.return_value.__enter__.return_value
+            mock_client.post.return_value = token_resp
+
+            with pytest.raises(ProviderConfigError):
+                soundcloud.fetch_tracks(SOUNDCLOUD_SET_URL)
 
 
 class TestYoutubeImport:
