@@ -54,6 +54,13 @@ REVEAL_DISPLAY_SECONDS = 6
 TRACK_POOL_RETRY_ATTEMPTS = 3
 TRACK_POOL_RETRY_DELAY_SECONDS = 1.0
 
+# Retour utilisateur (2026-09-13) : le propriétaire d'un morceau ne marquait
+# jamais de points sur son propre round (delta figé à 0) — pénalisant pour
+# quiconque importe une grosse playlist, dont les morceaux tournent plus
+# souvent sans jamais lui rapporter de points. Point fixe accordé à chaque
+# round, indépendamment de si les autres joueurs devinent juste ou pas.
+OWNER_ROUND_BONUS = 1
+
 # Story 2.6 (revue de code) : référence forte vers la tâche `_round_timer` en
 # vol de chaque partie, indexée par `game_id`. `asyncio.create_task` ne garde
 # qu'une référence faible côté event loop — sans ceci, la tâche peut être
@@ -447,8 +454,11 @@ def _resolve_owner_pseudo(db: Session, game: Game) -> Optional[str]:
 def _close_round(db: Session, game: Game, game_code: str) -> Optional[dict]:
     """Clôture le round en cours (Story 2.6) : calcule et cumule le score de
     chaque joueur présent non-propriétaire à partir de sa devinette stockée
-    (`guess_store`), fait passer la partie en phase `reveal` et renvoie le
-    payload `reveal {owner_pseudo, scores, deltas}` à diffuser.
+    (`guess_store`), attribue OWNER_ROUND_BONUS au propriétaire (retour
+    utilisateur, 2026-09-13 — sans ça, importer une grosse playlist désavantage
+    son propriétaire : ses morceaux tournent plus souvent sans jamais lui
+    rapporter de points), fait passer la partie en phase `reveal` et renvoie
+    le payload `reveal {owner_pseudo, scores, deltas}` à diffuser.
 
     Transition à usage unique (mirroir de `_handle_start_game`) : si la
     partie n'est plus en `round_started` au moment de l'appel (déjà clôturée
@@ -506,11 +516,13 @@ def _close_round(db: Session, game: Game, game_code: str) -> Optional[dict]:
 
     for pseudo in scoreable_pseudos:
         if pseudo == owner_pseudo:
-            # Le propriétaire n'est pas scoré sur son propre round, mais on
-            # garantit tout de même sa présence dans le snapshot (Boundaries
-            # de la spec) via un ajout à delta 0.
-            score_store.add(game.id, pseudo, 0)
-            deltas[pseudo] = 0
+            # Retour utilisateur (2026-09-13) : le propriétaire marque
+            # désormais un point fixe (OWNER_ROUND_BONUS) sur son propre
+            # round, peu importe si les autres devinent juste ou pas —
+            # avant, il était seulement garanti présent dans le snapshot via
+            # un delta à 0, jamais scoré.
+            score_store.add(game.id, pseudo, OWNER_ROUND_BONUS)
+            deltas[pseudo] = OWNER_ROUND_BONUS
             continue
 
         guess = guess_store.get_guess(game.id, pseudo) or []

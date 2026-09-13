@@ -878,12 +878,12 @@ class TestReveal:
                 for reveal in (reveal1, reveal2):
                     assert reveal["type"] == "reveal"
                     assert reveal["payload"]["owner_pseudo"] == "Alice"
-                    # Owner trouvé seul -> +2 net pour Bob ; Alice (propriétaire,
-                    # non scorée) présente au score 0.
-                    assert reveal["payload"]["scores"] == {"Bob": 2, "Alice": 0}
+                    # Owner trouvé seul -> +2 net pour Bob ; Alice (propriétaire)
+                    # marque OWNER_ROUND_BONUS (1) sur son propre round.
+                    assert reveal["payload"]["scores"] == {"Bob": 2, "Alice": 1}
                     # Story 5 : `deltas` porte le différentiel de CE round,
                     # identique à `scores` ici puisque c'est le premier round.
-                    assert reveal["payload"]["deltas"] == {"Bob": 2, "Alice": 0}
+                    assert reveal["payload"]["deltas"] == {"Bob": 2, "Alice": 1}
 
     def test_deltas_differ_from_cumulative_scores_when_player_already_scored(
         self, blindtest_client, blindtest_engine
@@ -1087,7 +1087,7 @@ class TestReveal:
                     ws2.receive_json()
 
                     gid = _game_id(blindtest_engine, code)
-                    assert score_store.snapshot(gid) == {"Bob": 2, "Alice": 0}
+                    assert score_store.snapshot(gid) == {"Bob": 2, "Alice": 1}
 
     def test_timeout_closes_round_when_not_all_answered(self, blindtest_client, blindtest_engine, blindtest_timer, monkeypatch):
         import time
@@ -1119,7 +1119,7 @@ class TestReveal:
                 for reveal in (reveal1, reveal2):
                     assert reveal["type"] == "reveal"
                     assert reveal["payload"]["owner_pseudo"] == "Alice"
-                    assert reveal["payload"]["scores"] == {"Bob": 0, "Alice": 0}
+                    assert reveal["payload"]["scores"] == {"Bob": 0, "Alice": 1}
 
     def test_guess_from_disconnected_player_is_still_scored(self, blindtest_client, blindtest_engine):
         """Revue de code : un joueur qui soumet une devinette valide puis se
@@ -1292,7 +1292,7 @@ class TestRoundAdvancement:
                 for msg in (ended1, ended2):
                     assert msg["type"] == "game_state"
                     assert msg["payload"]["phase"] == "ended"
-                    assert msg["payload"]["final_scores"] == {"Bob": 2, "Alice": 0}
+                    assert msg["payload"]["final_scores"] == {"Bob": 2, "Alice": 1}
 
     def test_cap_reached_ends_game_regardless_of_remaining_pot(
         self, blindtest_client, blindtest_engine, monkeypatch
@@ -1345,7 +1345,7 @@ class TestRoundAdvancement:
                 for msg in (ended1, ended2):
                     assert msg["type"] == "game_state"
                     assert msg["payload"]["phase"] == "ended"
-                    assert msg["payload"]["final_scores"] == {"Bob": 2, "Alice": 0}
+                    assert msg["payload"]["final_scores"] == {"Bob": 2, "Alice": 1}
 
     def test_late_joiner_after_end_sees_final_scores(self, blindtest_client, blindtest_engine, monkeypatch):
         """I/O matrix : un client qui rejoint après la fin de partie reçoit
@@ -1383,7 +1383,7 @@ class TestRoundAdvancement:
                     ws3.send_json({"type": "join", "payload": {"pseudo": "Carol"}})
                     join_state = ws3.receive_json()
                     assert join_state["payload"]["phase"] == "ended"
-                    assert join_state["payload"]["final_scores"] == {"Bob": 2, "Alice": 0}
+                    assert join_state["payload"]["final_scores"] == {"Bob": 2, "Alice": 1}
 
     def test_ended_game_ignores_start_game(self, blindtest_client, blindtest_engine, monkeypatch):
         """Boundaries de la spec : une fois `phase == "ended"`, aucun nouveau
