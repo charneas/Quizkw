@@ -409,6 +409,10 @@ export interface BlindtestPlaylistResponse {
   source_url: string
   tracks: BlindtestTrack[]
   not_found_count: number
+  // True si l'import a été tronqué par la limite de pagination YouTube
+  // (playlist trop grosse, ex. "Titres likés") — toujours false pour les
+  // autres providers.
+  truncated: boolean
   game_id?: number | null
   owner_pseudo?: string | null
 }

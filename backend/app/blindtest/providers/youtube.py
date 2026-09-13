@@ -21,7 +21,14 @@ from app.blindtest.extraction_types import ExtractedTrack
 _API_BASE = "https://www.googleapis.com/youtube/v3/playlistItems"
 
 _YOUTUBE_HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be", "music.youtube.com"}
+_PAGE_SIZE = 50
 _MAX_PAGES = 50
+
+# Public : nombre max de morceaux réellement importés avant troncature
+# silencieuse (cf. `fetch_tracks`). Exposé pour que le schéma de réponse
+# (`PlaylistResponse.truncated`) puisse détecter ce cas sans dupliquer la
+# constante.
+MAX_TRACKS = _MAX_PAGES * _PAGE_SIZE
 
 
 def matches(url: str) -> bool:
@@ -70,7 +77,7 @@ def fetch_tracks(url: str) -> List[ExtractedTrack]:
             params = {
                 "part": "snippet",
                 "playlistId": playlist_id,
-                "maxResults": 50,
+                "maxResults": _PAGE_SIZE,
                 "key": api_key,
             }
             if page_token:

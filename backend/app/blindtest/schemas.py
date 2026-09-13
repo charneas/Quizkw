@@ -3,6 +3,8 @@ from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict, computed_field
 
+from app.blindtest.providers import youtube
+
 
 class PlaylistImportRequest(BaseModel):
     url: str
@@ -41,6 +43,20 @@ class PlaylistResponse(BaseModel):
         encore `None` au moment de la réponse. Valeur "live" — peut encore
         baisser tant que le matching en arrière-plan (Story 1.2) tourne."""
         return sum(1 for track in self.tracks if track.youtube_video_id is None)
+
+    @computed_field
+    @property
+    def truncated(self) -> bool:
+        """True si l'import a probablement été tronqué par le garde-fou de
+        pagination YouTube (`providers.youtube.MAX_TRACKS`) — playlist trop
+        grosse (ex. "Titres likés") pour être importée en entier. Approximé
+        par le nombre de morceaux atteignant exactement cette limite : une
+        playlist coïncidant pile avec `MAX_TRACKS` sans être réellement
+        tronquée donnerait un faux positif, jugé acceptable (rarissime) pour
+        éviter de faire remonter ce détail depuis `fetch_tracks` jusqu'ici.
+        Toujours `False` pour Spotify/Apple Music, qui n'ont pas cette
+        limite."""
+        return self.provider == "youtube" and len(self.tracks) >= youtube.MAX_TRACKS
 
 
 # === Admin — réconciliation manuelle des morceaux non trouvés ===

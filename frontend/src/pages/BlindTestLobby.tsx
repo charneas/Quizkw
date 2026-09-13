@@ -197,7 +197,12 @@ export default function BlindTestLobby() {
 
     importBlindtestPlaylist(trimmedUrl, code, pseudo.trim())
       .then((playlist) => {
-        setImportSuccess(`Playlist importée (${playlist.tracks.length} morceau${playlist.tracks.length > 1 ? 'x' : ''}).`)
+        const truncatedNote = playlist.truncated
+          ? ` Playlist trop grosse : seuls les ${playlist.tracks.length} premiers morceaux ont été importés.`
+          : ''
+        setImportSuccess(
+          `Playlist importée (${playlist.tracks.length} morceau${playlist.tracks.length > 1 ? 'x' : ''}).${truncatedNote}`,
+        )
         setPlaylistUrl('')
       })
       .catch((err: Error) => {

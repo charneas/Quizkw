@@ -132,6 +132,26 @@ class TestYoutubeImport:
         data = resp.json()
         assert data["provider"] == "youtube"
         assert data["tracks"][0]["youtube_video_id"] == "vid123"
+        assert data["truncated"] is False
+
+    def test_truncated_true_when_track_count_hits_max_tracks(self, blindtest_client, blindtest_engine):
+        """`PlaylistResponse.truncated` doit signaler au client qu'une
+        playlist YouTube a probablement été coupée par le garde-fou de
+        pagination (`providers.youtube.MAX_TRACKS`), pour que l'UI en
+        informe l'utilisateur plutôt que de laisser l'import paraître
+        complet silencieusement."""
+        from app.blindtest.providers import youtube
+
+        fake_tracks = [
+            ExtractedTrack(title=f"Vid {i}", artist="Channel", youtube_video_id=f"vid{i}")
+            for i in range(youtube.MAX_TRACKS)
+        ]
+        with patch("app.blindtest.providers.youtube.fetch_tracks", return_value=fake_tracks), \
+             patch("app.blindtest.matching.match_playlist_tracks"):
+            resp = blindtest_client.post("/blindtest/playlists", json={"url": YOUTUBE_URL})
+
+        assert resp.status_code == 201
+        assert resp.json()["truncated"] is True
 
     def test_music_youtube_com_playlist_is_recognized(self, blindtest_client, blindtest_engine):
         """`music.youtube.com` (YouTube Music) partage le même identifiant de
