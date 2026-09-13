@@ -28,6 +28,12 @@ Front : `frontend/src/pages/BlindTestLobby.tsx`, route `/blindtest/:code`.
 ⚠️ Limité à **1 seul worker gunicorn** en prod — état de partie en mémoire
 par process, pas encore de coordination multi-worker (Redis prévu).
 
+⚠️ L'import Spotify exige que le compte propriétaire de l'app
+(`SPOTIFY_CLIENT_ID`/`SPOTIFY_CLIENT_SECRET`) ait un abonnement **Premium
+actif** (restriction Spotify, indépendante de la playlist ciblée) — sans
+ça, tout import Spotify échoue avec un message explicite. L'import YouTube
+n'a pas cette contrainte.
+
 ## Installation
 
 ### Backend
@@ -75,7 +81,7 @@ npx playwright test
 | 1 — Quiz collectif par équipes | Jouable | Jetons (swap/pénalité/bonus), roue de bonus/malus tous les 5 tours, duels ping-pong |
 | 2 — Tournoi individuel 16→8→4 | Jouable, retours playtest corrigés | Tour par rôle avec spectateurs, qualification Manche 1→2 fiabilisée (H-007), tests E2E (`frontend/tests/round2.spec.ts`) |
 | 3 — Grille mémoire (finale, 4 joueurs) | Jouable, testée en E2E réel | Grille 7×5, individuelle depuis la réécriture AD-0 (2026-07-25) |
-| Blind test | Jouable, atteint uniquement par code direct (`/blindtest/:code`) | Pas encore de point d'entrée depuis la home — intégration en cours, voir `_bmad-output/specs/spec-blindtest-integration-ui/` |
+| Blind test | Jouable, intégré à la home | Rejoindre/créer depuis la home, titre/artiste et score visibles en permanence, layout/palette dédiés, résilience host/déconnexion — voir `_bmad-output/specs/spec-blindtest-integration-ui/` |
 
 Le suivi détaillé du backlog (epics, stories, statut) est géré via BMad Method
 dans `_bmad-output/` (non versionné — généré localement).
