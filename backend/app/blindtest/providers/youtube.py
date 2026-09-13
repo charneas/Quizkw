@@ -59,7 +59,14 @@ def fetch_tracks(url: str) -> List[ExtractedTrack]:
         while True:
             page_count += 1
             if page_count > _MAX_PAGES:
-                raise PrivatePlaylistError("Playlist YouTube : trop de pages, extraction interrompue")
+                # Garde-fou contre une pagination qui ne se termine jamais
+                # (bug API, ou playlist réellement énorme type "Titres
+                # likés" avec des milliers d'entrées) : tronquer plutôt
+                # qu'échouer entièrement — 2500 morceaux (50 pages x 50) est
+                # déjà largement suffisant pour alimenter des parties de
+                # blind test, jeter tout l'import pour ce seul dépassement
+                # pénalisait sans raison les grosses bibliothèques légitimes.
+                break
             params = {
                 "part": "snippet",
                 "playlistId": playlist_id,

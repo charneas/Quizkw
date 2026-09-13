@@ -10,7 +10,7 @@ import os
 
 os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -151,6 +151,43 @@ class TestYoutubeImport:
 
         assert resp.status_code == 201
         assert resp.json()["provider"] == "youtube"
+
+    def test_pagination_beyond_max_pages_truncates_instead_of_failing(self):
+        """Une playlist dépassant `_MAX_PAGES` (ex. "Titres likés" avec des
+        milliers d'entrées) doit être tronquée à ce qu'on a déjà collecté,
+        pas rejetée entièrement — bug corrigé : `fetch_tracks` levait
+        `PrivatePlaylistError` dans ce cas, pénalisant les grosses
+        bibliothèques légitimes pour un morceau de blind test qui n'a de
+        toute façon besoin que d'une quinzaine de pistes."""
+        from app.blindtest.providers import youtube
+
+        def fake_page(page_number: int) -> MagicMock:
+            resp = MagicMock(status_code=200)
+            resp.json.return_value = {
+                "items": [
+                    {
+                        "snippet": {
+                            "title": f"Track {page_number}",
+                            "videoOwnerChannelTitle": "Channel",
+                            "resourceId": {"videoId": f"vid-{page_number}"},
+                        }
+                    }
+                ],
+                # Toujours un nextPageToken : la pagination ne se termine
+                # jamais d'elle-même, seul le garde-fou `_MAX_PAGES` doit
+                # l'arrêter.
+                "nextPageToken": f"token-{page_number + 1}",
+            }
+            return resp
+
+        pages = [fake_page(i) for i in range(1, youtube._MAX_PAGES + 5)]
+
+        with patch("httpx.Client") as client_cls, \
+             patch.dict(os.environ, {"YOUTUBE_API_KEY": "fake-key"}):
+            client_cls.return_value.__enter__.return_value.get.side_effect = pages
+            tracks = youtube.fetch_tracks("https://www.youtube.com/playlist?list=PLxyz123")
+
+        assert len(tracks) == youtube._MAX_PAGES
 
     def test_failure_after_first_track_cache_store_leaves_no_partial_write(self, blindtest_client, blindtest_engine):
         """`cache.store()` (appelé pour le premier morceau, déjà résolu en

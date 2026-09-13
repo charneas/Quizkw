@@ -335,6 +335,7 @@ export default function BlindTestLobby() {
             <p className="text-text-muted">Importer ta playlist (Spotify, YouTube ou Apple Music) :</p>
             {importError && <p className="text-sm text-red-500">{importError}</p>}
             {importSuccess && <p className="text-sm text-green-600">{importSuccess}</p>}
+            {isImporting && <p className="text-sm text-text-muted">Import en cours… ça peut prendre quelques secondes.</p>}
             <div className="flex gap-2">
               <input
                 type="text"
@@ -346,7 +347,7 @@ export default function BlindTestLobby() {
                 disabled={isImporting}
               />
               <button className="btn-primary" onClick={handleImportPlaylist} disabled={isImporting}>
-                Importer
+                {isImporting ? 'Import…' : 'Importer'}
               </button>
             </div>
           </div>
