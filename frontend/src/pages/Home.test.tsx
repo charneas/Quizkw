@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import Home from './Home'
 import Game from './Game'
@@ -136,13 +136,18 @@ describe('Home — carte Blindtest (spec-blindtest-integration-ui, story 1)', ()
     vi.restoreAllMocks()
   })
 
+  function BlindtestLobbyStub() {
+    const { code } = useParams<{ code: string }>()
+    return <p>Blindtest lobby page: {code}</p>
+  }
+
   function renderHomeWithBlindtestRoute() {
     return render(
       <DiscordAccountProvider>
         <MemoryRouter initialEntries={['/']}>
           <Routes>
             <Route path="/" element={<Home />} />
-            <Route path="/blindtest/:code" element={<p>Blindtest lobby page</p>} />
+            <Route path="/blindtest/:code" element={<BlindtestLobbyStub />} />
           </Routes>
         </MemoryRouter>
       </DiscordAccountProvider>
@@ -170,7 +175,7 @@ describe('Home — carte Blindtest (spec-blindtest-integration-ui, story 1)', ()
     expect(button).not.toBeDisabled()
     fireEvent.click(button)
 
-    expect(await screen.findByText('Blindtest lobby page')).toBeInTheDocument()
+    expect(await screen.findByText('Blindtest lobby page: ABC123')).toBeInTheDocument()
   })
 
   it('navigue vers /blindtest/<CODE> à la touche Entrée', async () => {
@@ -181,7 +186,7 @@ describe('Home — carte Blindtest (spec-blindtest-integration-ui, story 1)', ()
     fireEvent.change(input, { target: { value: 'xyz789' } })
     fireEvent.keyDown(input, { key: 'Enter' })
 
-    expect(await screen.findByText('Blindtest lobby page')).toBeInTheDocument()
+    expect(await screen.findByText('Blindtest lobby page: XYZ789')).toBeInTheDocument()
   })
 
   it('crée une partie blindtest et navigue vers /blindtest/<code> retourné par le backend (story 2)', async () => {
@@ -192,7 +197,7 @@ describe('Home — carte Blindtest (spec-blindtest-integration-ui, story 1)', ()
 
     fireEvent.click(button)
 
-    expect(await screen.findByText('Blindtest lobby page')).toBeInTheDocument()
+    expect(await screen.findByText('Blindtest lobby page: ZQ7K2P')).toBeInTheDocument()
   })
 
   it("affiche une erreur inline et réactive le bouton quand la création échoue (story 2)", async () => {
