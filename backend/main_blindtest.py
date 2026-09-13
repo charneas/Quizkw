@@ -856,14 +856,23 @@ async def game_lobby_ws(websocket: WebSocket, code: str, db: Session = Depends(g
 
             # Story 7 (spec-blindtest-integration-ui) : si l'hôte qui vient de
             # partir était game.host_pseudo, transférer le statut au premier
-            # joueur encore connecté (ordre de connexion, déterministe) plutôt
-            # que de laisser la partie bloquée sans personne habilité à
-            # déclencher `start_game`. Rien à réassigner si plus personne
-            # n'est présent — la partie reste simplement abandonnée.
+            # joueur encore connecté plutôt que de laisser la partie bloquée
+            # sans personne habilité à déclencher `start_game`. Rien à
+            # réassigner si plus personne n'est présent — la partie reste
+            # simplement abandonnée. `players()` reflète l'ordre d'ARRIVÉE
+            # ORIGINAL dans le dict (un rejoin ne fait que réécrire la valeur
+            # d'une clé existante, sans la déplacer) : "premier encore
+            # connecté" veut dire premier arrivé historiquement, pas premier
+            # reconnecté.
             remaining_players = connection_manager.players(game_code)
             if pseudo == game.host_pseudo and remaining_players:
-                game.host_pseudo = remaining_players[0]
+                new_host = remaining_players[0]
+                game.host_pseudo = new_host
                 db.commit()
+                logger.info(
+                    "Hôte réassigné après déconnexion (game_id=%s, code=%s): %s -> %s",
+                    game.id, game_code, pseudo, new_host,
+                )
 
             await connection_manager.broadcast_game_state(
                 game_code, {"phase": game.phase, "host_pseudo": game.host_pseudo}, game_id=game.id
