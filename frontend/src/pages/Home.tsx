@@ -178,52 +178,6 @@ function Home() {
           </div>
         </div>
 
-        {/* Blindtest (spec-blindtest-integration-ui, story 1) : rejoindre
-            une partie blindtest par code — mirroir exact de la carte
-            "Rejoindre une partie" ci-dessus, aucune copie explicative sur la
-            création (manuelle pour l'instant, hors scope). */}
-        {/* Story 6 (spec-blindtest-integration-ui) : `text-accent` (magenta
-            Neon Pit Lane) sur le titre, seule touche de couleur distincte du
-            quiz — usage restreint au texte, jamais en fond (DESIGN.md
-            Do's/Don'ts). */}
-        <div className="card">
-          <h2 className="text-xl font-semibold mb-4 text-accent">🎵 Blindtest</h2>
-          <div className="flex flex-col sm:flex-row gap-3">
-            <input
-              type="text"
-              placeholder="Code de la partie"
-              value={blindtestCode}
-              onChange={(e) => setBlindtestCode(e.target.value.toUpperCase())}
-              onKeyDown={(e) => e.key === 'Enter' && handleJoinBlindtest()}
-              className="input-field uppercase tracking-widest text-center text-lg"
-              maxLength={6}
-            />
-            <button
-              onClick={handleJoinBlindtest}
-              disabled={!blindtestCode.trim()}
-              className="btn-primary whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Rejoindre
-            </button>
-          </div>
-          {/* Story 2 (spec-blindtest-integration-ui) : créer une partie
-              blindtest en self-serve, symétrique à handleCreateGame côté
-              quiz — sans champs de configuration (aucun réglage à la
-              création côté blindtest). */}
-          <button
-            onClick={handleCreateBlindtestGame}
-            disabled={isCreatingBlindtest}
-            className="btn-secondary w-full mt-3 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isCreatingBlindtest ? '⏳ Création...' : 'Créer une partie'}
-          </button>
-          {blindtestCreateError && (
-            <div className="text-danger text-sm text-center bg-danger/10 rounded-lg p-2 mt-3">
-              {blindtestCreateError}
-            </div>
-          )}
-        </div>
-
         {/* Jouer avec des inconnus (spec-rooms-publiques) : file d'attente
             publique auto-remplie, aucun code requis pour rejoindre. */}
         <div className="card">
@@ -399,6 +353,54 @@ function Home() {
               >
                 {isCreating ? '⏳ Création...' : '🚀 Créer la partie'}
               </button>
+            </div>
+          )}
+        </div>
+
+        {/* Blindtest (spec-blindtest-integration-ui, story 1) : rejoindre
+            une partie blindtest par code — mirroir exact de la carte
+            "Rejoindre une partie" ci-dessus, aucune copie explicative sur la
+            création (manuelle pour l'instant, hors scope). Placée après les
+            cartes quiz (retour utilisateur) : au milieu, elle cassait le
+            regroupement visuel des trois cartes quiz. */}
+        {/* Story 6 (spec-blindtest-integration-ui) : `text-accent` (magenta
+            Neon Pit Lane) sur le titre, seule touche de couleur distincte du
+            quiz — usage restreint au texte, jamais en fond (DESIGN.md
+            Do's/Don'ts). */}
+        <div className="card">
+          <h2 className="text-xl font-semibold mb-4 text-accent">🎵 Blindtest</h2>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <input
+              type="text"
+              placeholder="Code de la partie"
+              value={blindtestCode}
+              onChange={(e) => setBlindtestCode(e.target.value.toUpperCase())}
+              onKeyDown={(e) => e.key === 'Enter' && handleJoinBlindtest()}
+              className="input-field uppercase tracking-widest text-center text-lg"
+              maxLength={6}
+            />
+            <button
+              onClick={handleJoinBlindtest}
+              disabled={!blindtestCode.trim()}
+              className="btn-primary whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Rejoindre
+            </button>
+          </div>
+          {/* Story 2 (spec-blindtest-integration-ui) : créer une partie
+              blindtest en self-serve, symétrique à handleCreateGame côté
+              quiz — sans champs de configuration (aucun réglage à la
+              création côté blindtest). */}
+          <button
+            onClick={handleCreateBlindtestGame}
+            disabled={isCreatingBlindtest}
+            className="btn-secondary w-full mt-3 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isCreatingBlindtest ? '⏳ Création...' : 'Créer une partie'}
+          </button>
+          {blindtestCreateError && (
+            <div className="text-danger text-sm text-center bg-danger/10 rounded-lg p-2 mt-3">
+              {blindtestCreateError}
             </div>
           )}
         </div>
