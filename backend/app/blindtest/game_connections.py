@@ -38,16 +38,26 @@ class ConnectionManager:
     def players(self, game_code: str) -> list[str]:
         return list(self._games.get(game_code, {}).keys())
 
-    async def broadcast_game_state(self, game_code: str, extra: Optional[dict] = None) -> None:
+    async def broadcast_game_state(
+        self, game_code: str, extra: Optional[dict] = None, game_id: Optional[int] = None
+    ) -> None:
         """Envoie `game_state` à tous les sockets actuellement connectés
         pour cette partie. `extra` (Story 2.4 : `phase`/`host_pseudo`) est
         fusionné dans le payload aux côtés de `players` — implémenté en
-        termes de `broadcast` pour ne pas dupliquer la boucle d'envoi."""
+        termes de `broadcast` pour ne pas dupliquer la boucle d'envoi.
+
+        `game_id` (Story 4, spec-blindtest-integration-ui) : quand fourni,
+        ajoute le score cumulatif courant (`score_store.snapshot`) au
+        payload sous `scores`, pour que le scoreboard soit visible à chaque
+        `game_state` (pas seulement reveal/ended) — display-only, ne
+        touche jamais au calcul des scores lui-même."""
         game = self._games.get(game_code, {})
         # `players` est calculé ici et doit toujours gagner si jamais un
         # futur appelant passe une clé `players` dans `extra` (revue de
         # code) — d'où la fusion avec `extra` en premier.
         payload = {**(extra or {}), "players": list(game.keys())}
+        if game_id is not None:
+            payload["scores"] = score_store.snapshot(game_id)
         await self.broadcast(game_code, "game_state", payload)
 
     async def broadcast(self, game_code: str, msg_type: str, payload: dict) -> None:

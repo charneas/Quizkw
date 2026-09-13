@@ -363,6 +363,25 @@ class TestStartGame:
                 msg2 = ws2.receive_json()
                 assert msg2["payload"]["phase"] == "round_started"
 
+    def test_round_started_game_state_carries_scores(self, blindtest_client, blindtest_engine):
+        """Story 4 (spec-blindtest-integration-ui) : le `game_state` de
+        `round_started` doit désormais porter `scores` (le scoreboard doit
+        rester visible pendant tout le round, pas seulement au reveal/ended)."""
+        code = _create_game(blindtest_client)
+        _add_track(blindtest_engine, code)
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+
+            ws1.send_json({"type": "start_game", "payload": {}})
+            state = ws1.receive_json()  # game_state {phase: round_started}
+            assert state["type"] == "game_state"
+            assert state["payload"]["phase"] == "round_started"
+
+            gid = _game_id(blindtest_engine, code)
+            assert state["payload"]["scores"] == score_store.snapshot(gid)
+
     def test_disconnect_after_round_started_rebroadcasts_current_phase(self, blindtest_client, blindtest_engine):
         """Régression (revue de code) : le `finally` du handler WS lisait un
         objet `Game` ORM chargé une seule fois à la connexion, jamais

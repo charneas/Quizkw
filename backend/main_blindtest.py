@@ -585,6 +585,7 @@ async def _advance_round(game_id: int, game_code: str) -> None:
                     "host_pseudo": game.host_pseudo,
                     "final_scores": score_store.snapshot(game.id),
                 },
+                game_id=game.id,
             )
             return
 
@@ -593,7 +594,7 @@ async def _advance_round(game_id: int, game_code: str) -> None:
         # temps au client d'afficher un indicateur "round suivant..." (cf.
         # Code Map).
         await connection_manager.broadcast_game_state(
-            game_code, {"phase": "next_round", "host_pseudo": game.host_pseudo}
+            game_code, {"phase": "next_round", "host_pseudo": game.host_pseudo}, game_id=game.id
         )
 
         start_seconds = random.randint(0, track.duration_seconds - 1)
@@ -613,7 +614,7 @@ async def _advance_round(game_id: int, game_code: str) -> None:
         # sur celle de la devinette), rendant la partie injouable au-delà du
         # premier round.
         await connection_manager.broadcast_game_state(
-            game_code, {"phase": "round_started", "host_pseudo": game.host_pseudo}
+            game_code, {"phase": "round_started", "host_pseudo": game.host_pseudo}, game_id=game.id
         )
         await connection_manager.broadcast(
             game_code,
@@ -785,7 +786,7 @@ async def game_lobby_ws(websocket: WebSocket, code: str, db: Session = Depends(g
         if game.phase == "ended":
             join_state_extra["final_scores"] = score_store.snapshot(game.id)
 
-        await connection_manager.broadcast_game_state(game_code, join_state_extra)
+        await connection_manager.broadcast_game_state(game_code, join_state_extra, game_id=game.id)
 
         while True:
             try:
@@ -808,7 +809,7 @@ async def game_lobby_ws(websocket: WebSocket, code: str, db: Session = Depends(g
                     # tant qu'aucun round suivant n'existait ; désormais requis
                     # pour que l'UI de devinette apparaisse à chaque round.
                     await connection_manager.broadcast_game_state(
-                        game_code, {"phase": "round_started", "host_pseudo": game.host_pseudo}
+                        game_code, {"phase": "round_started", "host_pseudo": game.host_pseudo}, game_id=game.id
                     )
                     await connection_manager.broadcast(game_code, "round_started", round_payload)
                     # Story 2.6 : minuteur de clôture démarré en tâche de
@@ -839,5 +840,5 @@ async def game_lobby_ws(websocket: WebSocket, code: str, db: Session = Depends(g
             # restants (revue de code).
             db.refresh(game)
             await connection_manager.broadcast_game_state(
-                game_code, {"phase": game.phase, "host_pseudo": game.host_pseudo}
+                game_code, {"phase": game.phase, "host_pseudo": game.host_pseudo}, game_id=game.id
             )

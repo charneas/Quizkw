@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { BlindtestSocket } from '../lib/blindtestSocket'
 import { createHiddenPlayer, type YouTubePlayer } from '../lib/youtubePlayer'
 import { importBlindtestPlaylist } from '../services/api'
+import Scoreboard from '../components/Scoreboard'
 import type { BlindtestRevealPayload } from '../types'
 
 /**
@@ -59,6 +60,11 @@ export default function BlindTestLobby() {
   // `null` une fois reçu, contrairement à `reveal` qui se remet à zéro à
   // chaque nouveau round : `ended` ne connaît plus de round suivant).
   const [finalScores, setFinalScores] = useState<Record<string, number> | null>(null)
+
+  // Story 4 (spec-blindtest-integration-ui) : score cumulatif courant,
+  // mis à jour depuis chaque `game_state` — affiché en permanence pendant
+  // le round (`round_started`), pas seulement au reveal/ended.
+  const [scores, setScores] = useState<Record<string, number>>({})
 
   useEffect(() => {
     setSelectedPlayers([])
@@ -132,6 +138,9 @@ export default function BlindTestLobby() {
         // à jour, `next_round`, ...) reçu après la fin de partie.
         if (payload.final_scores) {
           setFinalScores(payload.final_scores)
+        }
+        if (payload.scores) {
+          setScores(payload.scores)
         }
         if (payload.phase === 'ended') {
           // Revue de code : sans ceci, le lecteur YouTube caché du dernier
@@ -307,6 +316,26 @@ export default function BlindTestLobby() {
               {roundTrack.title} — {roundTrack.artist}
             </p>
           )}
+
+          {/* Story 4 (spec-blindtest-integration-ui) : scoreboard visible
+              pendant tout le round, pas seulement au reveal/ended. Merge du
+              roster complet (`players`) avec les scores partiels connus
+              (`score_store` n'a que les pseudos déjà scorés) pour que chaque
+              joueur présent apparaisse, à 0 par défaut. `Scoreboard.tsx` ne
+              lit que `.id`/`.name`/`.score` — les autres champs `Team` sont
+              des valeurs de remplissage sans effet sur le rendu. */}
+          <Scoreboard
+            teams={players.map((p, index) => ({
+              // `Team.id` sert de clé React dans `Scoreboard.tsx` — un id
+              // constant dupliquerait la clé entre joueurs (pas de vrai
+              // id numérique côté blindtest, pas de `Player` DB table).
+              id: index,
+              name: p,
+              score: scores[p] ?? 0,
+              game_session_id: 0,
+              players: [],
+            }))}
+          />
           {/* Lecteur YouTube jamais affiché (blind test) : positionné
               hors-écran, pas en `display:none`, pour éviter les quirks de
               suppression d'autoplay sur un iframe caché (cf. Boundaries de

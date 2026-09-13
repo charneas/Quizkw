@@ -374,6 +374,12 @@ export interface BlindtestGameStatePayload {
   // (re)joignant qui rejoint/se reconnecte après coup — état terminal
   // permanent, cf. Boundaries de spec-2-7-enchainement-classement-final.md).
   final_scores?: Record<string, number>
+  // Story 4 (spec-blindtest-integration-ui) : score cumulatif courant,
+  // présent sur tout `game_state` (pas seulement `ended`) pour garder le
+  // scoreboard visible pendant toute la manche — `score_store` ne contient
+  // que les pseudos déjà scorés au moins une fois, d'où le merge avec
+  // `players` (défaut 0) côté rendu plutôt qu'ici.
+  scores?: Record<string, number>
 }
 
 // Story 2.4 : payload de `round_started`, poussé par le serveur au host
