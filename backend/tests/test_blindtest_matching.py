@@ -425,7 +425,7 @@ def matching_session_factory(matching_engine):
 class TestMatchPlaylistTracks:
     def test_resolves_via_primary_then_fallback_skips_already_resolved(self, matching_session_factory):
         db = matching_session_factory()
-        playlist = Playlist(source_url="PLAYLIST_URL", provider="spotify")
+        playlist = Playlist(source_url="PLAYLIST_URL", provider="deezer")
         db.add(playlist)
         db.flush()
         already_resolved = Track(playlist_id=playlist.id, title="Already", artist="A", youtube_video_id="existing")
@@ -464,7 +464,7 @@ class TestMatchPlaylistTracks:
 
     def test_one_track_exception_does_not_abort_the_others(self, matching_session_factory):
         db = matching_session_factory()
-        playlist = Playlist(source_url="PLAYLIST_URL", provider="spotify")
+        playlist = Playlist(source_url="PLAYLIST_URL", provider="deezer")
         db.add(playlist)
         db.flush()
         first = Track(playlist_id=playlist.id, title="First", artist="A", source_url="url1")
@@ -498,7 +498,7 @@ class TestMatchPlaylistTracks:
         from app.blindtest.models import MatchCache
 
         db = matching_session_factory()
-        playlist = Playlist(source_url="PLAYLIST_URL", provider="spotify")
+        playlist = Playlist(source_url="PLAYLIST_URL", provider="deezer")
         db.add(playlist)
         db.flush()
         track = Track(playlist_id=playlist.id, title="Cached Song", artist="A", isrc="ISRC-1", source_url="url1")
@@ -577,7 +577,7 @@ class TestMatchPlaylistTracks:
         départ) dont `videos.list` échoue garde tout de même le
         `youtube_video_id` obtenu, `duration_seconds` reste `NULL`."""
         db = matching_session_factory()
-        playlist = Playlist(source_url="PLAYLIST_URL", provider="spotify")
+        playlist = Playlist(source_url="PLAYLIST_URL", provider="deezer")
         db.add(playlist)
         db.flush()
         track = Track(playlist_id=playlist.id, title="Song", artist="A", source_url="url1")
@@ -633,18 +633,18 @@ def blindtest_client(blindtest_engine, blindtest_session_factory):
     main_app.dependency_overrides.clear()
 
 
-SPOTIFY_URL = "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M"
+DEEZER_URL = "https://www.deezer.com/playlist/908622995"
 
 
 class TestImportThenPollIntegration:
     def test_post_then_get_reflects_matching_result(self, blindtest_client, blindtest_session_factory):
         fake_tracks = [
-            ExtractedTrack(title="Song A", artist="Artist A", source_url="https://open.spotify.com/track/aaa"),
+            ExtractedTrack(title="Song A", artist="Artist A", source_url="https://www.deezer.com/track/aaa"),
         ]
-        with patch("app.blindtest.providers.spotify.fetch_tracks", return_value=fake_tracks), \
+        with patch("app.blindtest.providers.deezer.fetch_tracks", return_value=fake_tracks), \
              patch("app.blindtest.matching.SessionLocal", blindtest_session_factory), \
              patch("app.blindtest.matching.resolve_track_video_id", return_value=("resolved-vid", 180)):
-            post_resp = blindtest_client.post("/blindtest/playlists", json={"url": SPOTIFY_URL})
+            post_resp = blindtest_client.post("/blindtest/playlists", json={"url": DEEZER_URL})
 
         assert post_resp.status_code == 201
         playlist_id = post_resp.json()["id"]

@@ -21,18 +21,19 @@ Déployé en production sur **quizclimb.fr**.
 Router séparé (`backend/main_blindtest.py`), monté sur la même app FastAPI
 mais avec sa **propre base de données isolée** (`app/blindtest/`, AD-7) —
 aucune jointure avec les tables du quiz principal. Import de playlists
-(Spotify/YouTube), matching automatique vers YouTube, lobby et
+(Deezer/YouTube), matching automatique vers YouTube, lobby et
 rounds en temps réel via WebSocket (`frontend/src/lib/blindtestSocket.ts`).
 Front : `frontend/src/pages/BlindTestLobby.tsx`, route `/blindtest/:code`.
 
 ⚠️ Limité à **1 seul worker gunicorn** en prod — état de partie en mémoire
 par process, pas encore de coordination multi-worker (Redis prévu).
 
-⚠️ L'import Spotify exige que le compte propriétaire de l'app
-(`SPOTIFY_CLIENT_ID`/`SPOTIFY_CLIENT_SECRET`) ait un abonnement **Premium
-actif** (restriction Spotify, indépendante de la playlist ciblée) — sans
-ça, tout import Spotify échoue avec un message explicite. L'import YouTube
-n'a pas cette contrainte.
+⚠️ Le provider Spotify a été retiré (2026-09-14) : l'API Spotify bloque
+désormais l'accès Client Credentials (app-only) aux morceaux des playlists
+d'autres utilisateurs, même publiques (Extended Quota Mode requis) — ça ne
+dépendait pas de la playlist ciblée, ni d'un abonnement Premium côté
+utilisateur. Deezer (sans authentification) et YouTube sont les deux
+sources d'import disponibles.
 
 ## Installation
 

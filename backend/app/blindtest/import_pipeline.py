@@ -8,10 +8,9 @@ from typing import List
 
 from app.blindtest.errors import UnrecognizedUrlError
 from app.blindtest.extraction_types import ExtractedTrack
-from app.blindtest.providers import deezer, spotify, youtube
+from app.blindtest.providers import deezer, youtube
 
 _PROVIDERS = (
-    ("spotify", spotify),
     ("youtube", youtube),
     ("deezer", deezer),
 )

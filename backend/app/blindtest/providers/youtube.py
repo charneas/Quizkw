@@ -1,7 +1,7 @@
 """Provider YouTube — extraction de playlist publique via YouTube Data API
 (clé API applicative — FR1). Chaque item de playlist EST déjà une vidéo
 YouTube : `youtube_video_id` est peuplé directement, aucun matching requis
-(contrairement à Spotify, résolu en Story 1.2).
+(contrairement à Deezer, résolu en Story 1.2).
 
 Détection : host `youtube.com`/`www.youtube.com`/`m.youtube.com`/`youtu.be`/
 `music.youtube.com` avec un paramètre `list=` — une playlist YouTube Music

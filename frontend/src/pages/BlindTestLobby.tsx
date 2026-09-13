@@ -453,7 +453,7 @@ export default function BlindTestLobby() {
             )}
 
             <div className="space-y-2">
-              <p className="text-text-muted">Importer ta playlist (Spotify, Deezer ou YouTube) :</p>
+              <p className="text-text-muted">Importer ta playlist (Deezer ou YouTube) :</p>
               {importError && <p className="text-sm text-red-500">{importError}</p>}
               {importSuccess && <p className="text-sm text-green-600">{importSuccess}</p>}
               {isImporting && <p className="text-sm text-text-muted">Import en cours… ça peut prendre quelques secondes.</p>}

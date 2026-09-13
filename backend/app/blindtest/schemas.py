@@ -54,7 +54,7 @@ class PlaylistResponse(BaseModel):
         playlist coïncidant pile avec `MAX_TRACKS` sans être réellement
         tronquée donnerait un faux positif, jugé acceptable (rarissime) pour
         éviter de faire remonter ce détail depuis `fetch_tracks` jusqu'ici.
-        Toujours `False` pour Spotify, qui n'a pas cette limite."""
+        Toujours `False` pour Deezer, qui n'a pas cette limite."""
         return self.provider == "youtube" and len(self.tracks) >= youtube.MAX_TRACKS
 
 

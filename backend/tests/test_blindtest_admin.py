@@ -73,7 +73,7 @@ def admin_client(blindtest_client):
 
 def _make_unresolved_track(session_factory, **overrides):
     db = session_factory()
-    playlist = Playlist(source_url="https://open.spotify.com/playlist/abc", provider="spotify")
+    playlist = Playlist(source_url="https://www.deezer.com/playlist/abc", provider="deezer")
     db.add(playlist)
     db.flush()
     defaults = dict(
@@ -82,7 +82,7 @@ def _make_unresolved_track(session_factory, **overrides):
         artist="Artist",
         isrc=None,
         youtube_video_id=None,
-        source_url="https://open.spotify.com/track/xyz",
+        source_url="https://www.deezer.com/track/xyz",
     )
     defaults.update(overrides)
     track = Track(**defaults)
@@ -124,14 +124,14 @@ class TestListUnresolved:
 
     def test_lists_only_unresolved_tracks_across_all_playlists(self, admin_client, blindtest_session_factory):
         db = blindtest_session_factory()
-        playlist_a = Playlist(source_url="https://open.spotify.com/playlist/a", provider="spotify")
+        playlist_a = Playlist(source_url="https://www.deezer.com/playlist/a", provider="deezer")
         playlist_b = Playlist(source_url="https://www.youtube.com/playlist?list=b", provider="youtube")
         db.add_all([playlist_a, playlist_b])
         db.flush()
         resolved = Track(playlist_id=playlist_a.id, title="Resolved", artist="A", youtube_video_id="vid-1")
         unresolved_a = Track(
             playlist_id=playlist_a.id, title="Unresolved A", artist="A", isrc="ISRC-A",
-            source_url="https://open.spotify.com/track/a",
+            source_url="https://www.deezer.com/track/a",
         )
         unresolved_b = Track(playlist_id=playlist_b.id, title="Unresolved B", artist="B")
         db.add_all([resolved, unresolved_a, unresolved_b])
@@ -149,9 +149,9 @@ class TestListUnresolved:
         item_a = by_title["Unresolved A"]
         assert item_a["artist"] == "A"
         assert item_a["isrc"] == "ISRC-A"
-        assert item_a["source_url"] == "https://open.spotify.com/track/a"
+        assert item_a["source_url"] == "https://www.deezer.com/track/a"
         assert item_a["playlist_id"] == playlist_a_id
-        assert item_a["playlist_provider"] == "spotify"
+        assert item_a["playlist_provider"] == "deezer"
 
         item_b = by_title["Unresolved B"]
         assert item_b["playlist_provider"] == "youtube"
@@ -338,14 +338,14 @@ class TestResolveTrack:
         assert resp.status_code == 200
 
         fake_tracks = [
-            ExtractedTrack(title="Same Song", artist="Same Artist", isrc="ISRC-SHARED", source_url="https://open.spotify.com/track/other"),
+            ExtractedTrack(title="Same Song", artist="Same Artist", isrc="ISRC-SHARED", source_url="https://www.deezer.com/track/other"),
         ]
-        with patch("app.blindtest.providers.spotify.fetch_tracks", return_value=fake_tracks), \
+        with patch("app.blindtest.providers.deezer.fetch_tracks", return_value=fake_tracks), \
              patch("app.blindtest.matching.SessionLocal", blindtest_session_factory), \
              patch("httpx.Client") as client_cls:
             post_resp = admin_client.post(
                 "/blindtest/playlists",
-                json={"url": "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M"},
+                json={"url": "https://www.deezer.com/playlist/908622995"},
             )
 
         assert post_resp.status_code == 201

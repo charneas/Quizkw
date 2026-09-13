@@ -128,17 +128,19 @@ backlog détaillé.
 - `BLINDTEST_DATABASE_URL` : URL de connexion de la DB dédiée au module
   blindtest (Epic 1), distincte de `DATABASE_URL` (AD-7, pas de JOIN
   cross-DB). Développement : `sqlite:///./blindtest.db`.
-- `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` : credentials Client
-  Credentials Spotify (app-level, pas d'OAuth utilisateur) pour l'import de
-  playlists Spotify.
 - `YOUTUBE_API_KEY` : clé API YouTube Data pour l'import de playlists
   YouTube.
 - `IDONTHAVESPOTIFY_BASE_URL` : URL de base du service self-hosted
   [`idonthavespotify`](https://github.com/sjdonado/idonthavespotify) (Docker
-  Compose, pas d'auth), utilisé en primaire pour résoudre chaque morceau
-  Spotify vers un `youtube_video_id` (Story 1.2). Pas de valeur par défaut :
-  si absente, le matching saute directement au repli YouTube `search.list`
-  (quota ~100/jour) sans lever d'erreur.
+  Compose, pas d'auth), utilisé en primaire pour résoudre un morceau importé
+  (Deezer, etc.) vers un `youtube_video_id` (Story 1.2). Pas de valeur par
+  défaut : si absente, le matching saute directement au repli YouTube
+  `search.list` (quota ~100/jour) sans lever d'erreur.
+
+  Note : le provider Spotify a été retiré (2026-09-14) — l'API Spotify
+  bloque désormais l'accès Client Credentials (app-only) aux morceaux des
+  playlists d'autres utilisateurs, même publiques (Extended Quota Mode
+  requis). `SPOTIFY_CLIENT_ID`/`SPOTIFY_CLIENT_SECRET` ne sont plus utilisés.
 
 ### Base de données
 

@@ -20,7 +20,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.blindtest.database import Base, get_db
-from app.blindtest.errors import PrivatePlaylistError, ProviderConfigError
+from app.blindtest.errors import PrivatePlaylistError
 from app.blindtest.extraction_types import ExtractedTrack
 from main import app as main_app
 
@@ -62,24 +62,23 @@ def _count_rows(blindtest_engine):
     return playlists, tracks
 
 
-SPOTIFY_URL = "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M"
 YOUTUBE_URL = "https://www.youtube.com/playlist?list=PLxyz123"
 DEEZER_URL = "https://www.deezer.com/playlist/908622995"
 
 
-class TestSpotifyImport:
-    def test_valid_spotify_playlist_persists_playlist_and_tracks(self, blindtest_client, blindtest_engine):
+class TestDeezerImport:
+    def test_valid_deezer_playlist_persists_playlist_and_tracks(self, blindtest_client, blindtest_engine):
         fake_tracks = [
-            ExtractedTrack(title="Song A", artist="Artist A", isrc="ISRC1", source_url="https://open.spotify.com/track/aaa"),
+            ExtractedTrack(title="Song A", artist="Artist A", isrc="ISRC1", source_url="https://www.deezer.com/track/111"),
             ExtractedTrack(title="Song B", artist="Artist B", isrc=None),
         ]
-        with patch("app.blindtest.providers.spotify.fetch_tracks", return_value=fake_tracks), \
+        with patch("app.blindtest.providers.deezer.fetch_tracks", return_value=fake_tracks), \
              patch("app.blindtest.matching.match_playlist_tracks"):
-            resp = blindtest_client.post("/blindtest/playlists", json={"url": SPOTIFY_URL})
+            resp = blindtest_client.post("/blindtest/playlists", json={"url": DEEZER_URL})
 
         assert resp.status_code == 201
         data = resp.json()
-        assert data["provider"] == "spotify"
+        assert data["provider"] == "deezer"
         assert len(data["tracks"]) == 2
         assert data["tracks"][0]["title"] == "Song A"
         assert data["tracks"][0]["isrc"] == "ISRC1"
@@ -91,58 +90,20 @@ class TestSpotifyImport:
         with blindtest_engine.connect() as conn:
             from sqlalchemy import text
             row = conn.execute(text("SELECT source_url FROM tracks ORDER BY id")).fetchall()
-        assert row[0][0] == "https://open.spotify.com/track/aaa"
+        assert row[0][0] == "https://www.deezer.com/track/111"
         assert row[1][0] is None
 
-    def test_spotify_missing_credentials_returns_503_no_partial_write(self, blindtest_client, blindtest_engine):
+    def test_deezer_private_playlist_returns_422_no_partial_write(self, blindtest_client, blindtest_engine):
         with patch(
-            "app.blindtest.providers.spotify.fetch_tracks",
-            side_effect=ProviderConfigError("spotify", "SPOTIFY_CLIENT_ID/SPOTIFY_CLIENT_SECRET"),
+            "app.blindtest.providers.deezer.fetch_tracks",
+            side_effect=PrivatePlaylistError("Playlist Deezer introuvable ou privée"),
         ):
-            resp = blindtest_client.post("/blindtest/playlists", json={"url": SPOTIFY_URL})
-
-        assert resp.status_code == 503
-        assert "SPOTIFY_CLIENT_ID" in resp.json()["detail"]
-        playlists, tracks = _count_rows(blindtest_engine)
-        assert playlists == 0
-        assert tracks == 0
-
-    def test_spotify_private_playlist_returns_422_no_partial_write(self, blindtest_client, blindtest_engine):
-        with patch(
-            "app.blindtest.providers.spotify.fetch_tracks",
-            side_effect=PrivatePlaylistError("Playlist Spotify privée, introuvable ou supprimée"),
-        ):
-            resp = blindtest_client.post("/blindtest/playlists", json={"url": SPOTIFY_URL})
+            resp = blindtest_client.post("/blindtest/playlists", json={"url": DEEZER_URL})
 
         assert resp.status_code == 422
         playlists, tracks = _count_rows(blindtest_engine)
         assert playlists == 0
         assert tracks == 0
-
-    def test_spotify_premium_required_403_is_config_error_not_private_playlist(self):
-        """Régression : Spotify répond 403 avec un corps mentionnant
-        "premium subscription" quand le compte propriétaire de l'app n'a pas
-        Premium — rien à voir avec la playlist ciblée (peut être publique et
-        valide). Doit lever ProviderConfigError (503, message actionnable),
-        jamais PrivatePlaylistError (422, message trompeur "privée/introuvable")."""
-        from app.blindtest.providers import spotify
-
-        token_resp = MagicMock(status_code=200)
-        token_resp.json.return_value = {"access_token": "fake-token"}
-
-        premium_resp = MagicMock(status_code=403)
-        premium_resp.text = "Active premium subscription required for the owner of the app."
-
-        with patch("httpx.Client") as client_cls, \
-             patch.dict(os.environ, {"SPOTIFY_CLIENT_ID": "id", "SPOTIFY_CLIENT_SECRET": "secret"}):
-            mock_client = client_cls.return_value.__enter__.return_value
-            mock_client.post.return_value = token_resp
-            mock_client.get.return_value = premium_resp
-
-            with pytest.raises(ProviderConfigError) as exc_info:
-                spotify.fetch_tracks(SPOTIFY_URL)
-
-        assert "Premium" in str(exc_info.value)
 
 
 class TestYoutubeImport:
@@ -311,12 +272,12 @@ class TestYoutubeImport:
 
 class TestMalformedUrl:
     def test_unrecognized_url_returns_400_no_provider_call(self, blindtest_client, blindtest_engine):
-        with patch("app.blindtest.providers.spotify.fetch_tracks") as spotify_mock, \
+        with patch("app.blindtest.providers.deezer.fetch_tracks") as deezer_mock, \
              patch("app.blindtest.providers.youtube.fetch_tracks") as youtube_mock:
             resp = blindtest_client.post("/blindtest/playlists", json={"url": "not-a-url-at-all"})
 
         assert resp.status_code == 400
-        spotify_mock.assert_not_called()
+        deezer_mock.assert_not_called()
         youtube_mock.assert_not_called()
         playlists, tracks = _count_rows(blindtest_engine)
         assert playlists == 0
@@ -325,7 +286,7 @@ class TestMalformedUrl:
     def test_track_link_not_playlist_returns_400(self, blindtest_client):
         resp = blindtest_client.post(
             "/blindtest/playlists",
-            json={"url": "https://open.spotify.com/track/abc123"},
+            json={"url": "https://www.deezer.com/track/abc123"},
         )
         assert resp.status_code == 400
 
@@ -350,9 +311,9 @@ class TestNotFoundCount:
             ExtractedTrack(title="Song B", artist="Artist B", isrc="ISRC2"),
             ExtractedTrack(title="Song C", artist="Artist C", isrc="ISRC3"),
         ]
-        with patch("app.blindtest.providers.spotify.fetch_tracks", return_value=fake_tracks), \
+        with patch("app.blindtest.providers.deezer.fetch_tracks", return_value=fake_tracks), \
              patch("app.blindtest.matching.match_playlist_tracks"):
-            resp = blindtest_client.post("/blindtest/playlists", json={"url": SPOTIFY_URL})
+            resp = blindtest_client.post("/blindtest/playlists", json={"url": DEEZER_URL})
 
         data = resp.json()
         assert len(data["tracks"]) == 3
@@ -364,18 +325,18 @@ class TestNotFoundCount:
             ExtractedTrack(title="Unresolved B", artist="Artist B", isrc="ISRC-B"),
             ExtractedTrack(title="Unresolved C", artist="Artist C", isrc="ISRC-C"),
         ]
-        with patch("app.blindtest.providers.spotify.fetch_tracks", return_value=fake_tracks), \
+        with patch("app.blindtest.providers.deezer.fetch_tracks", return_value=fake_tracks), \
              patch("app.blindtest.matching.match_playlist_tracks"):
-            resp = blindtest_client.post("/blindtest/playlists", json={"url": SPOTIFY_URL})
+            resp = blindtest_client.post("/blindtest/playlists", json={"url": DEEZER_URL})
 
         data = resp.json()
         assert len(data["tracks"]) == 3
         assert data["not_found_count"] == 2
 
     def test_empty_playlist_gives_zero_not_found_count(self, blindtest_client, blindtest_engine):
-        with patch("app.blindtest.providers.spotify.fetch_tracks", return_value=[]), \
+        with patch("app.blindtest.providers.deezer.fetch_tracks", return_value=[]), \
              patch("app.blindtest.matching.match_playlist_tracks"):
-            resp = blindtest_client.post("/blindtest/playlists", json={"url": SPOTIFY_URL})
+            resp = blindtest_client.post("/blindtest/playlists", json={"url": DEEZER_URL})
 
         assert resp.status_code == 201
         data = resp.json()
@@ -384,9 +345,9 @@ class TestNotFoundCount:
 
     def test_all_unresolved_returns_200_with_full_count_no_fatal_error(self, blindtest_client, blindtest_engine):
         fake_tracks = [ExtractedTrack(title="Ghost Song", artist="Nobody")]
-        with patch("app.blindtest.providers.spotify.fetch_tracks", return_value=fake_tracks), \
+        with patch("app.blindtest.providers.deezer.fetch_tracks", return_value=fake_tracks), \
              patch("app.blindtest.matching.match_playlist_tracks"):
-            resp = blindtest_client.post("/blindtest/playlists", json={"url": SPOTIFY_URL})
+            resp = blindtest_client.post("/blindtest/playlists", json={"url": DEEZER_URL})
 
         assert resp.status_code == 201
         data = resp.json()
@@ -422,9 +383,9 @@ class TestScopedImport:
         """Regression guard : import sans game_code/pseudo reste identique à
         Epic 1 — game_id/owner_pseudo restent None."""
         fake_tracks = [ExtractedTrack(title="Song A", artist="Artist A", isrc="ISRC1")]
-        with patch("app.blindtest.providers.spotify.fetch_tracks", return_value=fake_tracks), \
+        with patch("app.blindtest.providers.deezer.fetch_tracks", return_value=fake_tracks), \
              patch("app.blindtest.matching.match_playlist_tracks"):
-            resp = blindtest_client.post("/blindtest/playlists", json={"url": SPOTIFY_URL})
+            resp = blindtest_client.post("/blindtest/playlists", json={"url": DEEZER_URL})
 
         assert resp.status_code == 201
         data = resp.json()
@@ -438,11 +399,11 @@ class TestScopedImport:
         connection_manager._games["ABCDEF"] = {"Alice": object()}
         try:
             fake_tracks = [ExtractedTrack(title="Song A", artist="Artist A", isrc="ISRC1")]
-            with patch("app.blindtest.providers.spotify.fetch_tracks", return_value=fake_tracks), \
+            with patch("app.blindtest.providers.deezer.fetch_tracks", return_value=fake_tracks), \
                  patch("app.blindtest.matching.match_playlist_tracks"):
                 resp = blindtest_client.post(
                     "/blindtest/playlists",
-                    json={"url": SPOTIFY_URL, "game_code": "ABCDEF", "pseudo": "Alice"},
+                    json={"url": DEEZER_URL, "game_code": "ABCDEF", "pseudo": "Alice"},
                 )
 
             assert resp.status_code == 201
@@ -453,14 +414,14 @@ class TestScopedImport:
             connection_manager._games.pop("ABCDEF", None)
 
     def test_scoped_import_unknown_game_code_returns_404_no_partial_write(self, blindtest_client, blindtest_engine):
-        with patch("app.blindtest.providers.spotify.fetch_tracks") as spotify_mock:
+        with patch("app.blindtest.providers.deezer.fetch_tracks") as deezer_mock:
             resp = blindtest_client.post(
                 "/blindtest/playlists",
-                json={"url": SPOTIFY_URL, "game_code": "ZZZZZZ", "pseudo": "Alice"},
+                json={"url": DEEZER_URL, "game_code": "ZZZZZZ", "pseudo": "Alice"},
             )
 
         assert resp.status_code == 404
-        spotify_mock.assert_not_called()
+        deezer_mock.assert_not_called()
         playlists, tracks = _count_rows(blindtest_engine)
         assert playlists == 0
         assert tracks == 0
@@ -471,14 +432,14 @@ class TestScopedImport:
         self._make_game(blindtest_engine, phase="round_started", code="INPLAY")
         connection_manager._games["INPLAY"] = {"Alice": object()}
         try:
-            with patch("app.blindtest.providers.spotify.fetch_tracks") as spotify_mock:
+            with patch("app.blindtest.providers.deezer.fetch_tracks") as deezer_mock:
                 resp = blindtest_client.post(
                     "/blindtest/playlists",
-                    json={"url": SPOTIFY_URL, "game_code": "INPLAY", "pseudo": "Alice"},
+                    json={"url": DEEZER_URL, "game_code": "INPLAY", "pseudo": "Alice"},
                 )
 
             assert resp.status_code == 400
-            spotify_mock.assert_not_called()
+            deezer_mock.assert_not_called()
             playlists, tracks = _count_rows(blindtest_engine)
             assert playlists == 0
             assert tracks == 0
@@ -487,14 +448,14 @@ class TestScopedImport:
 
     def test_scoped_import_pseudo_not_connected_returns_400_no_partial_write(self, blindtest_client, blindtest_engine):
         self._make_game(blindtest_engine, phase="lobby", code="GHOSTG")
-        with patch("app.blindtest.providers.spotify.fetch_tracks") as spotify_mock:
+        with patch("app.blindtest.providers.deezer.fetch_tracks") as deezer_mock:
             resp = blindtest_client.post(
                 "/blindtest/playlists",
-                json={"url": SPOTIFY_URL, "game_code": "GHOSTG", "pseudo": "Ghost"},
+                json={"url": DEEZER_URL, "game_code": "GHOSTG", "pseudo": "Ghost"},
             )
 
         assert resp.status_code == 400
-        spotify_mock.assert_not_called()
+        deezer_mock.assert_not_called()
         playlists, tracks = _count_rows(blindtest_engine)
         assert playlists == 0
         assert tracks == 0
@@ -520,11 +481,11 @@ class TestScopedImport:
             return fake_tracks
 
         try:
-            with patch("app.blindtest.providers.spotify.fetch_tracks", side_effect=fetch_then_disconnect), \
+            with patch("app.blindtest.providers.deezer.fetch_tracks", side_effect=fetch_then_disconnect), \
                  patch("app.blindtest.matching.match_playlist_tracks"):
                 resp = blindtest_client.post(
                     "/blindtest/playlists",
-                    json={"url": SPOTIFY_URL, "game_code": "RACEGO", "pseudo": "Alice"},
+                    json={"url": DEEZER_URL, "game_code": "RACEGO", "pseudo": "Alice"},
                 )
 
             assert resp.status_code == 400
@@ -535,24 +496,24 @@ class TestScopedImport:
             connection_manager._games.pop("RACEGO", None)
 
     def test_only_game_code_provided_returns_400(self, blindtest_client, blindtest_engine):
-        with patch("app.blindtest.providers.spotify.fetch_tracks") as spotify_mock:
+        with patch("app.blindtest.providers.deezer.fetch_tracks") as deezer_mock:
             resp = blindtest_client.post(
                 "/blindtest/playlists",
-                json={"url": SPOTIFY_URL, "game_code": "ABCDEF"},
+                json={"url": DEEZER_URL, "game_code": "ABCDEF"},
             )
 
         assert resp.status_code == 400
-        spotify_mock.assert_not_called()
+        deezer_mock.assert_not_called()
 
     def test_only_pseudo_provided_returns_400(self, blindtest_client, blindtest_engine):
-        with patch("app.blindtest.providers.spotify.fetch_tracks") as spotify_mock:
+        with patch("app.blindtest.providers.deezer.fetch_tracks") as deezer_mock:
             resp = blindtest_client.post(
                 "/blindtest/playlists",
-                json={"url": SPOTIFY_URL, "pseudo": "Alice"},
+                json={"url": DEEZER_URL, "pseudo": "Alice"},
             )
 
         assert resp.status_code == 400
-        spotify_mock.assert_not_called()
+        deezer_mock.assert_not_called()
 
     def test_two_players_two_playlists_same_game_distinct_owner_pseudo(self, blindtest_client, blindtest_engine):
         from app.blindtest.game_connections import manager as connection_manager
@@ -562,15 +523,15 @@ class TestScopedImport:
         try:
             fake_tracks_a = [ExtractedTrack(title="Song A", artist="Artist A", isrc="ISRC1")]
             fake_tracks_b = [ExtractedTrack(title="Song B", artist="Artist B", isrc="ISRC2")]
-            with patch("app.blindtest.providers.spotify.fetch_tracks", side_effect=[fake_tracks_a, fake_tracks_b]), \
+            with patch("app.blindtest.providers.deezer.fetch_tracks", side_effect=[fake_tracks_a, fake_tracks_b]), \
                  patch("app.blindtest.matching.match_playlist_tracks"):
                 resp_a = blindtest_client.post(
                     "/blindtest/playlists",
-                    json={"url": SPOTIFY_URL, "game_code": "SHARED", "pseudo": "Alice"},
+                    json={"url": DEEZER_URL, "game_code": "SHARED", "pseudo": "Alice"},
                 )
                 resp_b = blindtest_client.post(
                     "/blindtest/playlists",
-                    json={"url": SPOTIFY_URL, "game_code": "SHARED", "pseudo": "Bob"},
+                    json={"url": DEEZER_URL, "game_code": "SHARED", "pseudo": "Bob"},
                 )
 
             assert resp_a.status_code == 201
