@@ -19,7 +19,7 @@ class Playlist(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     source_url = Column(String, nullable=False)
-    provider = Column(String, nullable=False)  # "spotify" | "youtube" | "apple_music"
+    provider = Column(String, nullable=False)  # "spotify" | "youtube"
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     # Story 2.2 : scoping optionnel à une partie. `game_id` nul == pot

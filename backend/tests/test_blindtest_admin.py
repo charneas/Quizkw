@@ -125,7 +125,7 @@ class TestListUnresolved:
     def test_lists_only_unresolved_tracks_across_all_playlists(self, admin_client, blindtest_session_factory):
         db = blindtest_session_factory()
         playlist_a = Playlist(source_url="https://open.spotify.com/playlist/a", provider="spotify")
-        playlist_b = Playlist(source_url="https://music.apple.com/playlist/b", provider="apple_music")
+        playlist_b = Playlist(source_url="https://www.youtube.com/playlist?list=b", provider="youtube")
         db.add_all([playlist_a, playlist_b])
         db.flush()
         resolved = Track(playlist_id=playlist_a.id, title="Resolved", artist="A", youtube_video_id="vid-1")
@@ -154,7 +154,7 @@ class TestListUnresolved:
         assert item_a["playlist_provider"] == "spotify"
 
         item_b = by_title["Unresolved B"]
-        assert item_b["playlist_provider"] == "apple_music"
+        assert item_b["playlist_provider"] == "youtube"
         assert item_b["source_url"] is None
 
 

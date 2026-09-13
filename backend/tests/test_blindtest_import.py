@@ -63,7 +63,6 @@ def _count_rows(blindtest_engine):
 
 SPOTIFY_URL = "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M"
 YOUTUBE_URL = "https://www.youtube.com/playlist?list=PLxyz123"
-APPLE_URL = "https://music.apple.com/us/playlist/todays-hits/pl.abc123"
 
 
 class TestSpotifyImport:
@@ -247,28 +246,15 @@ class TestYoutubeImport:
         assert cache_rows == 0
 
 
-class TestAppleMusicImport:
-    def test_valid_apple_music_playlist_persists(self, blindtest_client, blindtest_engine):
-        fake_tracks = [ExtractedTrack(title="Song C", artist="Artist C")]
-        with patch("app.blindtest.providers.apple_music.fetch_tracks", return_value=fake_tracks), \
-             patch("app.blindtest.matching.match_playlist_tracks"):
-            resp = blindtest_client.post("/blindtest/playlists", json={"url": APPLE_URL})
-
-        assert resp.status_code == 201
-        assert resp.json()["provider"] == "apple_music"
-
-
 class TestMalformedUrl:
     def test_unrecognized_url_returns_400_no_provider_call(self, blindtest_client, blindtest_engine):
         with patch("app.blindtest.providers.spotify.fetch_tracks") as spotify_mock, \
-             patch("app.blindtest.providers.youtube.fetch_tracks") as youtube_mock, \
-             patch("app.blindtest.providers.apple_music.fetch_tracks") as apple_mock:
+             patch("app.blindtest.providers.youtube.fetch_tracks") as youtube_mock:
             resp = blindtest_client.post("/blindtest/playlists", json={"url": "not-a-url-at-all"})
 
         assert resp.status_code == 400
         spotify_mock.assert_not_called()
         youtube_mock.assert_not_called()
-        apple_mock.assert_not_called()
         playlists, tracks = _count_rows(blindtest_engine)
         assert playlists == 0
         assert tracks == 0

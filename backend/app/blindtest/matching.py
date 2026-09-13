@@ -75,8 +75,8 @@ def extract_video_id(youtube_url: str) -> Optional[str]:
 
 
 def resolve_via_idonthavespotify(source_url: str) -> Optional[str]:
-    """Tente de résoudre `source_url` (lien Spotify/Apple Music du morceau)
-    en `youtube_video_id` via le service self-hosted `idonthavespotify`.
+    """Tente de résoudre `source_url` (lien Spotify du morceau) en
+    `youtube_video_id` via le service self-hosted `idonthavespotify`.
     Ne lève jamais — toute erreur (config manquante, réseau, HTTP, JSON)
     renvoie `None`."""
     base_url = os.getenv("IDONTHAVESPOTIFY_BASE_URL")

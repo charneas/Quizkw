@@ -141,8 +141,8 @@ def import_playlist(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    """Extrait une playlist publique (Spotify/YouTube/Apple Music) et
-    persiste `Playlist` + `Track`. Échec propre sans écriture partielle :
+    """Extrait une playlist publique (Spotify/YouTube) et persiste
+    `Playlist` + `Track`. Échec propre sans écriture partielle :
     l'extraction complète a lieu avant tout `db.add`/`db.commit`.
 
     Story 2.2 : `game_code`/`pseudo` scopent optionnellement l'import à une
@@ -189,7 +189,7 @@ def import_playlist(
         if item.youtube_video_id:
             # Import direct YouTube : le morceau est déjà résolu, on
             # alimente le cache tout de suite pour qu'un futur import
-            # Spotify/Apple Music du même morceau tape le cache (Story 1.3).
+            # Spotify du même morceau tape le cache (Story 1.3).
             # `duration_seconds=None` explicite (Story 2.3) : la durée n'est
             # pas encore connue à ce stade synchrone — c'est
             # `match_playlist_tracks` (tâche de fond planifiée juste après)

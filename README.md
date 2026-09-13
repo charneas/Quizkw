@@ -21,7 +21,7 @@ Déployé en production sur **quizclimb.fr**.
 Router séparé (`backend/main_blindtest.py`), monté sur la même app FastAPI
 mais avec sa **propre base de données isolée** (`app/blindtest/`, AD-7) —
 aucune jointure avec les tables du quiz principal. Import de playlists
-(Spotify/YouTube/Apple Music), matching automatique vers YouTube, lobby et
+(Spotify/YouTube), matching automatique vers YouTube, lobby et
 rounds en temps réel via WebSocket (`frontend/src/lib/blindtestSocket.ts`).
 Front : `frontend/src/pages/BlindTestLobby.tsx`, route `/blindtest/:code`.
 

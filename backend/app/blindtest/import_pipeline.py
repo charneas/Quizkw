@@ -8,12 +8,11 @@ from typing import List
 
 from app.blindtest.errors import UnrecognizedUrlError
 from app.blindtest.extraction_types import ExtractedTrack
-from app.blindtest.providers import apple_music, spotify, youtube
+from app.blindtest.providers import spotify, youtube
 
 _PROVIDERS = (
     ("spotify", spotify),
     ("youtube", youtube),
-    ("apple_music", apple_music),
 )
 
 
