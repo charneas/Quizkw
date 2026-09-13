@@ -2,7 +2,12 @@
 
 Jeu de quiz multijoueur en équipe, jouable en LAN/soirée : trois manches
 successives (quiz collectif, tournoi individuel 16→8→4, grille mémoire
-finale à 4 joueurs) avec un backend FastAPI et un frontend React.
+finale à 4 joueurs) avec un backend FastAPI et un frontend React. Un module
+**blind test** (deviner, à l'écoute d'un morceau, dans quelle playlist —
+donc de quel joueur — il se trouve) tourne en parallèle sur la même
+application.
+
+Déployé en production sur **quizclimb.fr**.
 
 ## Stack technique
 
@@ -10,6 +15,18 @@ finale à 4 joueurs) avec un backend FastAPI et un frontend React.
   PostgreSQL prévu. Voir [`backend/README.md`](backend/README.md).
 - **Frontend** : React 18, TypeScript, Vite, TailwindCSS, React Router.
 - **Tests** : pytest (backend), Playwright (E2E frontend).
+
+### Module blind test
+
+Router séparé (`backend/main_blindtest.py`), monté sur la même app FastAPI
+mais avec sa **propre base de données isolée** (`app/blindtest/`, AD-7) —
+aucune jointure avec les tables du quiz principal. Import de playlists
+(Spotify/YouTube/Apple Music), matching automatique vers YouTube, lobby et
+rounds en temps réel via WebSocket (`frontend/src/lib/blindtestSocket.ts`).
+Front : `frontend/src/pages/BlindTestLobby.tsx`, route `/blindtest/:code`.
+
+⚠️ Limité à **1 seul worker gunicorn** en prod — état de partie en mémoire
+par process, pas encore de coordination multi-worker (Redis prévu).
 
 ## Installation
 
@@ -58,6 +75,7 @@ npx playwright test
 | 1 — Quiz collectif par équipes | Jouable | Jetons (swap/pénalité/bonus), roue de bonus/malus tous les 5 tours, duels ping-pong |
 | 2 — Tournoi individuel 16→8→4 | Jouable, retours playtest corrigés | Tour par rôle avec spectateurs, qualification Manche 1→2 fiabilisée (H-007), tests E2E (`frontend/tests/round2.spec.ts`) |
 | 3 — Grille mémoire (finale, 4 joueurs) | Jouable, testée en E2E réel | Grille 7×5, individuelle depuis la réécriture AD-0 (2026-07-25) |
+| Blind test | Jouable, atteint uniquement par code direct (`/blindtest/:code`) | Pas encore de point d'entrée depuis la home — intégration en cours, voir `_bmad-output/specs/spec-blindtest-integration-ui/` |
 
 Le suivi détaillé du backlog (epics, stories, statut) est géré via BMad Method
 dans `_bmad-output/` (non versionné — généré localement).
@@ -70,8 +88,12 @@ Voir [`DEPLOY.md`](DEPLOY.md).
 
 ```
 Quizkw/
-├── backend/         # API FastAPI (voir backend/README.md)
-├── frontend/        # Application React
+├── backend/
+│   ├── main.py             # App FastAPI principale, monte tous les routers (dont blindtest)
+│   ├── main_blindtest.py   # Router blind test (lobby, rounds, WebSocket)
+│   └── app/blindtest/      # DB isolée + modèles du module blind test (AD-7)
+├── frontend/
+│   └── src/pages/BlindTestLobby.tsx  # Écran blind test (/blindtest/:code)
 ├── docs/archive/    # Notes de session et TODO historiques (périmés, conservés pour référence)
 ├── DEPLOY.md        # Guide de déploiement production
 └── README.md        # Ce fichier
