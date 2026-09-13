@@ -23,6 +23,7 @@ declare global {
 
 interface YouTubePlayerOptions {
   videoId: string
+  host?: string
   playerVars?: Record<string, number | string>
   events?: {
     onReady?: (event: { target: YouTubePlayer }) => void
@@ -102,11 +103,27 @@ export function createHiddenPlayer(
         }
         new YTApi.Player(containerId, {
           videoId,
+          // Bruit console réduit (retour utilisateur, 2026-09-13) :
+          // `host` en mode "confidentialité renforcée" coupe une partie du
+          // tracking/cookies par défaut de youtube.com ; `origin` corrige le
+          // warning "postMessage target origin does not match recipient
+          // window's origin" (le widget IFrame a besoin de connaître l'URL
+          // hôte pour cibler correctement ses messages) ; `rel`/
+          // `iv_load_policy`/`modestbranding` désactivent des fonctionnalités
+          // UI inutiles ici (lecteur toujours caché) qui déclenchent elles
+          // aussi des appels réseau annexes. Le reste du bruit visible
+          // (`ERR_BLOCKED_BY_CLIENT`) vient d'un bloqueur de pub côté
+          // navigateur, pas de ce code — rien à corriger ici pour ça.
+          host: 'https://www.youtube-nocookie.com',
           playerVars: {
             autoplay: 1,
             start: Math.max(0, Math.floor(startSeconds)),
             controls: 0,
             disablekb: 1,
+            rel: 0,
+            iv_load_policy: 3,
+            modestbranding: 1,
+            origin: window.location.origin,
           },
           events: {
             onReady: (event) => {
