@@ -401,7 +401,7 @@ def _close_round(db: Session, game: Game, game_code: str) -> Optional[dict]:
     """Clôture le round en cours (Story 2.6) : calcule et cumule le score de
     chaque joueur présent non-propriétaire à partir de sa devinette stockée
     (`guess_store`), fait passer la partie en phase `reveal` et renvoie le
-    payload `reveal {owner_pseudo, scores}` à diffuser.
+    payload `reveal {owner_pseudo, scores, deltas}` à diffuser.
 
     Transition à usage unique (mirroir de `_handle_start_game`) : si la
     partie n'est plus en `round_started` au moment de l'appel (déjà clôturée
@@ -451,20 +451,28 @@ def _close_round(db: Session, game: Game, game_code: str) -> Optional[dict]:
     # clôture).
     scoreable_pseudos = set(connection_manager.players(game_code)) | guess_store.known_pseudos(game.id)
 
+    # Story 5 (spec-blindtest-integration-ui) : différentiel de CE round par
+    # joueur, distinct du score cumulatif déjà renvoyé — jusqu'ici calculé
+    # puis jeté, jamais diffusé au client (utile pour une animation de fin de
+    # manche, nice-to-have CAP-4).
+    deltas: dict[str, int] = {}
+
     for pseudo in scoreable_pseudos:
         if pseudo == owner_pseudo:
             # Le propriétaire n'est pas scoré sur son propre round, mais on
             # garantit tout de même sa présence dans le snapshot (Boundaries
             # de la spec) via un ajout à delta 0.
             score_store.add(game.id, pseudo, 0)
+            deltas[pseudo] = 0
             continue
 
         guess = guess_store.get_guess(game.id, pseudo) or []
         delta = 2 if owner_pseudo in guess else 0
         delta -= sum(1 for name in guess if name != owner_pseudo)
         score_store.add(game.id, pseudo, delta)
+        deltas[pseudo] = delta
 
-    return {"owner_pseudo": owner_pseudo, "scores": score_store.snapshot(game.id)}
+    return {"owner_pseudo": owner_pseudo, "scores": score_store.snapshot(game.id), "deltas": deltas}
 
 
 def _schedule_round_timer(game_id: int, game_code: str, track_id: int) -> None:

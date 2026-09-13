@@ -307,12 +307,36 @@ export default function BlindTestLobby() {
             <ul className="space-y-1">
               {Object.entries(reveal.scores)
                 .sort(([, a], [, b]) => b - a)
-                .map(([playerPseudo, score]) => (
-                  <li key={playerPseudo} className="card px-3 py-2 flex justify-between">
-                    <span>{playerPseudo}</span>
-                    <span>{score}</span>
-                  </li>
-                ))}
+                .map(([playerPseudo, score]) => {
+                  // Optional-chaining défensif (revue de code) : un payload
+                  // `reveal` sans `deltas` (nice-to-have, ne doit jamais faire
+                  // planter l'écran) dégrade silencieusement à 0 plutôt que de
+                  // lever une TypeError sur un accès direct.
+                  const delta = reveal.deltas?.[playerPseudo] ?? 0
+                  return (
+                    <li key={playerPseudo} className="card px-3 py-2 flex justify-between items-center">
+                      <span>{playerPseudo}</span>
+                      <span className="flex items-center gap-2">
+                        {/* Story 5 (spec-blindtest-integration-ui, nice-to-have) :
+                            clé basée sur `roundTrack` (identifiant unique du
+                            round, stable pendant tout l'affichage du reveal)
+                            plutôt que sur `delta` — deux rounds consécutifs
+                            avec le même delta (ex: 0 puis 0) ne rejoueraient
+                            pas l'animation `.animate-fade-in` sinon (déjà
+                            respectueuse de prefers-reduced-motion). */}
+                        <span
+                          key={`${playerPseudo}-${roundTrack?.videoId ?? ''}`}
+                          className={`animate-fade-in text-sm font-semibold ${
+                            delta > 0 ? 'text-success' : delta < 0 ? 'text-danger' : 'text-text-muted'
+                          }`}
+                        >
+                          {delta > 0 ? `+${delta}` : delta}
+                        </span>
+                        <span>{score}</span>
+                      </span>
+                    </li>
+                  )
+                })}
             </ul>
           </div>
         </div>

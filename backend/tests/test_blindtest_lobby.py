@@ -724,6 +724,47 @@ class TestReveal:
                     # Owner trouvé seul -> +2 net pour Bob ; Alice (propriétaire,
                     # non scorée) présente au score 0.
                     assert reveal["payload"]["scores"] == {"Bob": 2, "Alice": 0}
+                    # Story 5 : `deltas` porte le différentiel de CE round,
+                    # identique à `scores` ici puisque c'est le premier round.
+                    assert reveal["payload"]["deltas"] == {"Bob": 2, "Alice": 0}
+
+    def test_deltas_differ_from_cumulative_scores_when_player_already_scored(
+        self, blindtest_client, blindtest_engine
+    ):
+        """Story 5 : `deltas` (différentiel de CE round) doit rester distinct
+        de `scores` (cumul depuis le début de la partie) dès qu'un joueur a
+        déjà un score non nul avant ce round — pré-seedé directement dans
+        `score_store` plutôt que de rejouer un vrai round 1 complet, pour ne
+        pas dépendre du timing d'enchaînement automatique (`_advance_round`,
+        Story 2.7)."""
+        code = _create_game(blindtest_client)
+        _add_track(blindtest_engine, code, owner_pseudo="Alice")
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
+                ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                ws2.receive_json()
+                ws1.receive_json()
+
+                gid = _game_id(blindtest_engine, code)
+                score_store.add(gid, "Bob", 5)
+
+                ws1.send_json({"type": "start_game", "payload": {}})
+                ws1.receive_json()  # game_state {phase: round_started}
+                ws1.receive_json()  # round_started
+                ws2.receive_json()  # game_state {phase: round_started}
+                ws2.receive_json()  # round_started
+
+                ws2.send_json({"type": "guess_submitted", "payload": {"target_player_ids": ["Alice"]}})
+
+                reveal1 = ws1.receive_json()
+                ws2.receive_json()
+                assert reveal1["payload"]["scores"]["Bob"] == 7  # 5 (pré-seedé) + 2 (ce round)
+                assert reveal1["payload"]["deltas"]["Bob"] == 2  # seulement ce round
+                assert reveal1["payload"]["deltas"] != reveal1["payload"]["scores"]
 
     def test_owner_plus_wrong_name_nets_plus_one(self, blindtest_client, blindtest_engine):
         code = _create_game(blindtest_client)

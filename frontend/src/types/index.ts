@@ -399,6 +399,11 @@ export interface BlindtestRoundStartedPayload {
 export interface BlindtestRevealPayload {
   owner_pseudo: string
   scores: Record<string, number>
+  // Story 5 (spec-blindtest-integration-ui) : différentiel de CE round par
+  // joueur (nice-to-have, animation de fin de manche) — distinct de `scores`
+  // qui reste le cumul depuis le début de la partie. Optionnel : le rendu
+  // dégrade à 0 plutôt que de planter si absent (revue de code).
+  deltas?: Record<string, number>
 }
 
 // === Blind-test — import de playlist scopé à une partie (Story 2.2) ===
