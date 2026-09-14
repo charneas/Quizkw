@@ -923,7 +923,7 @@ class TestReveal:
                 assert reveal1["payload"]["deltas"]["Bob"] == 2  # seulement ce round
                 assert reveal1["payload"]["deltas"] != reveal1["payload"]["scores"]
 
-    def test_owner_plus_wrong_name_nets_plus_one(self, blindtest_client, blindtest_engine):
+    def test_owner_plus_wrong_name_still_nets_full_two(self, blindtest_client, blindtest_engine):
         code = _create_game(blindtest_client)
         _add_track(blindtest_engine, code, owner_pseudo="Alice")
 
@@ -948,8 +948,11 @@ class TestReveal:
 
                 reveal1 = ws1.receive_json()
                 ws2.receive_json()
-                # +2 (owner trouvé) - 1 (nom incorrect "Bob") = +1 net.
-                assert reveal1["payload"]["scores"]["Bob"] == 1
+                # Retour utilisateur (2026-09-14) : trouver le propriétaire
+                # rapporte +2 plein même si un nom en trop a été coché dans la
+                # même sélection — le malus -1/nom incorrect ne s'applique
+                # plus qu'aux devinettes qui manquent le propriétaire.
+                assert reveal1["payload"]["scores"]["Bob"] == 2
 
     def test_owner_missed_wrong_names_nets_negative_no_floor(self, blindtest_client, blindtest_engine):
         code = _create_game(blindtest_client)

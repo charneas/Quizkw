@@ -86,6 +86,13 @@ export class BlindtestSocket {
     this.send('guess_submitted', { target_player_ids: targetPlayerIds })
   }
 
+  /** Retour utilisateur (2026-09-14) : relance une partie dans le même
+   * salon (même code) une fois `phase === "ended"` — n'a d'effet que pour
+   * l'hôte, même défense en profondeur que `sendStartGame`. */
+  sendRestartGame(): void {
+    this.send('restart_game', {})
+  }
+
   disconnect(): void {
     this.ws?.close()
     this.ws = null

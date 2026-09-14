@@ -160,6 +160,14 @@ class ScoreStore:
         pour cette partie — payload `reveal.scores`."""
         return dict(self._scores.get(game_id, {}))
 
+    def reset_game(self, game_id: int) -> None:
+        """Retour utilisateur (2026-09-14, "rejouer dans le même salon") :
+        remet les scores cumulés à zéro pour cette partie — appelé quand
+        l'hôte relance une nouvelle partie dans le même salon (même `code`/
+        `game_id`), pour qu'elle reparte avec un scoreboard vierge plutôt que
+        d'hériter des scores de la partie précédente."""
+        self._scores.pop(game_id, None)
+
 
 score_store = ScoreStore()
 
@@ -197,6 +205,13 @@ class PlayedTracksStore:
         """Nombre de rounds déjà tirés pour cette partie — dérive le compte
         de rounds joués sans colonne DB dédiée (cf. Approach de la spec)."""
         return len(self._played.get(game_id, []))
+
+    def reset_game(self, game_id: int) -> None:
+        """Retour utilisateur (2026-09-14, "rejouer dans le même salon") :
+        vide l'historique des morceaux tirés pour cette partie, pour que tous
+        les morceaux redeviennent éligibles quand l'hôte relance une nouvelle
+        partie dans le même salon."""
+        self._played.pop(game_id, None)
 
 
 played_tracks_store = PlayedTracksStore()

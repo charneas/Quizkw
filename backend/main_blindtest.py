@@ -41,6 +41,24 @@ ROUND_GUESS_SECONDS = 30
 ROUNDS_PER_GAME = 15
 REVEAL_DISPLAY_SECONDS = 6
 
+# Retour utilisateur (2026-09-14) : un offset de départ tiré sur toute la
+# durée du morceau pouvait démarrer à quelques secondes de la fin (silence,
+# fade-out, générique) — l'extrait doit rester "de la musique" jusqu'au bout.
+# On borne donc le dernier départ possible pour laisser au moins
+# `MIN_SNIPPET_SECONDS` de lecture avant la fin du morceau.
+MIN_SNIPPET_SECONDS = 30
+
+
+def _pick_start_seconds(duration_seconds: int) -> int:
+    """Tire l'offset de départ aléatoire d'un round : borné entre 0 et
+    `duration_seconds - MIN_SNIPPET_SECONDS` pour garantir au moins
+    `MIN_SNIPPET_SECONDS` de musique restante, quel que soit l'offset tiré.
+    Pour un morceau plus court que `MIN_SNIPPET_SECONDS`, la seule borne
+    valide est 0 (`_draw_eligible_track` exige de toute façon
+    `duration_seconds > 0`)."""
+    latest_start = max(0, duration_seconds - MIN_SNIPPET_SECONDS)
+    return random.randint(0, latest_start)
+
 # Story 8 (spec-blindtest-integration-ui, revue de code) : avant Story 8,
 # `_draw_eligible_track` ne pouvait renvoyer `None` en cours de partie que si
 # TOUS les morceaux du pot avaient réellement été joués -- `_advance_round`
@@ -408,7 +426,7 @@ def _handle_start_game(db: Session, game: Game, requesting_pseudo: str) -> Optio
     if track is None:
         return None
 
-    start_seconds = random.randint(0, track.duration_seconds - 1)
+    start_seconds = _pick_start_seconds(track.duration_seconds)
 
     game.phase = "round_started"
     game.current_track_id = track.id
@@ -433,6 +451,40 @@ def _handle_start_game(db: Session, game: Game, requesting_pseudo: str) -> Optio
         "title": track.title,
         "artist": track.artist,
     }
+
+
+def _handle_restart_game(db: Session, game: Game, requesting_pseudo: str) -> bool:
+    """Traite un message `restart_game` (retour utilisateur 2026-09-14 :
+    "rejouer dans le même salon") : ramène une partie `ended` en `lobby`
+    dans le même salon (même `code`/`game_id`, mêmes playlists importées),
+    pour rejouer sans que chacun ait à ressaisir un lien/code.
+
+    Mêmes gardes que `_handle_start_game` (hôte + phase attendue), même
+    convention de retour no-op silencieux (`False`) si l'une échoue —
+    défense en profondeur, le bouton n'est déjà montré qu'à l'hôte sur
+    l'écran `ended`.
+
+    Remet à zéro l'état en mémoire de la partie précédente
+    (`played_tracks_store`/`score_store`/`guess_store`) : sans ça, la
+    nouvelle partie hériterait des morceaux déjà tirés et des scores
+    cumulés de la précédente au lieu de repartir de zéro. Ne touche pas aux
+    `Playlist`/`Track` importées (scopées à `game.id`, réutilisées telles
+    quelles) ni à `host_pseudo` (inchangé, même hôte)."""
+    db.refresh(game)
+    if requesting_pseudo != game.host_pseudo:
+        return False
+    if game.phase != "ended":
+        return False
+
+    game.phase = "lobby"
+    game.current_track_id = None
+    db.commit()
+
+    played_tracks_store.reset_game(game.id)
+    score_store.reset_game(game.id)
+    guess_store.reset_round(game.id)
+
+    return True
 
 
 def _resolve_owner_pseudo(db: Session, game: Game) -> Optional[str]:
@@ -525,9 +577,19 @@ def _close_round(db: Session, game: Game, game_code: str) -> Optional[dict]:
             deltas[pseudo] = OWNER_ROUND_BONUS
             continue
 
+        # Retour utilisateur (2026-09-14) : "2 points par bonne réponse, 1
+        # point retiré par mauvaise" — une réponse correcte accompagnée
+        # d'autres noms cochés par prudence (ex. owner + un nom en plus) ne
+        # doit PAS voir son +2 rogné par le malus des noms en trop : trouver
+        # le bon propriétaire rapporte +2 plein, point. Le malus -1/nom ne
+        # s'applique que si le propriétaire n'a PAS été trouvé (chaque nom
+        # incorrect coché compte alors pour -1, cumulable — cf. tests
+        # `test_owner_missed_wrong_names_nets_negative_no_floor`).
         guess = guess_store.get_guess(game.id, pseudo) or []
-        delta = 2 if owner_pseudo in guess else 0
-        delta -= sum(1 for name in guess if name != owner_pseudo)
+        if owner_pseudo in guess:
+            delta = 2
+        else:
+            delta = -sum(1 for name in guess if name != owner_pseudo)
         score_store.add(game.id, pseudo, delta)
         deltas[pseudo] = delta
 
@@ -689,7 +751,7 @@ async def _advance_round(game_id: int, game_code: str) -> None:
             game_code, {"phase": "next_round", "host_pseudo": game.host_pseudo}, game_id=game.id
         )
 
-        start_seconds = random.randint(0, track.duration_seconds - 1)
+        start_seconds = _pick_start_seconds(track.duration_seconds)
 
         game.phase = "round_started"
         game.current_track_id = track.id
@@ -798,10 +860,13 @@ async def _handle_guess_submitted(db: Session, game: Game, pseudo: str, payload:
 
     guess_store.submit(game.id, pseudo, target_player_ids)
 
-    owner_pseudo = _resolve_owner_pseudo(db, game)
-    non_owner_present = {p for p in present_players if p != owner_pseudo}
-    if non_owner_present and non_owner_present.issubset(guess_store.known_pseudos(game.id)):
-        await _close_round_and_advance(db, game, game_code)
+    # Retour utilisateur (2026-09-14) : "les rounds doivent toujours durer 30
+    # secondes" — la clôture anticipée dès que tous les joueurs présents
+    # avaient répondu (Story 2.6) est retirée : un round ne se clôture plus
+    # désormais que via `_round_timer` après `ROUND_GUESS_SECONDS`, jamais
+    # avant, même si tout le monde a déjà soumis sa devinette. Enregistrer la
+    # devinette (ci-dessus) reste utile immédiatement : elle sera scorée
+    # normalement à la clôture par le minuteur.
 
 
 @game_router.websocket("/blindtest/games/{code}/ws")
@@ -920,6 +985,15 @@ async def game_lobby_ws(websocket: WebSocket, code: str, db: Session = Depends(g
                 # diffuse elle-même le `reveal` puis enchaîne (round suivant
                 # ou fin de partie) via `_close_round_and_advance`.
                 await _handle_guess_submitted(db, game, pseudo, raw.get("payload"), game_code)
+            elif isinstance(raw, dict) and raw.get("type") == "restart_game":
+                # Retour utilisateur (2026-09-14) : "rejouer dans le même
+                # salon" — mêmes joueurs/playlists, nouveau `game_state
+                # {phase: lobby}` diffusé à tous pour réafficher l'écran de
+                # lobby (dont le bouton "Démarrer la partie" pour l'hôte).
+                if _handle_restart_game(db, game, pseudo):
+                    await connection_manager.broadcast_game_state(
+                        game_code, {"phase": "lobby", "host_pseudo": game.host_pseudo}, game_id=game.id
+                    )
     except WebSocketDisconnect:
         pass
     finally:

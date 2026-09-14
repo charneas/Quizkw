@@ -57,6 +57,34 @@ export default function BlindTestLobby() {
   } | null>(null)
   const playerContainerId = 'blindtest-hidden-player'
 
+  // Retour utilisateur (2026-09-14) : "pouvoir baisser le son de la page" —
+  // volume (0-100) appliqué à chaque nouveau lecteur créé (`initialVolume`)
+  // et répercuté en direct sur le lecteur courant via `playerRef` (le
+  // slider ne doit pas attendre le prochain round pour avoir un effet).
+  // `localStorage` (pas de capacité runtime ici) : préférence purement
+  // locale au navigateur, pas besoin d'être partagée entre joueurs.
+  const [volume, setVolume] = useState<number>(() => {
+    try {
+      const stored = window.localStorage.getItem('blindtest-volume')
+      const parsed = stored ? Number(stored) : NaN
+      return Number.isFinite(parsed) ? Math.min(100, Math.max(0, parsed)) : 100
+    } catch {
+      return 100
+    }
+  })
+  const playerRef = useRef<YouTubePlayer | null>(null)
+
+  function handleVolumeChange(next: number) {
+    setVolume(next)
+    playerRef.current?.setVolume(next)
+    try {
+      window.localStorage.setItem('blindtest-volume', String(next))
+    } catch {
+      // Stockage indisponible (navigation privée, quota) : le slider reste
+      // fonctionnel pour la session en cours, seule la persistance est perdue.
+    }
+  }
+
   // Story 2.5 : sélection multiple locale pour la devinette du round en
   // cours — remise à zéro à chaque nouveau round (`roundTrack` change).
   const [selectedPlayers, setSelectedPlayers] = useState<string[]>([])
@@ -97,7 +125,7 @@ export default function BlindTestLobby() {
     // hors scope d'être garanti ici).
     let cancelled = false
     let player: YouTubePlayer | null = null
-    createHiddenPlayer(playerContainerId, roundTrack.videoId, roundTrack.startSeconds)
+    createHiddenPlayer(playerContainerId, roundTrack.videoId, roundTrack.startSeconds, volume)
       .then((createdPlayer) => {
         if (cancelled) {
           // Le round a déjà changé / le composant a démonté pendant que la
@@ -107,6 +135,7 @@ export default function BlindTestLobby() {
           return
         }
         player = createdPlayer
+        playerRef.current = createdPlayer
       })
       .catch(() => {
         // Échec de chargement du lecteur : pas de message d'erreur dédié
@@ -116,7 +145,14 @@ export default function BlindTestLobby() {
     return () => {
       cancelled = true
       player?.destroy()
+      if (playerRef.current === player) {
+        playerRef.current = null
+      }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `volume` sert
+    // uniquement de valeur initiale à la création : un changement de volume
+    // seul ne doit pas recréer le lecteur (coupure audio), il passe par
+    // `playerRef.current?.setVolume` dans `handleVolumeChange`.
   }, [roundTrack])
 
   function handleJoin() {
@@ -175,6 +211,14 @@ export default function BlindTestLobby() {
       },
       onReveal: (payload) => {
         setReveal(payload)
+        // Retour utilisateur (2026-09-14) : "laisser un peu de temps entre 2
+        // musiques" — sans ceci, le lecteur du round qui vient de se
+        // terminer continuait de jouer par-dessus l'écran de reveal jusqu'à
+        // ce que le round suivant démarre (aucun vrai silence entre deux
+        // morceaux). En coupant l'audio dès le reveal, le silence dure
+        // ensuite `REVEAL_DISPLAY_SECONDS` côté serveur (~6s) avant le
+        // `round_started` suivant.
+        setRoundTrack(null)
       },
       onClose: (event) => {
         setJoined(false)
@@ -196,6 +240,10 @@ export default function BlindTestLobby() {
 
   function handleStartGame() {
     socketRef.current?.sendStartGame()
+  }
+
+  function handleRestartGame() {
+    socketRef.current?.sendRestartGame()
   }
 
   function toggleSelectedPlayer(p: string) {
@@ -284,6 +332,27 @@ export default function BlindTestLobby() {
           style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: '1px', height: '1px' }}
         />
 
+        {/* Retour utilisateur (2026-09-14) : "pouvoir baisser le son de la
+            page" — visible dans toutes les phases une fois `joined` (le
+            lecteur caché peut jouer pendant round_started/reveal), jamais
+            avant (pas encore de lecteur créé). */}
+        {joined && (
+          <div className="flex items-center gap-2">
+            <label htmlFor="blindtest-volume" className="text-text-muted text-sm shrink-0">
+              🔊 Volume
+            </label>
+            <input
+              id="blindtest-volume"
+              type="range"
+              min={0}
+              max={100}
+              value={volume}
+              onChange={(e) => handleVolumeChange(Number(e.target.value))}
+              className="flex-1"
+            />
+          </div>
+        )}
+
         {!joined ? (
           <div className="flex gap-2">
             <input
@@ -314,6 +383,14 @@ export default function BlindTestLobby() {
                   </li>
                 ))}
             </ul>
+            {/* Retour utilisateur (2026-09-14) : rejouer sans quitter le
+                salon (même code, mêmes playlists déjà importées) — réservé à
+                l'hôte, même garde d'affichage que "Démarrer la partie". */}
+            {pseudo.trim() === hostPseudo && (
+              <button className="btn-primary w-full" onClick={handleRestartGame}>
+                Rejouer dans ce salon
+              </button>
+            )}
           </div>
         ) : phase === 'next_round' ? (
           // Story 2.7 : bref indicateur transitoire entre le `game_state

@@ -33,6 +33,7 @@ interface YouTubePlayerOptions {
 export interface YouTubePlayer {
   seekTo(seconds: number, allowSeekAhead: boolean): void
   playVideo(): void
+  setVolume(volume: number): void
   destroy(): void
 }
 
@@ -93,6 +94,11 @@ export function createHiddenPlayer(
   containerId: string,
   videoId: string,
   startSeconds: number,
+  // Retour utilisateur (2026-09-14) : "pouvoir baisser le son de la page" —
+  // volume initial (0-100) appliqué dès la création du lecteur, avant même
+  // `onReady`/`playVideo`, pour qu'aucune frame ne joue au volume par défaut
+  // de l'API (100) le temps qu'un appelant rappelle `setVolume` après coup.
+  initialVolume = 100,
 ): Promise<YouTubePlayer> {
   return loadIframeApi().then(
     () =>
@@ -127,6 +133,7 @@ export function createHiddenPlayer(
           },
           events: {
             onReady: (event) => {
+              event.target.setVolume(initialVolume)
               event.target.seekTo(startSeconds, true)
               event.target.playVideo()
               resolve(event.target)
