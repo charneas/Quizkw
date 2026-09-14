@@ -91,6 +91,27 @@ _QUOTED_PREFIX_RE = re.compile(r'^["“](.+)["”]$')
 # exclusives par construction, jamais de conflit d'interprétation.
 _UNQUOTED_ARTIST_QUOTED_TITLE_RE = re.compile(r'^(.+?)\s*["“](.+?)["”]\s*$')
 
+# Retour utilisateur (2026-09-15, trouvé en dry-run) : la convention 3
+# ci-dessus est BEAUCOUP moins fiable que les deux premières (qui reposent
+# sur un tiret, délimiteur net) — n'importe quel texte suivi d'un mot entre
+# guillemets matche, y compris des titres de vidéo de réaction du style
+# 'First Time Reacting to ADO "RuLe" | REACTION!', où le "préfixe" n'est pas
+# du tout un nom d'artiste mais une phrase descriptive. Un vrai nom d'artiste
+# tient sur peu de mots et n'est jamais une phrase au gérondif — ce garde-fou
+# (appliqué UNIQUEMENT à la convention 3, jamais aux conventions 1/2 basées
+# sur un tiret, déjà validées sur données réelles) rejette les préfixes trop
+# longs ou contenant un mot-clé de vidéo de réaction plutôt que de deviner.
+_REACTION_VIDEO_STOPWORDS = ("reacting", "reaction", "reacts", "react", "review", "watching", "listening")
+_MAX_PLAUSIBLE_ARTIST_WORDS = 4
+
+
+def _looks_like_plausible_artist_name(value: str) -> bool:
+    words = value.split()
+    if not words or len(words) > _MAX_PLAUSIBLE_ARTIST_WORDS:
+        return False
+    lowered = value.lower()
+    return not any(stopword in lowered for stopword in _REACTION_VIDEO_STOPWORDS)
+
 
 def _split_artist_title(value: str) -> tuple[str, str, str]:
     """Équivalent de `str.partition(" - ")` mais acceptant aussi le tiret
@@ -140,7 +161,7 @@ def _extract_pipe_artist_title(title: str) -> Optional[tuple[str, str]]:
     unquoted_match = _UNQUOTED_ARTIST_QUOTED_TITLE_RE.match(first_segment.strip())
     if unquoted_match:
         artist, song_title = unquoted_match.group(1).strip(), unquoted_match.group(2).strip()
-        if artist and song_title:
+        if artist and song_title and _looks_like_plausible_artist_name(artist):
             return artist, song_title
 
     return None

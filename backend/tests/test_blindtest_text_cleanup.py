@@ -150,6 +150,18 @@ class TestCleanTitleArtist:
         assert title == "Je suis malade"
         assert artist == "Serge Lama"
 
+    def test_reaction_video_description_is_not_mistaken_for_an_artist(self):
+        # Retour utilisateur (2026-09-15, trouvé en dry-run avant application
+        # prod) : la convention "Artiste \"Titre\"" sans tiret matche aussi
+        # des titres de vidéo de réaction sans rapport ("First Time Reacting
+        # to ADO" n'est pas un nom d'artiste) — trop de mots + mot-clé
+        # "reacting" -> pas assez plausible comme artiste, on ne touche rien.
+        title, artist = clean_title_artist(
+            'First Time Reacting to ADO "RuLe" | REACTION!', "G.O.T Games"
+        )
+        assert title == 'First Time Reacting to ADO "RuLe" | REACTION!'
+        assert artist == "G.O.T Games"
+
     def test_reversed_quoted_title_convention_is_not_flipped_backwards(self):
         # Retour utilisateur (2026-09-15, trouvé en dry-run) : "Operación
         # Triunfo" (émission TV espagnole) inverse la convention —
