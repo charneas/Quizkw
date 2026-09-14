@@ -124,14 +124,33 @@ class TestCleanTitleArtist:
         assert title == "Some Random Sports Final | Team A vs Team B 🇫🇷"
         assert artist == "Some Channel"
 
-    def test_eurovision_keyword_is_fallback_for_titles_without_any_pipe(self):
-        # Retour utilisateur (2026-09-15) : sans "|" du tout, le signal
-        # structurel ne peut pas s'appliquer — le mot "Eurovision" reste le
-        # seul repli pour ces titres hérités (jamais utilisé quand un "|" est
-        # présent, où le signal structurel prime toujours).
+    def test_never_touches_broadcast_titles_without_a_pipe(self):
+        # Retour utilisateur (2026-09-15, revue après un bug trouvé en
+        # dry-run) : un repli sur le mot "Eurovision" pour un titre SANS "|"
+        # avait été tenté puis abandonné — rejouer le script sur un titre
+        # déjà nettoyé une première fois pouvait re-déclencher un second
+        # découpage à tort sur ce qui restait (non idempotent, destructif sur
+        # relance). Sans "|", on ne devine plus rien : le champ `artist`
+        # d'origine reste tel quel, même imparfait.
         title, artist = clean_title_artist(
             "Hovig - Gravity (Cyprus) Eurovision 2017 - Official Music Video",
             "Eurovision Song Contest",
         )
-        assert title == "Gravity (Cyprus) Eurovision 2017 - Official Music Video"
-        assert artist == "Hovig"
+        assert title == "Hovig - Gravity (Cyprus) Eurovision 2017 - Official Music Video"
+        assert artist == "Eurovision Song Contest"
+
+    def test_extraction_is_idempotent_on_already_cleaned_multi_dash_title(self):
+        # Régression du bug trouvé en dry-run (2026-09-15) : un titre déjà
+        # nettoyé une première fois ("Bella - LIVE at ... - Eurovision 2026",
+        # lui-même un reliquat légitime contenant plusieurs tirets et le mot
+        # "Eurovision") ne doit PAS être re-découpé à la relance du script.
+        first_pass_title, first_pass_artist = clean_title_artist(
+            "AIDAN - Bella - LIVE at EUROVIZIJA.LT 2026 - Lithuanian National "
+            "Final - Malta - Eurovision 2026 🇲🇹",
+            "AIDAN",
+        )
+        assert first_pass_artist == "AIDAN"
+        second_pass_title, second_pass_artist = clean_title_artist(
+            first_pass_title, first_pass_artist
+        )
+        assert (second_pass_title, second_pass_artist) == (first_pass_title, first_pass_artist)

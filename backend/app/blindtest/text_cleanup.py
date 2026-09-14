@@ -68,15 +68,6 @@ _PIPE_SUFFIX_RE = re.compile(r"\s*\|.*$")
 # accepter en plus du hyphen partout où ce module détecte ce motif.
 _ARTIST_TITLE_SEP_RE = re.compile(r"\s[-–]\s")
 
-# Repli pour un titre de diffusion SANS "|" du tout (ex. "Hovig - Gravity
-# (Cyprus) Eurovision 2017 - Official Music Video") : le signal structurel
-# ci-dessus ne peut pas s'appliquer (pas de "|" à couper), donc on retombe
-# sur le mot "Eurovision" comme dernier recours pour ces titres hérités —
-# volontairement restreint à ce cas précis (jamais utilisé seul pour trancher
-# un titre avec "|", où le signal structurel prime toujours).
-_EUROVISION_RE = re.compile(r"eurovision", re.IGNORECASE)
-
-
 def _split_artist_title(value: str) -> tuple[str, str, str]:
     """Équivalent de `str.partition(" - ")` mais acceptant aussi le tiret
     demi-cadratin comme séparateur — renvoie `(avant, séparateur, après)`,
@@ -94,15 +85,22 @@ def _pipe_prefix_looks_like_artist_song(title: str) -> bool:
     suit est du contexte de diffusion annexe. Ne regarde QUE la première
     portion (jamais le titre entier) : "DORA 2026 | LELEK - ANDROMEDA | ..."
     a bien un " - " quelque part, mais pas dans sa première portion "DORA
-    2026" — exclu à raison."""
+    2026" — exclu à raison.
+
+    Retour utilisateur (2026-09-15, revue) : PAS de repli sur le mot
+    "Eurovision" pour un titre sans aucun "|" (ex. "Hovig - Gravity (Cyprus)
+    Eurovision 2017 - Official Music Video") — testé et abandonné : rejouer
+    ce script sur un titre déjà nettoyé une première fois (ex. "Bella - LIVE
+    at ... - Eurovision 2026", lui-même un reliquat légitime après une
+    première extraction) refaisait un second découpage sur ce texte restant
+    et prenait à tort un fragment du VRAI titre pour un second artiste — non
+    idempotent et destructif sur relance. Le signal structurel "|" ci-dessus
+    est lui prouvé stable (une fois le "|" retiré, il ne peut plus se
+    redéclencher) : c'est le seul repli conservé."""
     if "|" not in title:
         return False
     first_segment = title.split("|", 1)[0]
     return bool(_ARTIST_TITLE_SEP_RE.search(first_segment))
-
-
-def _has_broadcast_context_marker(title: str, artist: str) -> bool:
-    return bool(_EUROVISION_RE.search(title or "") or _EUROVISION_RE.search(artist or ""))
 
 # Retour utilisateur (2026-09-14) : "Enlève le VEVO ça n'a aucun sens de le
 # garder" — suffixe technique de nom de chaîne YouTube ("OliviaRodrigoVEVO",
@@ -187,15 +185,14 @@ def clean_title_artist(title: str, artist: str) -> tuple[str, str]:
     ce cas, l'artiste réel (et le titre débarrassé de son préfixe) sont
     extraits du titre lui-même ("{Artiste} - {Titre}", déjà tronqué du
     contexte de diffusion) plutôt que conservés depuis le champ `artist`
-    d'origine. Détection structurelle en priorité (`_pipe_prefix_looks_like_
-    artist_song`, générique à tout diffuseur suivant cette convention), mot
-    "Eurovision" en dernier recours pour les rares titres hérités sans "|"
-    du tout (cf. commentaires des deux fonctions)."""
+    d'origine — détection structurelle uniquement, générique à tout
+    diffuseur suivant cette convention (cf. `_pipe_prefix_looks_like_
+    artist_song`, y compris sa note sur le repli "Eurovision" abandonné pour
+    non-idempotence)."""
     truncate_pipe = _pipe_prefix_looks_like_artist_song(title or "")
-    trust_title_split = truncate_pipe or _has_broadcast_context_marker(title, artist)
     clean_title = _clean_title_field(title, truncate_pipe=truncate_pipe)
 
-    if trust_title_split:
+    if truncate_pipe:
         prefix, sep, rest = _split_artist_title(clean_title)
         if sep and prefix.strip() and rest.strip():
             return _clean_title_field(rest), _clean_artist_field(prefix)
