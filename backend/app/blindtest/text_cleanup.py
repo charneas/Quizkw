@@ -36,30 +36,30 @@ _JUNK_SUFFIX_RE = re.compile(
 
 _WS_RE = re.compile(r"\s+")
 
-# Retour utilisateur (2026-09-14) : "c'est mal découpé" — titres de la
-# chaîne "Eurovision Song Contest" du style "Artiste - Titre (LIVE) |
-# France 🇫🇷 | Grand Final | Eurovision 2021" : tout ce qui suit le premier
-# " | " est alors du contexte de diffusion (pays, manche, édition...), jamais
-# une partie du titre de la chanson elle-même.
-#
-# Retour utilisateur (2026-09-15) : "c'est vraiment pour l'Eurovision que ça
-# s'applique, le reste fait attention" — restreint volontairement à un
-# marqueur non ambigu (le mot "Eurovision" lui-même, présent dans TOUT titre
-# ou nom de chaîne Eurovision Song Contest), PAS à des mots-clés génériques
-# ("grand final", "semi-final"...) ni à un drapeau seul, qui peuvent très bien
-# apparaître dans un titre sans rapport (un titre de sport, un clip patriote,
-# un tout autre concours). Un faux positif ici réécrirait l'artiste et
-# tronquerait le titre à tort — mieux vaut sous-nettoyer que mal nettoyer.
+# Retour utilisateur (2026-09-14) : "c'est mal découpé" — titres de chaînes
+# de diffusion (Eurovision Song Contest, Festival da Canção...) du style
+# "Artiste - Titre (LIVE) | France 🇫🇷 | Grand Final | Eurovision 2021" :
+# tout ce qui suit le premier " | " est alors du contexte de diffusion (pays,
+# manche, édition...), jamais une partie du titre de la chanson elle-même.
 #
 # ATTENTION (constaté sur données réelles en réconciliation, 2026-09-15) :
 # un "|" n'est PAS toujours un séparateur de contexte de diffusion — certains
 # titres l'utilisent pour structurer l'inverse, ex. "DORA 2026 | LELEK -
 # ANDROMEDA | POBJEDNIČKI NASTUP" où le vrai titre/artiste est justement
 # APRÈS le premier "|". Tronquer inconditionnellement au premier "|" y
-# détruirait le morceau réel — d'où le garde-fou "Eurovision" ci-dessus.
+# détruirait le morceau réel.
+#
+# Retour utilisateur (2026-09-15, suite) : "faut faire attention que
+# l'artiste/nom de la chanson sont cohérents" — pas la peine de se limiter au
+# mot "Eurovision" : le vrai signal fiable est structurel, pas lexical — la
+# portion AVANT le premier "|" contient-elle déjà elle-même un séparateur
+# artiste/titre ("NAPA - Deslocado" oui, "DORA 2026" non) ? Si oui, cette
+# portion est un "{Artiste} - {Titre}" de confiance et tout le reste est bien
+# du contexte de diffusion annexe ; si non (comme "DORA 2026"), on ne touche
+# à rien plutôt que de deviner. Générique (Eurovision, Festival da Canção,
+# n'importe quel diffuseur suivant cette même convention), jamais dépendant
+# d'un mot-clé qui pourrait aussi bien apparaître dans un titre sans rapport.
 _PIPE_SUFFIX_RE = re.compile(r"\s*\|.*$")
-
-_EUROVISION_RE = re.compile(r"eurovision", re.IGNORECASE)
 
 # Séparateur "Artiste - Titre" : hyphen normal, mais aussi tiret demi-cadratin
 # "–" (U+2013) — constaté sur données réelles (ex. "Sissal – Hallucination"),
@@ -67,6 +67,14 @@ _EUROVISION_RE = re.compile(r"eurovision", re.IGNORECASE)
 # séparateur (contrairement à un mot-clé générique) donc sans risque à
 # accepter en plus du hyphen partout où ce module détecte ce motif.
 _ARTIST_TITLE_SEP_RE = re.compile(r"\s[-–]\s")
+
+# Repli pour un titre de diffusion SANS "|" du tout (ex. "Hovig - Gravity
+# (Cyprus) Eurovision 2017 - Official Music Video") : le signal structurel
+# ci-dessus ne peut pas s'appliquer (pas de "|" à couper), donc on retombe
+# sur le mot "Eurovision" comme dernier recours pour ces titres hérités —
+# volontairement restreint à ce cas précis (jamais utilisé seul pour trancher
+# un titre avec "|", où le signal structurel prime toujours).
+_EUROVISION_RE = re.compile(r"eurovision", re.IGNORECASE)
 
 
 def _split_artist_title(value: str) -> tuple[str, str, str]:
@@ -77,6 +85,20 @@ def _split_artist_title(value: str) -> tuple[str, str, str]:
     if not match:
         return value, "", ""
     return value[: match.start()], match.group(), value[match.end() :]
+
+
+def _pipe_prefix_looks_like_artist_song(title: str) -> bool:
+    """True si `title` contient un "|" ET que la portion avant le premier
+    "|" contient elle-même un séparateur artiste/titre — signal structurel
+    fiable qu'il s'agit d'un vrai "{Artiste} - {Titre}" et que tout ce qui
+    suit est du contexte de diffusion annexe. Ne regarde QUE la première
+    portion (jamais le titre entier) : "DORA 2026 | LELEK - ANDROMEDA | ..."
+    a bien un " - " quelque part, mais pas dans sa première portion "DORA
+    2026" — exclu à raison."""
+    if "|" not in title:
+        return False
+    first_segment = title.split("|", 1)[0]
+    return bool(_ARTIST_TITLE_SEP_RE.search(first_segment))
 
 
 def _has_broadcast_context_marker(title: str, artist: str) -> bool:
@@ -157,22 +179,23 @@ def clean_title_artist(title: str, artist: str) -> tuple[str, str]:
     casse/aux accents volontaires (hors les cas ciblés ci-dessus) — cf.
     docstring du module.
 
-    Retour utilisateur (2026-09-15) : sur un titre/artiste Eurovision Song
-    Contest (mot "Eurovision" présent, cf. `_has_broadcast_context_marker` —
-    volontairement restreint à ce seul marqueur non ambigu, pas à des
-    mots-clés génériques qui pourraient apparaître ailleurs), le champ
-    `artist` fourni par la source EST le nom de la chaîne/de l'émission
-    ("Eurovision Song Contest"), jamais le vrai artiste — et cette chaîne
-    "donne beaucoup trop de contexte" pour un jeu où il faut deviner qui a
-    importé le morceau, pas reconnaître l'émission. Dans ce cas précis,
-    l'artiste réel (et le titre débarrassé de son préfixe) sont extraits du
-    titre lui-même ("{Artiste} - {Titre}", déjà tronqué du contexte de
-    diffusion ci-dessus) plutôt que conservés depuis le champ `artist`
-    d'origine."""
-    is_broadcast_title = _has_broadcast_context_marker(title, artist)
-    clean_title = _clean_title_field(title, truncate_pipe=is_broadcast_title)
+    Retour utilisateur (2026-09-15) : sur un titre de chaîne de diffusion
+    (Eurovision Song Contest, Festival da Canção...), le champ `artist`
+    fourni par la source EST le nom de la chaîne/de l'émission, jamais le
+    vrai artiste — et "donne beaucoup trop de contexte" pour un jeu où il
+    faut deviner qui a importé le morceau, pas reconnaître l'émission. Dans
+    ce cas, l'artiste réel (et le titre débarrassé de son préfixe) sont
+    extraits du titre lui-même ("{Artiste} - {Titre}", déjà tronqué du
+    contexte de diffusion) plutôt que conservés depuis le champ `artist`
+    d'origine. Détection structurelle en priorité (`_pipe_prefix_looks_like_
+    artist_song`, générique à tout diffuseur suivant cette convention), mot
+    "Eurovision" en dernier recours pour les rares titres hérités sans "|"
+    du tout (cf. commentaires des deux fonctions)."""
+    truncate_pipe = _pipe_prefix_looks_like_artist_song(title or "")
+    trust_title_split = truncate_pipe or _has_broadcast_context_marker(title, artist)
+    clean_title = _clean_title_field(title, truncate_pipe=truncate_pipe)
 
-    if is_broadcast_title:
+    if trust_title_split:
         prefix, sep, rest = _split_artist_title(clean_title)
         if sep and prefix.strip() and rest.strip():
             return _clean_title_field(rest), _clean_artist_field(prefix)

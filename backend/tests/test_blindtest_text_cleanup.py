@@ -80,28 +80,31 @@ class TestCleanTitleArtist:
         assert title == "Voilà (LIVE)"
         assert artist == "Barbara Pravi"
 
-    def test_never_truncates_pipe_without_a_broadcast_marker(self):
+    def test_never_truncates_pipe_when_first_segment_has_no_artist_song_split(self):
         # Retour utilisateur (2026-09-15, données réelles en réconciliation) :
         # un "|" n'est pas toujours un séparateur de contexte de diffusion —
-        # ici le vrai titre/artiste est justement APRÈS le premier "|". Sans
-        # marqueur fort (drapeau/mot-clé Eurovision), ne jamais tronquer.
+        # ici le vrai titre/artiste est justement APRÈS le premier "|". Le
+        # signal de confiance est structurel (la portion avant le "|"
+        # ressemble-t-elle à "Artiste - Titre" ?), pas un mot-clé : "DORA
+        # 2026" n'a pas de séparateur -> on ne devine rien.
         title, artist = clean_title_artist(
             "DORA 2026 | LELEK - ANDROMEDA | POBJEDNIČKI NASTUP", "Dora | HRT"
         )
         assert title == "DORA 2026 | LELEK - ANDROMEDA | POBJEDNIČKI NASTUP"
         assert artist == "Dora | HRT"
 
-    def test_never_touches_broadcast_titles_without_the_word_eurovision(self):
-        # Retour utilisateur (2026-09-15) : "c'est vraiment pour l'Eurovision
-        # que ça s'applique, le reste fait attention" — Festival da Canção
-        # (sélection portugaise, chaîne/mots-clés qui ressemblent à un
-        # contexte de diffusion) ne dit "Eurovision" nulle part -> pas touché,
-        # volontairement, plutôt que de risquer un mauvais découpage ailleurs.
+    def test_extracts_artist_from_any_broadcaster_not_just_eurovision(self):
+        # Retour utilisateur (2026-09-15) : "faut faire attention que
+        # l'artiste/nom de la chanson sont cohérents [...] Si si faut
+        # toucher" — Festival da Canção (sélection portugaise) suit la même
+        # convention "Artiste - Titre | contexte de diffusion" qu'Eurovision
+        # Song Contest ; le signal structurel (dash dans la portion avant le
+        # "|") s'applique à n'importe quel diffuseur, pas seulement Eurovision.
         title, artist = clean_title_artist(
             "NAPA - Deslocado | 2ª Semifinal | Festival da Canção 2025", "Festival da Canção"
         )
-        assert title == "NAPA - Deslocado | 2ª Semifinal | Festival da Canção 2025"
-        assert artist == "Festival da Canção"
+        assert title == "Deslocado"
+        assert artist == "NAPA"
 
     def test_extracts_artist_across_en_dash_separator(self):
         # Retour utilisateur (2026-09-15, données réelles) : certains titres
@@ -120,3 +123,15 @@ class TestCleanTitleArtist:
         )
         assert title == "Some Random Sports Final | Team A vs Team B 🇫🇷"
         assert artist == "Some Channel"
+
+    def test_eurovision_keyword_is_fallback_for_titles_without_any_pipe(self):
+        # Retour utilisateur (2026-09-15) : sans "|" du tout, le signal
+        # structurel ne peut pas s'appliquer — le mot "Eurovision" reste le
+        # seul repli pour ces titres hérités (jamais utilisé quand un "|" est
+        # présent, où le signal structurel prime toujours).
+        title, artist = clean_title_artist(
+            "Hovig - Gravity (Cyprus) Eurovision 2017 - Official Music Video",
+            "Eurovision Song Contest",
+        )
+        assert title == "Gravity (Cyprus) Eurovision 2017 - Official Music Video"
+        assert artist == "Hovig"
