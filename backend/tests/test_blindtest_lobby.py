@@ -1297,6 +1297,50 @@ class TestRoundAdvancement:
                     assert msg["payload"]["phase"] == "ended"
                     assert msg["payload"]["final_scores"] == {"Bob": 2, "Alice": 1}
 
+    def test_same_song_in_two_playlists_counts_as_one_pot_entry(
+        self, blindtest_client, blindtest_engine, monkeypatch
+    ):
+        """Retour utilisateur (2026-09-14) : "même musique dans différentes
+        playlists = même musique" — deux lignes `Track` distinctes (deux
+        playlists/propriétaires différents) partageant le même
+        `youtube_video_id` ne doivent compter que pour UNE seule chanson
+        tirable : une fois jouée via l'une des deux lignes, la partie se
+        termine (pot épuisé) au lieu de retirer "l'autre" ligne comme si
+        c'était un morceau différent."""
+        import main_blindtest
+
+        monkeypatch.setattr(main_blindtest, "REVEAL_DISPLAY_SECONDS", 0.05)
+
+        code = _create_game(blindtest_client)
+        _add_track(blindtest_engine, code, youtube_video_id="same-song", owner_pseudo="Alice")
+        _add_track(blindtest_engine, code, youtube_video_id="same-song", owner_pseudo="Bob")
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
+                ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                ws2.receive_json()
+                ws1.receive_json()
+
+                ws1.send_json({"type": "start_game", "payload": {}})
+                ws1.receive_json()  # game_state {phase: round_started}
+                ws1.receive_json()
+                ws2.receive_json()  # game_state {phase: round_started}
+                ws2.receive_json()
+
+                ws2.send_json({"type": "guess_submitted", "payload": {"target_player_ids": ["Alice"]}})
+
+                ws1.receive_json()  # reveal
+                ws2.receive_json()  # reveal
+
+                ended1 = ws1.receive_json()
+                ended2 = ws2.receive_json()
+                for msg in (ended1, ended2):
+                    assert msg["type"] == "game_state"
+                    assert msg["payload"]["phase"] == "ended"
+
     def test_cap_reached_ends_game_regardless_of_remaining_pot(
         self, blindtest_client, blindtest_engine, monkeypatch
     ):

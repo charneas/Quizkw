@@ -13,9 +13,14 @@ avant ce changement.
 Idempotent et re-lançable sans risque : ne réécrit une ligne `Track` que si
 le nettoyage change réellement `title` ou `artist`, ne touche jamais
 `youtube_video_id`/`isrc`/`duration_seconds`/les FK, et n'affecte aucune
-autre table (pas de fusion de doublons entre playlists — `Track` est
-volontairement scopé par playlist, cf. AD-7 ; le même morceau importé dans
-deux playlists différentes reste deux lignes distinctes par conception).
+autre table. Ne fusionne pas les lignes `Track` en double entre playlists
+(`Track` reste une ligne d'import par playlist, cf. AD-7 sur le stockage) —
+mais depuis le retour utilisateur du 2026-09-14, le même morceau importé
+dans deux playlists différentes d'une même partie n'est déjà plus tirable
+deux fois en jeu : `_draw_eligible_track`/`PlayedTracksStore`
+(main_blindtest.py, app/blindtest/game_connections.py) excluent désormais
+par `youtube_video_id`, pas par `Track.id` — AD-7 isole le stockage, pas
+l'identité d'une chanson.
 
 Usage : cd backend && python scripts/normalize_blindtest_tracks.py
         [--dry-run] pour lister les changements sans les committer.

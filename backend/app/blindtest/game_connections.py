@@ -173,32 +173,43 @@ score_store = ScoreStore()
 
 
 class PlayedTracksStore:
-    """`{game_id: list[int]}` — pistes déjà tirées en mémoire uniquement
-    (Story 2.7), même convention que `GuessStore`/`ScoreStore` : aucune
-    persistance, l'état vit et meurt avec le process serveur (pas de table
-    DB d'historique des rounds, cf. Boundaries de
+    """`{game_id: list[str]}` — vidéos YouTube déjà tirées en mémoire
+    uniquement (Story 2.7), même convention que `GuessStore`/`ScoreStore` :
+    aucune persistance, l'état vit et meurt avec le process serveur (pas de
+    table DB d'historique des rounds, cf. Boundaries de
     spec-2-7-enchainement-classement-final.md). Jamais réinitialisé au
     cours d'une partie (comme `ScoreStore`) — un morceau déjà tiré ne doit
     jamais repasser dans le pot éligible tant que la partie dure.
 
+    Retour utilisateur (2026-09-14) : clé sur `youtube_video_id` (la vraie
+    chanson), PAS sur `Track.id` (une ligne d'import scopée à une playlist,
+    cf. `models.Track` — plusieurs playlists différentes peuvent chacune
+    avoir leur propre ligne `Track` pour le même morceau). Sans ça, le même
+    morceau importé par deux joueurs différents pourrait être tiré deux fois
+    dans la même partie — bug, pas une limitation acceptée de l'isolation
+    par playlist (AD-7 isole le stockage/les FK, pas l'identité d'une
+    chanson : "un même morceau dans deux playlists reste le même morceau").
+
     Une `list` (pas un `set`) comme valeur : `count()` (nombre de rounds
-    déjà joués, utilisé pour la limite `ROUNDS_PER_GAME`) doit compter
-    chaque tirage, y compris si un même id y figurait deux fois par erreur
-    ailleurs — `played_ids()` dérive l'ensemble pour le filtre d'exclusion
-    de la requête."""
+    déjà joués, utilisé pour la limite de rounds) doit compter chaque
+    tirage, y compris si un même id y figurait deux fois par erreur ailleurs
+    — `played_ids()` dérive l'ensemble pour le filtre d'exclusion de la
+    requête."""
 
     def __init__(self) -> None:
-        self._played: Dict[int, list[int]] = {}
+        self._played: Dict[int, list[str]] = {}
 
-    def add(self, game_id: int, track_id: int) -> None:
+    def add(self, game_id: int, youtube_video_id: str) -> None:
         """Enregistre un morceau tiré pour cette partie (appelé juste après
         le commit qui fait passer la partie en `round_started`, pour chaque
         round, y compris le premier — cf. Code Map)."""
-        self._played.setdefault(game_id, []).append(track_id)
+        self._played.setdefault(game_id, []).append(youtube_video_id)
 
-    def played_ids(self, game_id: int) -> set[int]:
-        """Ensemble des ids déjà tirés pour cette partie — utilisé pour
-        exclure ces morceaux du tirage suivant (`Track.id.notin_(...)`)."""
+    def played_ids(self, game_id: int) -> set[str]:
+        """Ensemble des `youtube_video_id` déjà tirés pour cette partie —
+        utilisé pour exclure ces morceaux du tirage suivant
+        (`Track.youtube_video_id.notin_(...)`), quelle que soit la playlist
+        qui les contient."""
         return set(self._played.get(game_id, []))
 
     def count(self, game_id: int) -> int:

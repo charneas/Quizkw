@@ -405,9 +405,15 @@ def _draw_eligible_track(db: Session, game: Game) -> Optional[Track]:
             Track.duration_seconds > 0,
         )
     )
-    played_ids = played_tracks_store.played_ids(game.id)
-    if played_ids:
-        query = query.filter(Track.id.notin_(played_ids))
+    # Retour utilisateur (2026-09-14) : "même musique dans différentes
+    # playlists = même musique" — l'exclusion se fait désormais par
+    # `youtube_video_id` (la vraie chanson), pas par `Track.id` (une ligne
+    # d'import scopée à une playlist). Le même morceau importé par deux
+    # joueurs différents ne doit être tirable qu'une seule fois par partie,
+    # peu importe combien de lignes `Track` distinctes le représentent.
+    played_video_ids = played_tracks_store.played_ids(game.id)
+    if played_video_ids:
+        query = query.filter(Track.youtube_video_id.notin_(played_video_ids))
 
     eligible_tracks = query.all()
     if not eligible_tracks:
@@ -432,9 +438,9 @@ def _has_unplayed_track(db: Session, game: Game) -> bool:
             Track.duration_seconds > 0,
         )
     )
-    played_ids = played_tracks_store.played_ids(game.id)
-    if played_ids:
-        query = query.filter(Track.id.notin_(played_ids))
+    played_video_ids = played_tracks_store.played_ids(game.id)
+    if played_video_ids:
+        query = query.filter(Track.youtube_video_id.notin_(played_video_ids))
     return query.first() is not None
 
 
@@ -482,7 +488,10 @@ def _handle_start_game(db: Session, game: Game, requesting_pseudo: str, payload:
     # tout tirage, y compris le tout premier de la partie, y est enregistré
     # pour que l'exclusion et le compte de rounds joués s'appliquent
     # uniformément dès le round 1 (cf. Code Map de la spec).
-    played_tracks_store.add(game.id, track.id)
+    #
+    # Retour utilisateur (2026-09-14) : enregistré par `youtube_video_id`
+    # (la vraie chanson), pas par `track.id` — cf. `_draw_eligible_track`.
+    played_tracks_store.add(game.id, track.youtube_video_id)
 
     # Story 2.5 : un nouveau round tiré invalide toute devinette encore en
     # mémoire pour le round précédent — sans ça, une devinette non
@@ -802,7 +811,9 @@ async def _advance_round(game_id: int, game_code: str) -> None:
         game.current_track_id = track.id
         db.commit()
 
-        played_tracks_store.add(game.id, track.id)
+        # Retour utilisateur (2026-09-14) : par `youtube_video_id`, pas
+        # `track.id` — cf. `_draw_eligible_track`.
+        played_tracks_store.add(game.id, track.youtube_video_id)
         guess_store.reset_round(game.id)
 
         # Critique (revue de code) : le client ne met à jour `phase` que via

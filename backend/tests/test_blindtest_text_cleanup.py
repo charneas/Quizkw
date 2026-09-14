@@ -36,3 +36,32 @@ class TestCleanTitleArtist:
 
     def test_empty_strings_are_returned_unchanged(self):
         assert clean_title_artist("", "") == ("", "")
+
+    def test_strips_vevo_suffix_and_splits_camel_case(self):
+        title, artist = clean_title_artist("begged", "OliviaRodrigoVEVO")
+        assert artist == "Olivia Rodrigo"
+        assert title == "begged"
+
+    def test_vevo_stripped_without_mangling_names_that_already_have_spaces(self):
+        _, artist = clean_title_artist("Song", "Katy Perry VEVO")
+        assert artist == "Katy Perry"
+
+    def test_strips_redundant_artist_prefix_once_artist_is_cleaned(self):
+        title, artist = clean_title_artist(
+            "Olivia Rodrigo - begged (Saturday Night Live 2026)", "OliviaRodrigoVEVO"
+        )
+        assert artist == "Olivia Rodrigo"
+        assert title == "begged (Saturday Night Live 2026)"
+
+    def test_does_not_strip_prefix_that_does_not_match_artist(self):
+        title, artist = clean_title_artist("Something - Not the artist", "Real Artist")
+        assert title == "Something - Not the artist"
+        assert artist == "Real Artist"
+
+    def test_truncates_title_at_first_pipe_broadcast_context(self):
+        title, artist = clean_title_artist(
+            "Barbara Pravi - Voilà (LIVE) | France 🇫🇷 | Grand Final | Eurovision 2021",
+            "Eurovision Song Contest",
+        )
+        assert title == "Barbara Pravi - Voilà (LIVE)"
+        assert artist == "Eurovision Song Contest"
