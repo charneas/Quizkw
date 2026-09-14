@@ -95,6 +95,14 @@ export default function BlindTestLobby() {
   // `reveal` n'arrive pour ce round-là.
   const [reveal, setReveal] = useState<BlindtestRevealPayload | null>(null)
 
+  // Retour utilisateur (2026-09-14) : compteur incrémenté à chaque `reveal`
+  // reçu, utilisé comme clé d'animation du delta de score (`+2`/`-1`) —
+  // remplace `roundTrack?.videoId` (devenu `null` dès le reveal pour couper
+  // l'audio, cf. `onReveal` ci-dessous) qui faisait collisionner la clé
+  // React sur chaque reveal et empêchait l'animation de rejouer (plus
+  // aucune évolution visible des scores entre deux chansons).
+  const [revealSeq, setRevealSeq] = useState(0)
+
   // Story 2.7 : classement final cumulatif, poussé dans `game_state` une
   // fois `phase === "ended"` — état terminal permanent (jamais remis à
   // `null` une fois reçu, contrairement à `reveal` qui se remet à zéro à
@@ -211,6 +219,7 @@ export default function BlindTestLobby() {
       },
       onReveal: (payload) => {
         setReveal(payload)
+        setRevealSeq((seq) => seq + 1)
         // Retour utilisateur (2026-09-14) : "laisser un peu de temps entre 2
         // musiques" — sans ceci, le lecteur du round qui vient de se
         // terminer continuait de jouer par-dessus l'écran de reveal jusqu'à
@@ -419,14 +428,14 @@ export default function BlindTestLobby() {
                         <span>{playerPseudo}</span>
                         <span className="flex items-center gap-2">
                           {/* Story 5 (spec-blindtest-integration-ui, nice-to-have) :
-                              clé basée sur `roundTrack` (identifiant unique du
-                              round, stable pendant tout l'affichage du reveal)
-                              plutôt que sur `delta` — deux rounds consécutifs
-                              avec le même delta (ex: 0 puis 0) ne rejoueraient
-                              pas l'animation `.animate-fade-in` sinon (déjà
+                              clé basée sur `revealSeq` (compteur incrémenté à
+                              chaque reveal, cf. plus haut) plutôt que sur
+                              `delta` — deux rounds consécutifs avec le même
+                              delta (ex: 0 puis 0) ne rejoueraient pas
+                              l'animation `.animate-fade-in` sinon (déjà
                               respectueuse de prefers-reduced-motion). */}
                           <span
-                            key={`${playerPseudo}-${roundTrack?.videoId ?? ''}`}
+                            key={`${playerPseudo}-${revealSeq}`}
                             className={`animate-fade-in text-sm font-semibold ${
                               delta > 0 ? 'text-success' : delta < 0 ? 'text-danger' : 'text-text-muted'
                             }`}
