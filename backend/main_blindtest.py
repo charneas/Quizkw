@@ -19,6 +19,7 @@ from app.blindtest.errors import PrivatePlaylistError, ProviderConfigError, Unre
 from app.blindtest.game_connections import guess_store, played_tracks_store, score_store
 from app.blindtest.game_connections import manager as connection_manager
 from app.blindtest.import_pipeline import extract_tracks
+from app.blindtest.text_cleanup import clean_title_artist
 from app.blindtest.models import Game, Playlist, Track
 from app.game_helpers import generate_session_code
 from app.rate_limit import limiter
@@ -229,10 +230,16 @@ def import_playlist(
     db.flush()  # obtenir playlist.id pour les FK des tracks, avant commit
 
     for item in extracted:
+        # Retour utilisateur (2026-09-14) : "uniformisation dans la base de
+        # données" — nettoyage non destructif (entités HTML, forme unicode,
+        # espaces, suffixes "(Official Video)"...) appliqué à l'affichage dès
+        # l'import, pour ne pas réintroduire le problème que
+        # `scripts/normalize_blindtest_tracks.py` corrige sur l'existant.
+        clean_title, clean_artist = clean_title_artist(item.title, item.artist)
         db.add(Track(
             playlist_id=playlist.id,
-            title=item.title,
-            artist=item.artist,
+            title=clean_title,
+            artist=clean_artist,
             isrc=item.isrc,
             youtube_video_id=item.youtube_video_id,
             source_url=item.source_url,
@@ -246,7 +253,7 @@ def import_playlist(
             # `match_playlist_tracks` (tâche de fond planifiée juste après)
             # qui la récupérera et la persistera, jamais cette requête
             # player-facing (NFR1).
-            cache.store(db, item.isrc, item.title, item.artist, item.youtube_video_id, duration_seconds=None)
+            cache.store(db, item.isrc, clean_title, clean_artist, item.youtube_video_id, duration_seconds=None)
 
     db.commit()
     db.refresh(playlist)
