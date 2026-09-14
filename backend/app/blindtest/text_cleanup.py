@@ -68,6 +68,17 @@ _PIPE_SUFFIX_RE = re.compile(r"\s*\|.*$")
 # accepter en plus du hyphen partout où ce module détecte ce motif.
 _ARTIST_TITLE_SEP_RE = re.compile(r"\s[-–]\s")
 
+# Retour utilisateur (2026-09-15, trouvé en dry-run) : certaines émissions
+# (Operación Triunfo) inversent la convention — '"Titre de la chanson" -
+# Interprète(s)' au lieu de "Artiste - Titre" — le titre entre guillemets EST
+# la chanson, jamais l'artiste. Sans ce garde-fou, '"UNA LLUNA A L’AIGUA" -
+# MIKI' finissait artiste='"UNA LLUNA A L'AIGUA"' / titre='MIKI', exactement
+# inversé. Guillemets droits ou typographiques, jamais l'apostrophe simple
+# (trop ambiguë : une apostrophe de contraction, ex. "L'AIGUA", n'encadre
+# rien).
+_QUOTED_PREFIX_RE = re.compile(r'^["“](.+)["”]$')
+
+
 def _split_artist_title(value: str) -> tuple[str, str, str]:
     """Équivalent de `str.partition(" - ")` mais acceptant aussi le tiret
     demi-cadratin comme séparateur — renvoie `(avant, séparateur, après)`,
@@ -195,6 +206,11 @@ def clean_title_artist(title: str, artist: str) -> tuple[str, str]:
     if truncate_pipe:
         prefix, sep, rest = _split_artist_title(clean_title)
         if sep and prefix.strip() and rest.strip():
+            quoted = _QUOTED_PREFIX_RE.match(prefix.strip())
+            if quoted:
+                # Convention inversée (cf. `_QUOTED_PREFIX_RE`) : le préfixe
+                # entre guillemets est le TITRE, le reste est l'artiste.
+                return _clean_title_field(quoted.group(1)), _clean_artist_field(rest)
             return _clean_title_field(rest), _clean_artist_field(prefix)
 
     clean_artist = _clean_artist_field(artist)

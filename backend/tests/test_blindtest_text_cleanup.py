@@ -139,6 +139,34 @@ class TestCleanTitleArtist:
         assert title == "Hovig - Gravity (Cyprus) Eurovision 2017 - Official Music Video"
         assert artist == "Eurovision Song Contest"
 
+    def test_reversed_quoted_title_convention_is_not_flipped_backwards(self):
+        # Retour utilisateur (2026-09-15, trouvé en dry-run) : "Operación
+        # Triunfo" (émission TV espagnole) inverse la convention —
+        # '"Titre" - Interprète' au lieu de "Artiste - Titre". Sans le
+        # garde-fou sur les guillemets, le titre entre guillemets (la vraie
+        # chanson) finissait pris pour l'artiste, et l'interprète pour le
+        # titre — exactement inversé.
+        title, artist = clean_title_artist(
+            "“UNA LLUNA A L’AIGUA” - MIKI | GALA 9 | OT 2018", "Operación Triunfo Oficial"
+        )
+        assert title == "UNA LLUNA A L’AIGUA"
+        assert artist == "MIKI"
+
+    def test_reversed_quoted_title_convention_with_two_performers(self):
+        title, artist = clean_title_artist(
+            "“NADIE SE SALVA” - NATALIA y MIKI | Gala Eurovisión 2019 | OT 2018",
+            "Operación Triunfo Oficial",
+        )
+        assert title == "NADIE SE SALVA"
+        assert artist == "NATALIA y MIKI"
+
+    def test_straight_quotes_also_trigger_reversed_convention(self):
+        title, artist = clean_title_artist(
+            '"El Ataque" - Carlos y Miki | Gala 1 | OT 2018', "Operación Triunfo Oficial"
+        )
+        assert title == "El Ataque"
+        assert artist == "Carlos y Miki"
+
     def test_extraction_is_idempotent_on_already_cleaned_multi_dash_title(self):
         # Régression du bug trouvé en dry-run (2026-09-15) : un titre déjà
         # nettoyé une première fois ("Bella - LIVE at ... - Eurovision 2026",
