@@ -332,11 +332,12 @@ export default function BlindTestLobby() {
           style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: '1px', height: '1px' }}
         />
 
-        {/* Retour utilisateur (2026-09-14) : "pouvoir baisser le son de la
-            page" — visible dans toutes les phases une fois `joined` (le
-            lecteur caché peut jouer pendant round_started/reveal), jamais
-            avant (pas encore de lecteur créé). */}
-        {joined && (
+        {/* Retour utilisateur (2026-09-14, ajusté 2026-09-14) : "pouvoir
+            baisser le son de la page" — inutile sur l'écran de lobby (avant
+            que la partie démarre, aucun lecteur n'existe encore) : affiché
+            seulement une fois de la musique potentiellement en cours
+            (round_started/reveal/next_round), jamais en `lobby` ni `ended`. */}
+        {joined && phase !== 'lobby' && phase !== 'ended' && (
           <div className="flex items-center gap-2">
             <label htmlFor="blindtest-volume" className="text-text-muted text-sm shrink-0">
               🔊 Volume
