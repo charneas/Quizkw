@@ -103,6 +103,17 @@ class TestCleanTitleArtist:
         assert title == "NAPA - Deslocado | 2ª Semifinal | Festival da Canção 2025"
         assert artist == "Festival da Canção"
 
+    def test_extracts_artist_across_en_dash_separator(self):
+        # Retour utilisateur (2026-09-15, données réelles) : certains titres
+        # Eurovision utilisent un tiret demi-cadratin "–" au lieu d'un
+        # hyphen normal comme séparateur artiste/titre.
+        title, artist = clean_title_artist(
+            "Sissal – Hallucination (LIVE) | Denmark 🇩🇰 | Grand Final | Eurovision 2025",
+            "Eurovision Song Contest",
+        )
+        assert title == "Hallucination (LIVE)"
+        assert artist == "Sissal"
+
     def test_never_touches_unrelated_titles_with_a_flag_emoji_or_final_keyword(self):
         title, artist = clean_title_artist(
             "Some Random Sports Final | Team A vs Team B 🇫🇷", "Some Channel"

@@ -61,6 +61,23 @@ _PIPE_SUFFIX_RE = re.compile(r"\s*\|.*$")
 
 _EUROVISION_RE = re.compile(r"eurovision", re.IGNORECASE)
 
+# Séparateur "Artiste - Titre" : hyphen normal, mais aussi tiret demi-cadratin
+# "–" (U+2013) — constaté sur données réelles (ex. "Sissal – Hallucination"),
+# typographiquement équivalent pour un lecteur humain, jamais ambigu comme
+# séparateur (contrairement à un mot-clé générique) donc sans risque à
+# accepter en plus du hyphen partout où ce module détecte ce motif.
+_ARTIST_TITLE_SEP_RE = re.compile(r"\s[-–]\s")
+
+
+def _split_artist_title(value: str) -> tuple[str, str, str]:
+    """Équivalent de `str.partition(" - ")` mais acceptant aussi le tiret
+    demi-cadratin comme séparateur — renvoie `(avant, séparateur, après)`,
+    `séparateur` vide si aucun des deux motifs n'a été trouvé."""
+    match = _ARTIST_TITLE_SEP_RE.search(value)
+    if not match:
+        return value, "", ""
+    return value[: match.start()], match.group(), value[match.end() :]
+
 
 def _has_broadcast_context_marker(title: str, artist: str) -> bool:
     return bool(_EUROVISION_RE.search(title or "") or _EUROVISION_RE.search(artist or ""))
@@ -126,7 +143,7 @@ def _strip_redundant_artist_prefix(title: str, artist: str) -> str:
     exactement (jamais de préfixe partiel deviné)."""
     if not title or not artist:
         return title
-    prefix, sep, rest = title.partition(" - ")
+    prefix, sep, rest = _split_artist_title(title)
     if sep and prefix.strip().casefold() == artist.strip().casefold():
         return rest.strip()
     return title
@@ -156,7 +173,7 @@ def clean_title_artist(title: str, artist: str) -> tuple[str, str]:
     clean_title = _clean_title_field(title, truncate_pipe=is_broadcast_title)
 
     if is_broadcast_title:
-        prefix, sep, rest = clean_title.partition(" - ")
+        prefix, sep, rest = _split_artist_title(clean_title)
         if sep and prefix.strip() and rest.strip():
             return _clean_title_field(rest), _clean_artist_field(prefix)
 
