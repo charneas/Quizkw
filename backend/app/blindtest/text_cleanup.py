@@ -137,8 +137,26 @@ def clean_title_artist(title: str, artist: str) -> tuple[str, str]:
     fin de titre, contexte de diffusion après le premier "|", suffixe "VEVO"
     et préfixe artiste redondant en début de titre. Ne touche jamais à la
     casse/aux accents volontaires (hors les cas ciblés ci-dessus) — cf.
-    docstring du module."""
-    clean_artist = _clean_artist_field(artist)
+    docstring du module.
+
+    Retour utilisateur (2026-09-15) : sur un titre de diffusion (marqueur
+    Eurovision/drapeau, cf. `_has_broadcast_context_marker`), le champ
+    `artist` fourni par la source EST le nom de la chaîne/de l'émission
+    ("Eurovision Song Contest", "Festival da Canção"...), jamais le vrai
+    artiste — et cette chaîne "donne beaucoup trop de contexte" pour un jeu
+    où il faut deviner qui a importé le morceau, pas reconnaître l'émission.
+    Dans ce cas précis, l'artiste réel (et le titre débarrassé de son
+    préfixe) sont extraits du titre lui-même ("{Artiste} - {Titre}", déjà
+    tronqué du contexte de diffusion ci-dessus) plutôt que conservés depuis
+    le champ `artist` d'origine."""
+    is_broadcast_title = _has_broadcast_context_marker(title or "")
     clean_title = _clean_title_field(title)
+
+    if is_broadcast_title:
+        prefix, sep, rest = clean_title.partition(" - ")
+        if sep and prefix.strip() and rest.strip():
+            return _clean_title_field(rest), _clean_artist_field(prefix)
+
+    clean_artist = _clean_artist_field(artist)
     clean_title = _strip_redundant_artist_prefix(clean_title, clean_artist)
     return clean_title, clean_artist

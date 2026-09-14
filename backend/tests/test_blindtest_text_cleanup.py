@@ -58,26 +58,42 @@ class TestCleanTitleArtist:
         assert title == "Something - Not the artist"
         assert artist == "Real Artist"
 
-    def test_truncates_title_at_first_pipe_broadcast_context(self):
+    def test_broadcast_title_uses_real_performer_instead_of_channel_name(self):
+        # Retour utilisateur (2026-09-15) : "Eurovision Song Contest donne
+        # beaucoup trop de contexte à la chanson" — sur un titre de
+        # diffusion, le champ `artist` d'origine est le nom de la chaîne/de
+        # l'émission, jamais le vrai artiste ; celui-ci (et le titre sans son
+        # préfixe) sont extraits du titre "{Artiste} - {Titre}" à la place.
+        title, artist = clean_title_artist(
+            "FAHREE feat. Ilkin Dovlatov - Özünlə Apar | Azerbaijan 🇦🇿 "
+            "| Showcase Performance | Eurovision 2024",
+            "Eurovision Song Contest",
+        )
+        assert title == "Özünlə Apar"
+        assert artist == "FAHREE feat. Ilkin Dovlatov"
+
+    def test_broadcast_title_still_truncates_pipe_context(self):
         title, artist = clean_title_artist(
             "Barbara Pravi - Voilà (LIVE) | France 🇫🇷 | Grand Final | Eurovision 2021",
             "Eurovision Song Contest",
         )
-        assert title == "Barbara Pravi - Voilà (LIVE)"
-        assert artist == "Eurovision Song Contest"
+        assert title == "Voilà (LIVE)"
+        assert artist == "Barbara Pravi"
 
     def test_never_truncates_pipe_without_a_broadcast_marker(self):
         # Retour utilisateur (2026-09-15, données réelles en réconciliation) :
         # un "|" n'est pas toujours un séparateur de contexte de diffusion —
         # ici le vrai titre/artiste est justement APRÈS le premier "|". Sans
         # marqueur fort (drapeau/mot-clé Eurovision), ne jamais tronquer.
-        title, _ = clean_title_artist(
+        title, artist = clean_title_artist(
             "DORA 2026 | LELEK - ANDROMEDA | POBJEDNIČKI NASTUP", "Dora | HRT"
         )
         assert title == "DORA 2026 | LELEK - ANDROMEDA | POBJEDNIČKI NASTUP"
+        assert artist == "Dora | HRT"
 
-    def test_truncates_pipe_when_broadcast_keyword_is_not_in_first_segment(self):
-        title, _ = clean_title_artist(
+    def test_truncates_pipe_and_extracts_artist_when_keyword_not_in_first_segment(self):
+        title, artist = clean_title_artist(
             "NAPA - Deslocado | 2ª Semifinal | Festival da Canção 2025", "Festival da Canção"
         )
-        assert title == "NAPA - Deslocado"
+        assert title == "Deslocado"
+        assert artist == "NAPA"
