@@ -91,9 +91,21 @@ class TestCleanTitleArtist:
         assert title == "DORA 2026 | LELEK - ANDROMEDA | POBJEDNIČKI NASTUP"
         assert artist == "Dora | HRT"
 
-    def test_truncates_pipe_and_extracts_artist_when_keyword_not_in_first_segment(self):
+    def test_never_touches_broadcast_titles_without_the_word_eurovision(self):
+        # Retour utilisateur (2026-09-15) : "c'est vraiment pour l'Eurovision
+        # que ça s'applique, le reste fait attention" — Festival da Canção
+        # (sélection portugaise, chaîne/mots-clés qui ressemblent à un
+        # contexte de diffusion) ne dit "Eurovision" nulle part -> pas touché,
+        # volontairement, plutôt que de risquer un mauvais découpage ailleurs.
         title, artist = clean_title_artist(
             "NAPA - Deslocado | 2ª Semifinal | Festival da Canção 2025", "Festival da Canção"
         )
-        assert title == "Deslocado"
-        assert artist == "NAPA"
+        assert title == "NAPA - Deslocado | 2ª Semifinal | Festival da Canção 2025"
+        assert artist == "Festival da Canção"
+
+    def test_never_touches_unrelated_titles_with_a_flag_emoji_or_final_keyword(self):
+        title, artist = clean_title_artist(
+            "Some Random Sports Final | Team A vs Team B 🇫🇷", "Some Channel"
+        )
+        assert title == "Some Random Sports Final | Team A vs Team B 🇫🇷"
+        assert artist == "Some Channel"
