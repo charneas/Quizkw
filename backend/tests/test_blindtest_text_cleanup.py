@@ -139,6 +139,17 @@ class TestCleanTitleArtist:
         assert title == "Hovig - Gravity (Cyprus) Eurovision 2017 - Official Music Video"
         assert artist == "Eurovision Song Contest"
 
+    def test_unquoted_artist_followed_by_quoted_title_no_dash(self):
+        # Retour utilisateur (2026-09-15) : "Serge Lama 'Je suis malade' |
+        # INA Chansons c'est juste la chanson Je suis malade de Serge Lama"
+        # — troisième convention, sans tiret du tout : l'artiste précède
+        # directement le titre entre guillemets.
+        title, artist = clean_title_artist(
+            'Serge Lama "Je suis malade" | INA Chansons', "INA Chansons"
+        )
+        assert title == "Je suis malade"
+        assert artist == "Serge Lama"
+
     def test_reversed_quoted_title_convention_is_not_flipped_backwards(self):
         # Retour utilisateur (2026-09-15, trouvé en dry-run) : "Operación
         # Triunfo" (émission TV espagnole) inverse la convention —

@@ -17,6 +17,7 @@ Appelé à deux endroits (mêmes règles, jamais dupliquées) :
 import html
 import re
 import unicodedata
+from typing import Optional
 
 # Suffixes techniques fréquents dans les titres YouTube ("(Official Video)",
 # "[Official Music Video]", "(Lyrics)", "(HD)"...) qui n'ont pas leur place
@@ -78,6 +79,18 @@ _ARTIST_TITLE_SEP_RE = re.compile(r"\s[-–]\s")
 # rien).
 _QUOTED_PREFIX_RE = re.compile(r'^["“](.+)["”]$')
 
+# Retour utilisateur (2026-09-15, trouvé après coup) : troisième convention —
+# 'Serge Lama "Je suis malade" | INA Chansons' : PAS de tiret du tout, juste
+# un artiste non guillemeté suivi du titre entre guillemets. `.+?` non-glouton
+# pour le préfixe (l'artiste s'arrête au premier guillemet rencontré), `.+?`
+# non-glouton aussi pour l'intérieur (mais ancré par `$`, donc capture bien
+# tout jusqu'au dernier guillemet fermant de la portion). Comme le guillemet
+# ouvrant doit être précédé d'au moins un caractère (`.+?` exige ≥1), cette
+# convention ne peut jamais matcher en même temps que `_QUOTED_PREFIX_RE`
+# (où le guillemet est le tout premier caractère) — les deux sont mutuellement
+# exclusives par construction, jamais de conflit d'interprétation.
+_UNQUOTED_ARTIST_QUOTED_TITLE_RE = re.compile(r'^(.+?)\s*["“](.+?)["”]\s*$')
+
 
 def _split_artist_title(value: str) -> tuple[str, str, str]:
     """Équivalent de `str.partition(" - ")` mais acceptant aussi le tiret
@@ -89,29 +102,48 @@ def _split_artist_title(value: str) -> tuple[str, str, str]:
     return value[: match.start()], match.group(), value[match.end() :]
 
 
-def _pipe_prefix_looks_like_artist_song(title: str) -> bool:
-    """True si `title` contient un "|" ET que la portion avant le premier
-    "|" contient elle-même un séparateur artiste/titre — signal structurel
-    fiable qu'il s'agit d'un vrai "{Artiste} - {Titre}" et que tout ce qui
-    suit est du contexte de diffusion annexe. Ne regarde QUE la première
-    portion (jamais le titre entier) : "DORA 2026 | LELEK - ANDROMEDA | ..."
-    a bien un " - " quelque part, mais pas dans sa première portion "DORA
-    2026" — exclu à raison.
+def _extract_pipe_artist_title(title: str) -> Optional[tuple[str, str]]:
+    """Si `title` contient un "|" ET que la portion avant le premier "|"
+    ressemble à une des conventions "{Artiste} {Titre}" connues, renvoie
+    `(artiste, titre)` extraits de cette portion (tout le reste, à partir du
+    premier "|", est alors considéré comme du contexte de diffusion annexe —
+    pays, manche, chaîne...). Renvoie `None` si aucune convention connue ne
+    matche : mieux vaut ne rien deviner que mal découper (cf. "DORA 2026 |
+    LELEK - ANDROMEDA | POBJEDNIČKI NASTUP", où le vrai contenu est justement
+    APRÈS le premier "|" — aucune des conventions ci-dessous n'y matche,
+    à raison).
 
-    Retour utilisateur (2026-09-15, revue) : PAS de repli sur le mot
-    "Eurovision" pour un titre sans aucun "|" (ex. "Hovig - Gravity (Cyprus)
-    Eurovision 2017 - Official Music Video") — testé et abandonné : rejouer
-    ce script sur un titre déjà nettoyé une première fois (ex. "Bella - LIVE
-    at ... - Eurovision 2026", lui-même un reliquat légitime après une
-    première extraction) refaisait un second découpage sur ce texte restant
-    et prenait à tort un fragment du VRAI titre pour un second artiste — non
-    idempotent et destructif sur relance. Le signal structurel "|" ci-dessus
-    est lui prouvé stable (une fois le "|" retiré, il ne peut plus se
-    redéclencher) : c'est le seul repli conservé."""
+    Conventions reconnues, dans cet ordre :
+    1. "{Artiste} - {Titre}" (tiret ou tiret demi-cadratin) — la plus
+       courante (Eurovision Song Contest, Festival da Canção, Riot Games
+       Music...).
+    2. '"{Titre}" - {Interprète(s)}' — convention inversée constatée sur
+       Operación Triunfo : le préfixe entre guillemets est le titre, jamais
+       l'artiste.
+    3. '{Artiste} "{Titre}"' (sans tiret) — constatée sur des chaînes
+       d'archives (INA Chansons) : l'artiste précède directement le titre
+       entre guillemets, sans séparateur."""
     if "|" not in title:
-        return False
+        return None
     first_segment = title.split("|", 1)[0]
-    return bool(_ARTIST_TITLE_SEP_RE.search(first_segment))
+
+    sep_match = _ARTIST_TITLE_SEP_RE.search(first_segment)
+    if sep_match:
+        prefix = first_segment[: sep_match.start()].strip()
+        rest = first_segment[sep_match.end() :].strip()
+        if prefix and rest:
+            quoted = _QUOTED_PREFIX_RE.match(prefix)
+            if quoted:
+                return rest, quoted.group(1).strip()
+            return prefix, rest
+
+    unquoted_match = _UNQUOTED_ARTIST_QUOTED_TITLE_RE.match(first_segment.strip())
+    if unquoted_match:
+        artist, song_title = unquoted_match.group(1).strip(), unquoted_match.group(2).strip()
+        if artist and song_title:
+            return artist, song_title
+
+    return None
 
 # Retour utilisateur (2026-09-14) : "Enlève le VEVO ça n'a aucun sens de le
 # garder" — suffixe technique de nom de chaîne YouTube ("OliviaRodrigoVEVO",
@@ -197,21 +229,15 @@ def clean_title_artist(title: str, artist: str) -> tuple[str, str]:
     extraits du titre lui-même ("{Artiste} - {Titre}", déjà tronqué du
     contexte de diffusion) plutôt que conservés depuis le champ `artist`
     d'origine — détection structurelle uniquement, générique à tout
-    diffuseur suivant cette convention (cf. `_pipe_prefix_looks_like_
-    artist_song`, y compris sa note sur le repli "Eurovision" abandonné pour
-    non-idempotence)."""
-    truncate_pipe = _pipe_prefix_looks_like_artist_song(title or "")
-    clean_title = _clean_title_field(title, truncate_pipe=truncate_pipe)
+    diffuseur suivant l'une des conventions reconnues (cf.
+    `_extract_pipe_artist_title`, y compris sa note sur le repli "Eurovision"
+    abandonné pour non-idempotence)."""
+    pipe_extraction = _extract_pipe_artist_title(title or "")
+    clean_title = _clean_title_field(title, truncate_pipe=pipe_extraction is not None)
 
-    if truncate_pipe:
-        prefix, sep, rest = _split_artist_title(clean_title)
-        if sep and prefix.strip() and rest.strip():
-            quoted = _QUOTED_PREFIX_RE.match(prefix.strip())
-            if quoted:
-                # Convention inversée (cf. `_QUOTED_PREFIX_RE`) : le préfixe
-                # entre guillemets est le TITRE, le reste est l'artiste.
-                return _clean_title_field(quoted.group(1)), _clean_artist_field(rest)
-            return _clean_title_field(rest), _clean_artist_field(prefix)
+    if pipe_extraction is not None:
+        artist_candidate, title_candidate = pipe_extraction
+        return _clean_title_field(title_candidate), _clean_artist_field(artist_candidate)
 
     clean_artist = _clean_artist_field(artist)
     clean_title = _strip_redundant_artist_prefix(clean_title, clean_artist)
