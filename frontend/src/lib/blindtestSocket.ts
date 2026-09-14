@@ -72,9 +72,13 @@ export class BlindtestSocket {
   /** Déclenche le lancement du round (Story 2.4) — n'a d'effet que si
    * l'appelant est bien `host_pseudo` et que la partie est en `lobby` ;
    * sinon le serveur ignore silencieusement (défense en profondeur, le
-   * bouton n'est déjà montré qu'à l'hôte). */
-  sendStartGame(): void {
-    this.send('start_game', {})
+   * bouton n'est déjà montré qu'à l'hôte).
+   *
+   * Retour utilisateur (2026-09-14) : `rounds` (nombre de rounds choisi par
+   * l'hôte pour cette partie) est optionnel — omis ou hors bornes, le
+   * serveur retombe silencieusement sur sa valeur par défaut. */
+  sendStartGame(rounds?: number): void {
+    this.send('start_game', rounds !== undefined ? { rounds } : {})
   }
 
   /** Envoie la devinette du joueur (Story 2.5) : sélection multiple de

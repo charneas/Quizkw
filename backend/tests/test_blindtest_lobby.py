@@ -1350,6 +1350,48 @@ class TestRoundAdvancement:
                     assert msg["payload"]["phase"] == "ended"
                     assert msg["payload"]["final_scores"] == {"Bob": 2, "Alice": 1}
 
+    def test_host_chosen_rounds_count_ends_game_early(
+        self, blindtest_client, blindtest_engine, monkeypatch
+    ):
+        """Retour utilisateur (2026-09-14) : "pouvoir choisir le nombre de
+        rounds" — `start_game {rounds: 1}` doit terminer la partie dès la
+        clôture du premier round, même si le pot a encore des morceaux
+        non-tirés (mirroir de `test_cap_reached_ends_game_regardless_of_remaining_pot`
+        mais avec un cap personnalisé au lieu de la valeur par défaut 15)."""
+        import main_blindtest
+
+        monkeypatch.setattr(main_blindtest, "REVEAL_DISPLAY_SECONDS", 0.05)
+
+        code = _create_game(blindtest_client)
+        _add_track(blindtest_engine, code, youtube_video_id="track-a")
+        _add_track(blindtest_engine, code, youtube_video_id="track-b")
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
+                ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                ws2.receive_json()
+                ws1.receive_json()
+
+                ws1.send_json({"type": "start_game", "payload": {"rounds": 1}})
+                ws1.receive_json()  # game_state {phase: round_started}
+                ws1.receive_json()
+                ws2.receive_json()  # game_state {phase: round_started}
+                ws2.receive_json()
+
+                ws2.send_json({"type": "guess_submitted", "payload": {"target_player_ids": ["Alice"]}})
+
+                ws1.receive_json()  # reveal
+                ws2.receive_json()  # reveal
+
+                ended1 = ws1.receive_json()
+                ended2 = ws2.receive_json()
+                for msg in (ended1, ended2):
+                    assert msg["type"] == "game_state"
+                    assert msg["payload"]["phase"] == "ended"
+
     def test_late_joiner_after_end_sees_final_scores(self, blindtest_client, blindtest_engine, monkeypatch):
         """I/O matrix : un client qui rejoint après la fin de partie reçoit
         `final_scores` dans son propre `game_state` (push de jointure)."""

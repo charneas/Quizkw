@@ -31,22 +31,48 @@ router = APIRouter()
 # si tous les joueurs présents non-propriétaires n'ont pas répondu avant.
 # Module-level pour être monkeypatché par les tests (valeur réduite sur le
 # chemin de test qui exerce réellement le timeout).
-ROUND_GUESS_SECONDS = 30
+# Retour utilisateur (2026-09-14) : 30s jugé trop long pour un extrait —
+# raccourci à 20s (durée de l'extrait ET du round, les deux sont couplés
+# puisque l'audio joue pendant toute la fenêtre de devinette).
+ROUND_GUESS_SECONDS = 20
 
-# Story 2.7 : nombre de rounds joués avant fin de partie automatique, et
-# durée (secondes) de la pause sur l'écran de reveal avant l'enchaînement
-# automatique serveur vers le round suivant (ou la fin de partie). Toutes
-# deux module-level pour être monkeypatchées par les tests, même convention
-# que `ROUND_GUESS_SECONDS`.
-ROUNDS_PER_GAME = 15
+# Story 2.7 : nombre de rounds joués par défaut avant fin de partie
+# automatique (l'hôte peut désormais le personnaliser par partie, cf.
+# `_rounds_target`/`_handle_start_game` ci-dessous — cette constante ne sert
+# plus que de valeur par défaut/de secours), et durée (secondes) de la pause
+# sur l'écran de reveal avant l'enchaînement automatique serveur vers le
+# round suivant (ou la fin de partie). Module-level pour être monkeypatchées
+# par les tests, même convention que `ROUND_GUESS_SECONDS`.
+DEFAULT_ROUNDS_PER_GAME = 15
 REVEAL_DISPLAY_SECONDS = 6
+
+# Retour utilisateur (2026-09-14) : bornes du nombre de rounds personnalisable
+# par l'hôte (`start_game {rounds}`) — un minimum de 1 (partie dégénérée mais
+# valide) et un maximum raisonnable pour éviter une partie interminable/un
+# pot de morceaux épuisé prématurément sur une petite playlist.
+MIN_ROUNDS_PER_GAME = 1
+MAX_ROUNDS_PER_GAME = 30
+
+# `{game_id: nombre_de_rounds_choisi_par_l_hote}` — même convention en
+# mémoire uniquement que `ScoreStore`/`PlayedTracksStore` (pas de colonne DB,
+# ce module n'utilise que `Base.metadata.create_all`/pas d'Alembic, cf.
+# `app/blindtest/database.py` : ajouter une colonne casserait la prod
+# existante sans migration). Absent de ce dict -> `DEFAULT_ROUNDS_PER_GAME`.
+_rounds_target: dict[int, int] = {}
+
+
+def _get_rounds_target(game_id: int) -> int:
+    return _rounds_target.get(game_id, DEFAULT_ROUNDS_PER_GAME)
+
 
 # Retour utilisateur (2026-09-14) : un offset de départ tiré sur toute la
 # durée du morceau pouvait démarrer à quelques secondes de la fin (silence,
 # fade-out, générique) — l'extrait doit rester "de la musique" jusqu'au bout.
 # On borne donc le dernier départ possible pour laisser au moins
-# `MIN_SNIPPET_SECONDS` de lecture avant la fin du morceau.
-MIN_SNIPPET_SECONDS = 30
+# `MIN_SNIPPET_SECONDS` de lecture avant la fin du morceau — alignée sur
+# `ROUND_GUESS_SECONDS` (20s) : pas besoin de garantir plus de musique
+# restante que ce que le round laisse le temps d'écouter.
+MIN_SNIPPET_SECONDS = 20
 
 
 def _pick_start_seconds(duration_seconds: int) -> int:
@@ -405,10 +431,18 @@ def _has_unplayed_track(db: Session, game: Game) -> bool:
     return query.first() is not None
 
 
-def _handle_start_game(db: Session, game: Game, requesting_pseudo: str) -> Optional[dict]:
+def _handle_start_game(db: Session, game: Game, requesting_pseudo: str, payload: Optional[dict] = None) -> Optional[dict]:
     """Traite un message `start_game` (Story 2.4) : vérifie hôte/phase, tire
     un morceau éligible du pot de cette partie, calcule un offset de départ
     aléatoire et fait passer la partie en `round_started`.
+
+    Retour utilisateur (2026-09-14) : `payload` porte désormais optionnellement
+    `rounds` — le nombre de rounds choisi par l'hôte pour CETTE partie,
+    enregistré dans `_rounds_target` avant le tirage du premier round. Une
+    valeur absente/invalide (pas un int, hors bornes `MIN`/`MAX_ROUNDS_PER_GAME`)
+    est silencieusement ignorée et laisse `DEFAULT_ROUNDS_PER_GAME` en vigueur
+    plutôt que de faire échouer tout le `start_game` pour un souci de forme sur
+    un champ optionnel.
 
     Renvoie le payload `round_started {videoId, startSeconds, title, artist}`
     à diffuser,
@@ -421,6 +455,10 @@ def _handle_start_game(db: Session, game: Game, requesting_pseudo: str) -> Optio
         return None
     if game.phase != "lobby":
         return None
+
+    rounds = payload.get("rounds") if isinstance(payload, dict) else None
+    if isinstance(rounds, int) and not isinstance(rounds, bool) and MIN_ROUNDS_PER_GAME <= rounds <= MAX_ROUNDS_PER_GAME:
+        _rounds_target[game.id] = rounds
 
     track = _draw_eligible_track(db, game)
     if track is None:
@@ -701,7 +739,7 @@ async def _advance_round(game_id: int, game_code: str) -> None:
         # DB de tirage, dans cet ordre précis (cf. Boundaries de la spec) :
         # la limite de rounds coupe court sans même consulter le pot restant.
         track: Optional[Track] = None
-        if played_tracks_store.count(game.id) < ROUNDS_PER_GAME:
+        if played_tracks_store.count(game.id) < _get_rounds_target(game.id):
             track = _draw_eligible_track(db, game)
 
             # Story 8 (revue de code) : `None` ici peut vouloir dire soit un
@@ -956,7 +994,7 @@ async def game_lobby_ws(websocket: WebSocket, code: str, db: Session = Depends(g
             # pas `start_game` garde le comportement tolérant no-op de la
             # Story 2.1 (pas d'autre message client->serveur avant 2.5).
             if isinstance(raw, dict) and raw.get("type") == "start_game":
-                round_payload = _handle_start_game(db, game, pseudo)
+                round_payload = _handle_start_game(db, game, pseudo, raw.get("payload"))
                 if round_payload is not None:
                     # Critique (revue de code, Story 2.7) : le client ne met
                     # à jour `phase` que via `game_state` (`onGameState`) —

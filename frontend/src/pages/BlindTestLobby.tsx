@@ -74,6 +74,13 @@ export default function BlindTestLobby() {
   })
   const playerRef = useRef<YouTubePlayer | null>(null)
 
+  // Retour utilisateur (2026-09-14) : "pouvoir choisir le nombre de rounds"
+  // — choix de l'hôte avant de démarrer, envoyé dans `start_game {rounds}`.
+  // Bornes alignées sur `MIN_ROUNDS_PER_GAME`/`MAX_ROUNDS_PER_GAME` côté
+  // serveur (main_blindtest.py) ; 15 reste la valeur par défaut affichée
+  // (`DEFAULT_ROUNDS_PER_GAME`).
+  const [roundsCount, setRoundsCount] = useState(15)
+
   function handleVolumeChange(next: number) {
     setVolume(next)
     playerRef.current?.setVolume(next)
@@ -248,7 +255,7 @@ export default function BlindTestLobby() {
   }
 
   function handleStartGame() {
-    socketRef.current?.sendStartGame()
+    socketRef.current?.sendStartGame(roundsCount)
   }
 
   function handleRestartGame() {
@@ -534,9 +541,30 @@ export default function BlindTestLobby() {
             </div>
 
             {pseudo.trim() === hostPseudo && (
-              <button className="btn-primary w-full" onClick={handleStartGame}>
-                Démarrer la partie
-              </button>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <label htmlFor="blindtest-rounds" className="text-text-muted text-sm shrink-0">
+                    Nombre de rounds
+                  </label>
+                  <input
+                    id="blindtest-rounds"
+                    type="number"
+                    min={1}
+                    max={30}
+                    className="input-field w-20"
+                    value={roundsCount}
+                    onChange={(e) => {
+                      const next = Number(e.target.value)
+                      if (Number.isFinite(next)) {
+                        setRoundsCount(Math.min(30, Math.max(1, Math.trunc(next))))
+                      }
+                    }}
+                  />
+                </div>
+                <button className="btn-primary w-full" onClick={handleStartGame}>
+                  Démarrer la partie
+                </button>
+              </div>
             )}
 
             <div className="space-y-2">
