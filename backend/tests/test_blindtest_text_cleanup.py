@@ -65,3 +65,19 @@ class TestCleanTitleArtist:
         )
         assert title == "Barbara Pravi - Voilà (LIVE)"
         assert artist == "Eurovision Song Contest"
+
+    def test_never_truncates_pipe_without_a_broadcast_marker(self):
+        # Retour utilisateur (2026-09-15, données réelles en réconciliation) :
+        # un "|" n'est pas toujours un séparateur de contexte de diffusion —
+        # ici le vrai titre/artiste est justement APRÈS le premier "|". Sans
+        # marqueur fort (drapeau/mot-clé Eurovision), ne jamais tronquer.
+        title, _ = clean_title_artist(
+            "DORA 2026 | LELEK - ANDROMEDA | POBJEDNIČKI NASTUP", "Dora | HRT"
+        )
+        assert title == "DORA 2026 | LELEK - ANDROMEDA | POBJEDNIČKI NASTUP"
+
+    def test_truncates_pipe_when_broadcast_keyword_is_not_in_first_segment(self):
+        title, _ = clean_title_artist(
+            "NAPA - Deslocado | 2ª Semifinal | Festival da Canção 2025", "Festival da Canção"
+        )
+        assert title == "NAPA - Deslocado"

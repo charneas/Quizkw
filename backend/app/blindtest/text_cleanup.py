@@ -39,11 +39,30 @@ _WS_RE = re.compile(r"\s+")
 # Retour utilisateur (2026-09-14) : "c'est mal découpé" — titres de chaînes
 # de diffusion/événements (Eurovision, INA, chaînes TV...) du style
 # "Artiste - Titre (LIVE) | France 🇫🇷 | Grand Final | Eurovision 2021" :
-# tout ce qui suit le premier " | " est du contexte de diffusion (pays,
-# manche, édition...), jamais une partie du titre de la chanson elle-même —
-# tronqué en un seul point de coupe (le premier), jamais itéré, pour ne
-# jamais grignoter un titre légitime au-delà de cette première occurrence.
+# tout ce qui suit le premier " | " est alors du contexte de diffusion (pays,
+# manche, édition...), jamais une partie du titre de la chanson elle-même.
+#
+# ATTENTION (constaté sur données réelles en réconciliation, 2026-09-15) :
+# un "|" n'est PAS toujours un séparateur de contexte de diffusion — certains
+# titres l'utilisent pour structurer l'inverse, ex. "DORA 2026 | LELEK -
+# ANDROMEDA | POBJEDNIČKI NASTUP" où le vrai titre/artiste est justement
+# APRÈS le premier "|". Tronquer inconditionnellement au premier "|" y
+# détruirait le morceau réel. La troncature n'est donc appliquée QUE si le
+# titre porte par ailleurs un marqueur fort et sans ambiguïté de contexte de
+# diffusion (drapeau emoji, ou mot-clé Eurovision/finale/showcase) — cf.
+# `_has_broadcast_context_marker` — jamais sur la seule présence d'un "|".
 _PIPE_SUFFIX_RE = re.compile(r"\s*\|.*$")
+
+_FLAG_EMOJI_RE = re.compile(r"[\U0001F1E6-\U0001F1FF]{2}")
+
+_BROADCAST_KEYWORDS_RE = re.compile(
+    r"eurovision|grand\s*final|semi-?final|national\s*final|showcase\s*performance",
+    re.IGNORECASE,
+)
+
+
+def _has_broadcast_context_marker(value: str) -> bool:
+    return bool(_FLAG_EMOJI_RE.search(value) or _BROADCAST_KEYWORDS_RE.search(value))
 
 # Retour utilisateur (2026-09-14) : "Enlève le VEVO ça n'a aucun sens de le
 # garder" — suffixe technique de nom de chaîne YouTube ("OliviaRodrigoVEVO",
@@ -85,7 +104,8 @@ def _clean_title_field(value: str) -> str:
     # identiques d'un même caractère accentué (composé vs décomposé) ne
     # doivent pas être traitées comme des titres différents.
     value = unicodedata.normalize("NFC", value)
-    value = _PIPE_SUFFIX_RE.sub("", value)
+    if _has_broadcast_context_marker(value):
+        value = _PIPE_SUFFIX_RE.sub("", value)
     # Suffixe technique retiré une seule fois : un titre en aurait rarement
     # deux empilés, et boucler ouvrirait la porte à un titre légitime
     # terminant par une parenthèse vidée par erreur en cascade.
