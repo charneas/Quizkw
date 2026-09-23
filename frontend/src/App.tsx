@@ -3,6 +3,7 @@ import ErrorBoundary from './components/ErrorBoundary'
 import ThemeToggle from './components/ThemeToggle'
 import AccountButton from './components/AccountButton'
 import KofiWidget from './components/KofiWidget'
+import PageviewTracker from './components/PageviewTracker'
 import { DiscordAccountProvider } from './contexts/DiscordAccountContext'
 import Home from './pages/Home'
 import Lobby from './pages/Lobby'
@@ -33,6 +34,7 @@ function App() {
         <ThemeToggle />
         <AccountButton />
         <KofiWidget />
+        <PageviewTracker />
         <ErrorBoundary>
         <Routes>
           <Route path="/" element={<Home />} />
