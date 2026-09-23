@@ -41,6 +41,12 @@
   --color-text-muted: 91 78 125;
 }
 
+/* Widget Ko-fi (KofiWidget.tsx) masqué pendant les parties : le script injecte
+   tout (bouton + popup) dans un div#kofi-widget-overlay-<uuid> sous <body>. */
+:root[data-kofi-hidden] [id^="kofi-widget-overlay-"] {
+  display: none !important;
+}
+
 @layer base {
   body {
     @apply text-text font-sans;

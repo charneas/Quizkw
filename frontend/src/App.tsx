@@ -2,6 +2,7 @@ import { Routes, Route } from 'react-router-dom'
 import ErrorBoundary from './components/ErrorBoundary'
 import ThemeToggle from './components/ThemeToggle'
 import AccountButton from './components/AccountButton'
+import KofiWidget from './components/KofiWidget'
 import { DiscordAccountProvider } from './contexts/DiscordAccountContext'
 import Home from './pages/Home'
 import Lobby from './pages/Lobby'
@@ -31,6 +32,7 @@ function App() {
       <div className="min-h-screen bg-bg">
         <ThemeToggle />
         <AccountButton />
+        <KofiWidget />
         <ErrorBoundary>
         <Routes>
           <Route path="/" element={<Home />} />

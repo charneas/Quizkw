@@ -117,7 +117,7 @@ function Home() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4 pb-24 sm:pb-4">
       {/* Revue de code : attendre la résolution initiale de GET
           /auth/discord/me avant d'afficher "Connexion" — sinon un
           utilisateur déjà connecté voit ce bouton clignoter le temps de
