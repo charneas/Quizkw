@@ -150,6 +150,30 @@ backlog détaillé.
   désynchronisation `requirements.txt` / venv installé.
 - Migrations gérées avec Alembic (`alembic/versions/`).
 
+### Migrations de la DB blindtest
+
+La DB blindtest (`BLINDTEST_DATABASE_URL`) a son propre environnement Alembic,
+`alembic_blindtest/` (section `[blindtest]` d'`alembic.ini`), séparé de celui
+de la DB quiz.
+
+- **Appliquées automatiquement au démarrage** : `main.py` appelle
+  `upgrade_blindtest_db` (`app/blindtest/migrations.py`), qui met la DB à
+  `head`. Aucune étape de déploiement manuelle.
+- **Ajouter une migration** après avoir modifié `app/blindtest/models.py`
+  (depuis `backend/`) :
+  ```bash
+  alembic -n blindtest revision --autogenerate -m "add playlists.title"
+  ```
+  Relire le fichier généré dans `alembic_blindtest/versions/` (le mode batch
+  est activé, SQLite ne sachant pas faire la plupart des `ALTER`), puis le
+  committer : le prochain démarrage l'applique.
+- Autres commandes utiles : `alembic -n blindtest current`,
+  `alembic -n blindtest check` (vérifie que les modèles et `head` concordent).
+- Une DB existante sans historique Alembic (antérieure à ce mécanisme) est
+  tamponnée à la révision baseline si elle en possède toutes les colonnes ;
+  sinon le démarrage échoue avec un `RuntimeError` listant les colonnes
+  manquantes (restaurer une sauvegarde conforme ou recréer la DB).
+
 ## Tests
 
 ```bash

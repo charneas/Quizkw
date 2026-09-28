@@ -15,6 +15,14 @@ os.environ.setdefault("DISCORD_CLIENT_ID", "test-discord-client-id")
 os.environ.setdefault("DISCORD_CLIENT_SECRET", "test-discord-client-secret")
 os.environ.setdefault("DISCORD_REDIRECT_URI", "http://testserver/api/auth/discord/callback")
 os.environ.setdefault("DISCORD_SESSION_SECRET_KEY", "test-discord-secret-key-not-for-production")
+# L'import de `main` applique les migrations blindtest (upgrade_blindtest_db) :
+# sans cette valeur, elles viseraient le vrai backend/blindtest.db du dev.
+# Fichier SQLite temporaire propre à chaque exécution.
+import tempfile
+os.environ.setdefault(
+    "BLINDTEST_DATABASE_URL",
+    "sqlite:///" + os.path.join(tempfile.mkdtemp(prefix="quizkw-blindtest-"), "blindtest.db").replace("\\", "/"),
+)
 
 import pytest
 from sqlalchemy import create_engine, event

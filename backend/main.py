@@ -14,7 +14,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from app.database import engine
 from app.models import Base
 from app.blindtest.database import engine as blindtest_engine
-from app.blindtest.models import Base as BlindtestBase
+from app.blindtest.migrations import upgrade_blindtest_db
 from app.rate_limit import limiter
 from main_extended import router
 from main_admin import router as admin_router, auth_router as admin_auth_router
@@ -44,8 +44,9 @@ logger = logging.getLogger(__name__)
 # Create database tables
 Base.metadata.create_all(bind=engine)
 # Blindtest module (Epic 1) : engine/fichier SQLite distinct (AD-7) — voir
-# app/blindtest/database.py.
-BlindtestBase.metadata.create_all(bind=blindtest_engine)
+# app/blindtest/database.py. Schéma géré par Alembic (alembic_blindtest/),
+# mis à niveau à head au démarrage — voir app/blindtest/migrations.py.
+upgrade_blindtest_db(blindtest_engine)
 
 app = FastAPI(
     title="Quizkw API",
