@@ -241,6 +241,20 @@ export async function joinPublicQueue(name: string): Promise<PublicQueueJoinResu
   return result
 }
 
+// spec-public-queue-leave : "Annuler" libère la place dans la file (partie
+// publique non démarrée). 204 attendu ; 403/409 si mauvais jeton ou partie
+// déjà démarrée — l'appelant ignore l'erreur et quitte l'écran quand même.
+export async function leavePublicQueue(code: string, teamId: number): Promise<void> {
+  const response = await fetch(`${API_BASE}/games/public/${code}/teams/${teamId}`, {
+    method: 'DELETE',
+    credentials: 'include',
+    headers: teamHeaders(teamId),
+  })
+  if (!response.ok) {
+    throw new Error(`Impossible de quitter la file (${response.status})`)
+  }
+}
+
 export async function startGame(code: string) {
   return fetchApi<any>(`/games/${code}/start`, {
     method: 'POST',

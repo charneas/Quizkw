@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getGame } from '../services/api'
+import { getGame, getPlayerIdentity, leavePublicQueue } from '../services/api'
 import type { GameSession } from '../types'
 
 /** Écran d'attente de la file publique (spec-rooms-publiques, story 1).
@@ -17,6 +17,25 @@ function PublicQueue() {
   const navigate = useNavigate()
   const [game, setGame] = useState<GameSession | null>(null)
   const [error, setError] = useState('')
+  const [leaving, setLeaving] = useState(false)
+
+  // spec-public-queue-leave : libère la place avant de quitter, pour ne pas
+  // laisser les autres joueurs attendre un fantôme. Best effort : quel que
+  // soit le résultat (403/409/réseau), on rentre à l'accueil — le TTL de la
+  // file reste le filet de sécurité.
+  const handleCancel = async () => {
+    if (leaving) return
+    setLeaving(true)
+    const teamId = code ? getPlayerIdentity(code)?.team_id : null
+    if (code && teamId != null) {
+      try {
+        await leavePublicQueue(code, teamId)
+      } catch {
+        // ignoré volontairement, voir ci-dessus
+      }
+    }
+    navigate('/')
+  }
 
   useEffect(() => {
     if (!code) return
@@ -67,8 +86,8 @@ function PublicQueue() {
             </p>
           </>
         )}
-        <button onClick={() => navigate('/')} className="btn-secondary w-full min-h-[44px]">
-          ← Annuler
+        <button onClick={handleCancel} disabled={leaving} className="btn-secondary w-full min-h-[44px] disabled:opacity-50">
+          {leaving ? 'Annulation...' : '← Annuler'}
         </button>
       </div>
     </div>

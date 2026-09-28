@@ -17,14 +17,15 @@ une file simultanément" (voir Never de la story) : limitation acceptée vu le
 trafic attendu faible.
 """
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app import models, schemas
-from app.game_helpers import generate_session_code
+from app.game_helpers import generate_session_code, require_team_token
 from app.pseudo_filter import contains_forbidden_word
 from app.rate_limit import limiter
 from main_games import _start_game_core
@@ -134,3 +135,58 @@ def join_public_queue(request: Request, body: schemas.PublicQueueJoinRequest, db
         player_id=player.id,
         player_token=player.player_token,
     )
+
+
+@router.delete("/games/public/{code}/teams/{team_id}", status_code=204)
+@limiter.limit("10/minute")
+def leave_public_queue(
+    request: Request,
+    code: str,
+    team_id: int,
+    x_team_token: Optional[str] = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    """Quitte une file publique pas encore démarrée (spec-public-queue-leave).
+
+    Supprime la place du joueur (jetons, joueur(s), équipe) en un seul commit,
+    pour que les autres joueurs voient le compteur baisser à leur prochain
+    poll et que le prochain arrivant reprenne cette place. Une partie non
+    démarrée n'a encore aucune ligne Answer/duel/manche liée à l'équipe.
+    """
+    # Authentification d'abord : 403 identique pour équipe inconnue ou jeton
+    # invalide (pas d'énumération des team_id, voir require_team_token).
+    team = require_team_token(db, team_id, x_team_token)
+
+    # Le code du chemin doit être celui de la partie de l'équipe : un jeton
+    # valide pour une autre file ne peut pas supprimer à travers les files.
+    # Même 403 qu'un mauvais jeton, pour ne pas révéler l'existence du code.
+    game = db.query(models.GameSession).filter(models.GameSession.code == code).first()
+    if game is None or game.id != team.game_session_id:
+        raise HTTPException(status_code=403, detail="Action réservée aux membres de cette équipe")
+
+    if not game.is_public or game.started:
+        raise HTTPException(status_code=409, detail="Impossible de quitter cette partie")
+
+    # Course : un 4e join peut démarrer la partie entre le contrôle ci-dessus
+    # et nos suppressions. Cet UPDATE no-op gardé par started=False pose un
+    # verrou d'écriture sur la ligne de partie dans cette transaction (le
+    # join concurrent attend) et revérifie started : 0 ligne = déjà démarrée.
+    locked = (
+        db.query(models.GameSession)
+        .filter(models.GameSession.id == game.id, models.GameSession.started == False)  # noqa: E712
+        .update({models.GameSession.started: False}, synchronize_session=False)
+    )
+    if locked == 0:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Impossible de quitter cette partie")
+
+    try:
+        db.query(models.Token).filter(models.Token.team_id == team.id).delete(synchronize_session=False)
+        db.query(models.Player).filter(models.Player.team_id == team.id).delete(synchronize_session=False)
+        db.query(models.Team).filter(models.Team.id == team.id).delete(synchronize_session=False)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    return Response(status_code=204)
