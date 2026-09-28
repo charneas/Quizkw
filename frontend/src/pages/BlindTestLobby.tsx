@@ -4,6 +4,7 @@ import { BlindtestSocket } from '../lib/blindtestSocket'
 import { createHiddenPlayer, type YouTubePlayer } from '../lib/youtubePlayer'
 import { importBlindtestPlaylist } from '../services/api'
 import Scoreboard from '../components/Scoreboard'
+import CopyInviteLinkButton from '../components/CopyInviteLinkButton'
 import type { BlindtestRevealPayload } from '../types'
 
 // Story 4 (spec-blindtest-integration-ui) : hash déterministe d'un pseudo,
@@ -329,7 +330,19 @@ export default function BlindTestLobby() {
             section blindtest — usage restreint au texte/bordures, jamais en
             fond de bouton (DESIGN.md Do's/Don'ts : accent parcimonieux,
             jamais en fond de grande surface). */}
-        <h1 className="text-xl font-semibold text-accent">Blind test — Lobby {code}</h1>
+        {phase === 'lobby' ? (
+          <div className="flex flex-wrap items-center gap-x-2">
+            <h1 className="text-xl font-semibold text-accent">Blind test — Lobby</h1>
+            <CopyInviteLinkButton
+              path={`/blindtest/${code.toUpperCase()}`}
+              className="text-xl font-semibold text-accent tracking-widest hover:opacity-80"
+            >
+              {code.toUpperCase()}
+            </CopyInviteLinkButton>
+          </div>
+        ) : (
+          <h1 className="text-xl font-semibold text-accent">Blind test — Lobby {code}</h1>
+        )}
 
         {error && <p className="text-sm text-red-500">{error}</p>}
 

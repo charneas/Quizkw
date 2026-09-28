@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { getGame, createTeam, startGame, joinTeam, renameTeam, getTeamToken } from '../services/api'
 import type { GameSession } from '../types'
 import DevHelper from '../components/DevHelper'
+import CopyInviteLinkButton from '../components/CopyInviteLinkButton'
 import EmojiPicker, { TEAM_EMOJIS } from '../components/EmojiPicker'
 import { pluralJoueurs } from '../utils/pluralize'
 
@@ -148,12 +149,26 @@ function Lobby() {
         {/* Header */}
         <div className="text-center">
           <h1 className="text-3xl font-display font-semibold text-text">Salle d'attente</h1>
-          <div className="mt-2 inline-block bg-surface border border-border rounded-lg px-4 py-2">
-            <span className="text-text-muted text-sm">Code : </span>
-            <span className="text-2xl font-display font-semibold text-brand tracking-widest">
-              {game.code}
-            </span>
-          </div>
+          {game.started ? (
+            <div className="mt-2 inline-block bg-surface border border-border rounded-lg px-4 py-2">
+              <span className="text-text-muted text-sm">Code : </span>
+              <span className="text-2xl font-display font-semibold text-brand tracking-widest">
+                {game.code}
+              </span>
+            </div>
+          ) : (
+            <div className="mt-2">
+              <CopyInviteLinkButton
+                path={`/lobby/${game.code}`}
+                className="bg-surface border border-border rounded-lg px-4 py-2 hover:border-brand"
+              >
+                <span className="text-text-muted text-sm">Code : </span>
+                <span className="text-2xl font-display font-semibold text-brand tracking-widest">
+                  {game.code}
+                </span>
+              </CopyInviteLinkButton>
+            </div>
+          )}
           <p className="mt-2 text-text-muted">
             {game.teams.length}/{maxTeams} équipes • {game.players_per_team} {pluralJoueurs(game.players_per_team)} par équipe
           </p>
