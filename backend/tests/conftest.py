@@ -19,6 +19,13 @@ os.environ.setdefault("DISCORD_SESSION_SECRET_KEY", "test-discord-secret-key-not
 # sans cette valeur, elles viseraient le vrai backend/blindtest.db du dev.
 # Fichier SQLite temporaire propre à chaque exécution.
 import tempfile
+# Idem pour la DB principale : l'import de `main` applique upgrade_main_db,
+# qui refuserait (ou migrerait) le vrai backend/quizkw.db du dev. Affectation
+# forcée (pas setdefault) : un DATABASE_URL déjà présent dans le shell ne doit
+# jamais faire migrer une vraie DB par la suite de tests.
+os.environ["DATABASE_URL"] = (
+    "sqlite:///" + os.path.join(tempfile.mkdtemp(prefix="quizkw-main-"), "quizkw.db").replace("\\", "/")
+)
 os.environ.setdefault(
     "BLINDTEST_DATABASE_URL",
     "sqlite:///" + os.path.join(tempfile.mkdtemp(prefix="quizkw-blindtest-"), "blindtest.db").replace("\\", "/"),

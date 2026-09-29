@@ -25,9 +25,14 @@ from app import memory_grid_enhanced  # noqa: F401 — grid colour/result models
 # access to the values within the .ini file in use.
 config = context.config
 
+# Connexion fournie par app/migrations.py (upgrade_main_db, au démarrage de
+# l'app) ; None en CLI.
+injected_connection = config.attributes.get("connection")
+
 # Interpret the config file for Python logging.
-# This line sets up loggers basically.
-if config.config_file_name is not None:
+# En CLI seulement : au démarrage de l'app, fileConfig reconfigurerait (et
+# désactiverait) les loggers déjà en place du process FastAPI.
+if injected_connection is None and config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Set the target metadata for autogenerate support
@@ -84,6 +89,12 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
+    if injected_connection is not None:
+        context.configure(connection=injected_connection, target_metadata=target_metadata)
+        with context.begin_transaction():
+            context.run_migrations()
+        return
+
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",

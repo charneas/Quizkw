@@ -12,7 +12,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from app.database import engine
-from app.models import Base
+from app.migrations import upgrade_main_db
 from app.blindtest.database import engine as blindtest_engine
 from app.blindtest.migrations import upgrade_blindtest_db
 from app.rate_limit import limiter
@@ -41,8 +41,10 @@ from main_blindtest import router as blindtest_router, admin_router as blindtest
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-# Create database tables
-Base.metadata.create_all(bind=engine)
+# DB principale : schéma géré par Alembic, mis à niveau à head au démarrage
+# (DB vide : create_all puis stamp head) — voir app/migrations.py. Remplace
+# l'ancien create_all, qui créait des tables hors Alembic.
+upgrade_main_db(engine)
 # Blindtest module (Epic 1) : engine/fichier SQLite distinct (AD-7) — voir
 # app/blindtest/database.py. Schéma géré par Alembic (alembic_blindtest/),
 # mis à niveau à head au démarrage — voir app/blindtest/migrations.py.

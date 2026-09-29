@@ -55,10 +55,12 @@ pip install -r requirements.txt
 echo "DATABASE_URL=sqlite:///./quizkw.db" > .env
 ```
 
-4. **Appliquer les migrations :**
-```bash
-alembic upgrade head
-```
+4. **Migrations :** appliquées automatiquement au démarrage de l'app
+(`app/migrations.py`). Une DB vide est créée depuis les modèles puis tamponnée
+à `head` ; une DB existante est mise à niveau (`alembic upgrade head`). Une
+ancienne DB de dev créée hors Alembic est refusée avec un message explicite :
+supprimer le fichier pour qu'il soit recréé. La CLI reste utilisable
+(`alembic current`, `alembic revision --autogenerate -m "..."`).
 
 ## Utilisation
 
