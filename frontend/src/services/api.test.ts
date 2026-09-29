@@ -15,6 +15,10 @@ describe('formatErrorDetail', () => {
     expect(formatErrorDetail({ code: 'x' }, 400)).toBe('Données invalides.')
   })
 
+  it('donne un message lisible sur un 429 (slowapi, sans detail)', () => {
+    expect(formatErrorDetail(undefined, 429)).toBe('Trop de requêtes, réessayez dans un instant.')
+  })
+
   it('retombe sur "Erreur <status>" si detail est absent ou vide', () => {
     expect(formatErrorDetail(undefined, 500)).toBe('Erreur 500')
     expect(formatErrorDetail(null, 500)).toBe('Erreur 500')

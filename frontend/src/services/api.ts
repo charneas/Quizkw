@@ -104,6 +104,8 @@ export function getPlayerIdentity(gameCode: string): { id: number; name: string;
  * Object]", et les messages Pydantic sont en anglais. */
 export function formatErrorDetail(detail: unknown, status: number): string {
   if (typeof detail === 'string' && detail.trim() !== '') return detail
+  // slowapi répond `{"error": "Rate limit exceeded: ..."}`, sans `detail`.
+  if (status === 429) return 'Trop de requêtes, réessayez dans un instant.'
   if (Array.isArray(detail) ? detail.length > 0 : detail !== null && typeof detail === 'object') {
     return 'Données invalides.'
   }

@@ -168,3 +168,26 @@ def test_proposition_never_appears_in_question_pool(test_client, db_session, sam
         question = random_resp.json()["question"]
         assert question["text"] != "Une proposition tout juste soumise, jamais une Question"
         assert question["id"] == sample_question.id
+
+
+def test_create_proposition_is_rate_limited_per_ip(test_client):
+    """Endpoint public : au-delà de 5 soumissions par minute depuis la même
+    IP -> 429, pour qu'on ne puisse pas inonder la file de modération. Le
+    limiter est désactivé pour toute la suite (RATE_LIMIT_ENABLED=false) ;
+    on l'active le temps de ce test et on remet son compteur à zéro."""
+    from app.rate_limit import limiter
+
+    previously_enabled = limiter.enabled
+    limiter.reset()
+    limiter.enabled = True
+    try:
+        statuses = [
+            test_client.post("/propositions", json=_proposition_payload(theme_id=None)).status_code
+            for _ in range(6)
+        ]
+    finally:
+        limiter.enabled = previously_enabled
+        limiter.reset()
+
+    assert statuses[:5] == [200] * 5
+    assert statuses[5] == 429

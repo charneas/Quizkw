@@ -5,12 +5,13 @@ routeur admin, qui deviendra authentifié en F-ext-2.1.
 """
 import json
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app import models, schemas
+from app.rate_limit import limiter
 
 router = APIRouter(prefix="/propositions", tags=["Propositions"])
 
@@ -35,7 +36,11 @@ def _commit_or_400(db: Session) -> None:
 
 
 @router.post("", response_model=schemas.Proposition)
-def create_proposition(payload: schemas.PropositionCreate, db: Session = Depends(get_db)):
+# Endpoint public non authentifié : sans limite propre (seulement le 300/min
+# global), n'importe qui pouvait inonder la file de modération admin.
+# 5/minute laisse largement le temps d'écrire une vraie question.
+@limiter.limit("5/minute;30/hour")
+def create_proposition(request: Request, payload: schemas.PropositionCreate, db: Session = Depends(get_db)):
     if payload.theme_id is not None:
         theme = db.query(models.Theme).filter(models.Theme.id == payload.theme_id).first()
         if not theme:
