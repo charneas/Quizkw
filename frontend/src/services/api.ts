@@ -97,6 +97,19 @@ export function getPlayerIdentity(gameCode: string): { id: number; name: string;
   }
 }
 
+/** Message lisible pour le `detail` d'une réponse d'erreur FastAPI. Une
+ * chaîne (messages métier du backend, déjà en français) est gardée telle
+ * quelle ; une liste/un objet (erreur de validation Pydantic 422) donne un
+ * message générique — sans ça, `new Error(detail)` affichait "[object
+ * Object]", et les messages Pydantic sont en anglais. */
+export function formatErrorDetail(detail: unknown, status: number): string {
+  if (typeof detail === 'string' && detail.trim() !== '') return detail
+  if (Array.isArray(detail) ? detail.length > 0 : detail !== null && typeof detail === 'object') {
+    return 'Données invalides.'
+  }
+  return `Erreur ${status}`
+}
+
 async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
   // ...options DOIT venir avant `headers`, sinon un appelant qui passe ses
   // propres `headers` (ex. useToken avec X-Team-Token) écrase entièrement
@@ -126,7 +139,7 @@ async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> 
       window.location.href = '/admin/login'
     }
     const error = await response.json().catch(() => ({ detail: 'Erreur réseau' }))
-    throw new Error(error.detail || `Erreur ${response.status}`)
+    throw new Error(formatErrorDetail(error?.detail, response.status))
   }
 
   return response.json()

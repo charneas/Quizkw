@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { Player } from '../types'
+import { formatErrorDetail } from '../services/api'
 
 const API_BASE = '/api'
 
@@ -39,7 +40,7 @@ function PlayerSelection({ gameCode, onSelectPlayer, existingPlayers = [] }: Pla
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ detail: 'Erreur réseau' }))
-        throw new Error(errorData.detail || `Erreur ${response.status}`)
+        throw new Error(formatErrorDetail(errorData?.detail, response.status))
       }
 
       const newPlayer: Player = await response.json()
