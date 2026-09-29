@@ -699,6 +699,28 @@ class TestRound1ToRound2Qualification:
         with pytest.raises(ValueError):
             round2_manager.qualify_players_from_round1(sample_game_session.id)
 
+    def test_qualify_endpoint_maps_concurrent_integrity_error_to_409(
+        self, test_client, db_session, sample_game_session, host_headers
+    ):
+        """Double qualification concurrente : la seconde requête se heurte à
+        une contrainte d'unicité au commit -> 409 (comme /round2/{code}/advance),
+        jamais un 500, et la transaction est annulée."""
+        from unittest.mock import patch
+        from sqlalchemy.exc import IntegrityError
+
+        self._make_team(db_session, sample_game_session, "Alpha", 50, 2)
+
+        # `rollback` est lui aussi patché : un vrai rollback annulerait la
+        # transaction englobante de la fixture db_session (données du test
+        # comprises), cf. test_auth_discord.py. On vérifie qu'il est appelé.
+        with patch.object(db_session, "commit", side_effect=IntegrityError("stmt", "params", "orig")), \
+                patch.object(db_session, "rollback") as rollback_spy:
+            response = test_client.post(f"/games/{sample_game_session.code}/qualify-round2", headers=host_headers)
+
+        assert response.status_code == 409
+        assert response.json()["detail"] == "Qualification déjà en cours ou en conflit, réessayez"
+        rollback_spy.assert_called_once()
+
     def test_no_teams_raises(self, round2_manager, sample_game_session):
         with pytest.raises(ValueError) as exc_info:
             round2_manager.qualify_players_from_round1(sample_game_session.id)

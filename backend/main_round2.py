@@ -41,6 +41,13 @@ def qualify_players_from_round1(code: str, db: Session = Depends(get_db), _host:
     except ValueError as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
+    except IntegrityError:
+        # Double qualification concurrente (double clic, deux appareils hôte) :
+        # la seconde se heurte à une contrainte d'unicité au commit. Même
+        # mapping 409 que /round2/{code}/advance plutôt qu'un 500 brut.
+        db.rollback()
+        logger.warning("qualify_players_from_round1 en conflit pour %s (rejeu concurrent)", code)
+        raise HTTPException(status_code=409, detail="Qualification déjà en cours ou en conflit, réessayez")
 
 
 # Round 2 Endpoints (16→8→4 Tournament)
