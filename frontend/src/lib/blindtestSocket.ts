@@ -85,9 +85,12 @@ export class BlindtestSocket {
    * pseudos parmi les joueurs présents, jamais de texte libre (FR8). Une
    * resoumission avant la fin du round remplace la précédente côté
    * serveur (AC3) — ce client n'a rien de spécial à faire pour ça, il
-   * suffit de renvoyer le même message type. */
-  sendGuess(targetPlayerIds: string[]): void {
-    this.send('guess_submitted', { target_player_ids: targetPlayerIds })
+   * suffit de renvoyer le même message type.
+   *
+   * `trackId` identifie le round (`round_started.trackId`) : une devinette
+   * retardée qui arrive au round suivant est ignorée par le serveur. */
+  sendGuess(trackId: number, targetPlayerIds: string[]): void {
+    this.send('guess_submitted', { track_id: trackId, target_player_ids: targetPlayerIds })
   }
 
   /** Retour utilisateur (2026-09-14) : relance une partie dans le même

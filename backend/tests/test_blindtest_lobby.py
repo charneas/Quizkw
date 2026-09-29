@@ -608,6 +608,20 @@ def _game_id(engine, game_code: str) -> int:
         db.close()
 
 
+def _track_id(engine, game_code: str):
+    """Id du morceau du round en cours (`game.current_track_id`), à renvoyer
+    dans `guess_submitted.track_id` — une devinette sans l'id du round courant
+    est ignorée (spec-blindtest-late-guess-round-guard)."""
+    from app.blindtest.models import Game
+
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    db = SessionLocal()
+    try:
+        return db.query(Game).filter(Game.code == game_code).first().current_track_id
+    finally:
+        db.close()
+
+
 class TestGuessSubmitted:
     """Story 2.5 — matrice I/O de spec-2-5-devinette-selection-multiple.md.
     Aucun message n'est jamais renvoyé/diffusé par le serveur pour
@@ -634,7 +648,7 @@ class TestGuessSubmitted:
                 ws2.receive_json()  # game_state {phase: round_started}
                 ws2.receive_json()
 
-                ws1.send_json({"type": "guess_submitted", "payload": {"target_player_ids": ["Bob"]}})
+                ws1.send_json({"type": "guess_submitted", "payload": {"track_id": _track_id(blindtest_engine, code), "target_player_ids": ["Bob"]}})
 
                 # Pas de réponse attendue : on déclenche un nouveau
                 # broadcast (3e joueur) pour confirmer que ws1 n'a rien
@@ -658,8 +672,8 @@ class TestGuessSubmitted:
             ws1.receive_json()  # game_state {phase: round_started}
             ws1.receive_json()
 
-            ws1.send_json({"type": "guess_submitted", "payload": {"target_player_ids": ["Alice"]}})
-            ws1.send_json({"type": "guess_submitted", "payload": {"target_player_ids": ["Alice", "Bob"]}})
+            ws1.send_json({"type": "guess_submitted", "payload": {"track_id": _track_id(blindtest_engine, code), "target_player_ids": ["Alice"]}})
+            ws1.send_json({"type": "guess_submitted", "payload": {"track_id": _track_id(blindtest_engine, code), "target_player_ids": ["Alice", "Bob"]}})
 
             with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
                 ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
@@ -674,7 +688,7 @@ class TestGuessSubmitted:
                 # de Bob.
                 assert guess_store._guesses[gid]["Alice"] == ["Alice"]
 
-                ws1.send_json({"type": "guess_submitted", "payload": {"target_player_ids": ["Bob"]}})
+                ws1.send_json({"type": "guess_submitted", "payload": {"track_id": _track_id(blindtest_engine, code), "target_player_ids": ["Bob"]}})
                 with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws3:
                     ws3.send_json({"type": "join", "payload": {"pseudo": "Carol"}})
                     ws3.receive_json()
@@ -691,7 +705,9 @@ class TestGuessSubmitted:
             ws1.receive_json()
 
             # Toujours en phase "lobby" (aucun start_game envoyé).
-            ws1.send_json({"type": "guess_submitted", "payload": {"target_player_ids": ["Alice"]}})
+            # `track_id` entier arbitraire : seul le contrôle de phase est
+            # exercé ici (aucun round en cours, `current_track_id` est None).
+            ws1.send_json({"type": "guess_submitted", "payload": {"track_id": 1, "target_player_ids": ["Alice"]}})
 
             with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
                 ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
@@ -712,8 +728,8 @@ class TestGuessSubmitted:
             ws1.receive_json()  # game_state {phase: round_started}
             ws1.receive_json()
 
-            ws1.send_json({"type": "guess_submitted", "payload": {"target_player_ids": []}})
-            ws1.send_json({"type": "guess_submitted", "payload": {}})
+            ws1.send_json({"type": "guess_submitted", "payload": {"track_id": _track_id(blindtest_engine, code), "target_player_ids": []}})
+            ws1.send_json({"type": "guess_submitted", "payload": {"track_id": _track_id(blindtest_engine, code)}})
 
             with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
                 ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
@@ -743,7 +759,7 @@ class TestGuessSubmitted:
                 # la soumission entière doit être rejetée, y compris pour
                 # le nom valide ("Bob") qu'elle contient aussi.
                 ws1.send_json(
-                    {"type": "guess_submitted", "payload": {"target_player_ids": ["Bob", "Ghost"]}}
+                    {"type": "guess_submitted", "payload": {"track_id": _track_id(blindtest_engine, code), "target_player_ids": ["Bob", "Ghost"]}}
                 )
 
                 with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws3:
@@ -775,7 +791,7 @@ class TestGuessSubmitted:
                 ws2.receive_json()
 
                 ws1.send_json(
-                    {"type": "guess_submitted", "payload": {"target_player_ids": ["Bob", "Bob"]}}
+                    {"type": "guess_submitted", "payload": {"track_id": _track_id(blindtest_engine, code), "target_player_ids": ["Bob", "Bob"]}}
                 )
 
                 with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws3:
@@ -786,6 +802,124 @@ class TestGuessSubmitted:
 
                 gid = _game_id(blindtest_engine, code)
                 assert guess_store._guesses[gid]["Alice"] == ["Bob"]
+
+    # --- spec-blindtest-late-guess-round-guard : devinette liée au round ---
+
+    def test_round_started_carries_track_id(self, blindtest_client, blindtest_engine):
+        code = _create_game(blindtest_client)
+        _add_track(blindtest_engine, code)
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+            ws1.send_json({"type": "start_game", "payload": {}})
+            ws1.receive_json()  # game_state {phase: round_started}
+            msg = ws1.receive_json()
+            assert msg["type"] == "round_started"
+            track_id = msg["payload"]["trackId"]
+            assert isinstance(track_id, int) and not isinstance(track_id, bool)
+            assert track_id == _track_id(blindtest_engine, code)
+
+    def test_on_time_guess_with_round_track_id_from_payload_is_stored(self, blindtest_client, blindtest_engine):
+        """Le client renvoie tel quel le `trackId` du `round_started`."""
+        code = _create_game(blindtest_client)
+        _add_track(blindtest_engine, code)
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+            ws1.send_json({"type": "start_game", "payload": {}})
+            ws1.receive_json()  # game_state {phase: round_started}
+            track_id = ws1.receive_json()["payload"]["trackId"]
+
+            ws1.send_json({"type": "guess_submitted", "payload": {"track_id": track_id, "target_player_ids": ["Alice"]}})
+
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
+                ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                ws2.receive_json()
+                ws1.receive_json()
+
+            gid = _game_id(blindtest_engine, code)
+            assert guess_store._guesses[gid]["Alice"] == ["Alice"]
+
+    @pytest.mark.parametrize(
+        "make_payload",
+        [
+            pytest.param(lambda tid: {"target_player_ids": ["Alice"]}, id="missing"),
+            pytest.param(lambda tid: {"track_id": str(tid), "target_player_ids": ["Alice"]}, id="string"),
+            pytest.param(lambda tid: {"track_id": True, "target_player_ids": ["Alice"]}, id="bool-true"),
+            pytest.param(lambda tid: {"track_id": None, "target_player_ids": ["Alice"]}, id="null"),
+            pytest.param(lambda tid: {"track_id": float(tid), "target_player_ids": ["Alice"]}, id="float"),
+            pytest.param(lambda tid: {"track_id": tid + 1, "target_player_ids": ["Alice"]}, id="mismatched"),
+        ],
+    )
+    def test_missing_malformed_or_mismatched_track_id_is_silently_ignored(
+        self, blindtest_client, blindtest_engine, make_payload
+    ):
+        code = _create_game(blindtest_client)
+        _add_track(blindtest_engine, code)
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+            ws1.send_json({"type": "start_game", "payload": {}})
+            ws1.receive_json()  # game_state {phase: round_started}
+            ws1.receive_json()  # round_started
+
+            ws1.send_json({"type": "guess_submitted", "payload": make_payload(_track_id(blindtest_engine, code))})
+
+            # Aucun message diffusé en réponse : le prochain message reçu par
+            # ws1 est le `game_state` provoqué par l'arrivée de Bob.
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
+                ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                ws2.receive_json()
+                assert ws1.receive_json()["type"] == "game_state"
+
+            gid = _game_id(blindtest_engine, code)
+            assert guess_store._guesses.get(gid, {}) == {}
+
+    def test_mid_round_joiner_gets_track_id_and_can_guess(self, blindtest_client, blindtest_engine):
+        code = _create_game(blindtest_client)
+        _add_track(blindtest_engine, code)
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+            ws1.send_json({"type": "start_game", "payload": {}})
+            ws1.receive_json()  # game_state {phase: round_started}
+            round_msg = ws1.receive_json()
+
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
+                ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                join_state = ws2.receive_json()
+                ws1.receive_json()
+                assert join_state["payload"]["phase"] == "round_started"
+                assert join_state["payload"]["track_id"] == round_msg["payload"]["trackId"]
+
+                ws2.send_json(
+                    {
+                        "type": "guess_submitted",
+                        "payload": {"track_id": join_state["payload"]["track_id"], "target_player_ids": ["Alice"]},
+                    }
+                )
+
+                with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws3:
+                    ws3.send_json({"type": "join", "payload": {"pseudo": "Carol"}})
+                    ws3.receive_json()
+                    ws1.receive_json()
+                    ws2.receive_json()
+
+                gid = _game_id(blindtest_engine, code)
+                assert guess_store._guesses[gid]["Bob"] == ["Alice"]
+
+    def test_lobby_join_game_state_has_no_track_id(self, blindtest_client):
+        code = _create_game(blindtest_client)
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            state = ws1.receive_json()
+            assert state["payload"]["phase"] == "lobby"
+            assert "track_id" not in state["payload"]
 
 
 @pytest.fixture
@@ -871,7 +1005,7 @@ class TestReveal:
 
                 # Alice est le propriétaire réel : le seul joueur qui doit
                 # répondre pour clôturer est Bob.
-                ws2.send_json({"type": "guess_submitted", "payload": {"target_player_ids": ["Alice"]}})
+                ws2.send_json({"type": "guess_submitted", "payload": {"track_id": _track_id(blindtest_engine, code), "target_player_ids": ["Alice"]}})
 
                 reveal1 = ws1.receive_json()
                 reveal2 = ws2.receive_json()
@@ -915,7 +1049,7 @@ class TestReveal:
                 ws2.receive_json()  # game_state {phase: round_started}
                 ws2.receive_json()  # round_started
 
-                ws2.send_json({"type": "guess_submitted", "payload": {"target_player_ids": ["Alice"]}})
+                ws2.send_json({"type": "guess_submitted", "payload": {"track_id": _track_id(blindtest_engine, code), "target_player_ids": ["Alice"]}})
 
                 reveal1 = ws1.receive_json()
                 ws2.receive_json()
@@ -943,7 +1077,7 @@ class TestReveal:
                 ws2.receive_json()
 
                 ws2.send_json(
-                    {"type": "guess_submitted", "payload": {"target_player_ids": ["Alice", "Bob"]}}
+                    {"type": "guess_submitted", "payload": {"track_id": _track_id(blindtest_engine, code), "target_player_ids": ["Alice", "Bob"]}}
                 )
 
                 reveal1 = ws1.receive_json()
@@ -983,10 +1117,10 @@ class TestReveal:
 
                     # Bob et Carol devinent tous les deux sans trouver Alice.
                     ws2.send_json(
-                        {"type": "guess_submitted", "payload": {"target_player_ids": ["Bob", "Carol"]}}
+                        {"type": "guess_submitted", "payload": {"track_id": _track_id(blindtest_engine, code), "target_player_ids": ["Bob", "Carol"]}}
                     )
                     ws3.send_json(
-                        {"type": "guess_submitted", "payload": {"target_player_ids": ["Bob"]}}
+                        {"type": "guess_submitted", "payload": {"track_id": _track_id(blindtest_engine, code), "target_player_ids": ["Bob"]}}
                     )
 
                     reveal1 = ws1.receive_json()
@@ -1035,7 +1169,7 @@ class TestReveal:
                 # Sélection vide : no-op silencieux (Story 2.5), jamais
                 # stockée -> Bob ne peut jamais déclencher la clôture
                 # anticipée lui-même.
-                ws2.send_json({"type": "guess_submitted", "payload": {"target_player_ids": []}})
+                ws2.send_json({"type": "guess_submitted", "payload": {"track_id": _track_id(blindtest_engine, code), "target_player_ids": []}})
 
                 # Laisse le minuteur (0.05s, `blindtest_timer`) clôturer.
                 time.sleep(0.3)
@@ -1073,7 +1207,7 @@ class TestReveal:
                 ws2.receive_json()  # game_state {phase: round_started}
                 ws2.receive_json()
 
-                ws2.send_json({"type": "guess_submitted", "payload": {"target_player_ids": ["Alice"]}})
+                ws2.send_json({"type": "guess_submitted", "payload": {"track_id": _track_id(blindtest_engine, code), "target_player_ids": ["Alice"]}})
 
                 reveal1 = ws1.receive_json()
                 assert reveal1["type"] == "reveal"
@@ -1166,7 +1300,7 @@ class TestReveal:
                 # Carol répond à son tour : Bob n'étant pas dans le roster
                 # présent, la vérification "tous ont répondu" ne porte que
                 # sur Carol -> clôture anticipée malgré l'absence de Bob.
-                ws3.send_json({"type": "guess_submitted", "payload": {"target_player_ids": ["Alice"]}})
+                ws3.send_json({"type": "guess_submitted", "payload": {"track_id": _track_id(blindtest_engine, code), "target_player_ids": ["Alice"]}})
 
                 reveal1 = ws1.receive_json()
                 reveal3 = ws3.receive_json()
@@ -1219,7 +1353,7 @@ class TestRoundAdvancement:
                 assert round1_1["payload"]["videoId"] == round1_2["payload"]["videoId"]
                 first_video_id = round1_1["payload"]["videoId"]
 
-                ws2.send_json({"type": "guess_submitted", "payload": {"target_player_ids": ["Alice"]}})
+                ws2.send_json({"type": "guess_submitted", "payload": {"track_id": _track_id(blindtest_engine, code), "target_player_ids": ["Alice"]}})
 
                 reveal1 = ws1.receive_json()
                 reveal2 = ws2.receive_json()
@@ -1253,6 +1387,70 @@ class TestRoundAdvancement:
                 assert round2_1["payload"]["videoId"] in ("track-a", "track-b")
                 assert round2_1["payload"]["title"] == "Titre"
                 assert round2_1["payload"]["artist"] == "Artiste"
+                # Chaque round porte l'id de son propre morceau.
+                assert round2_1["payload"]["trackId"] == round2_2["payload"]["trackId"]
+                assert round2_1["payload"]["trackId"] != round1_1["payload"]["trackId"]
+
+    def test_late_guess_from_previous_round_does_not_affect_next_round(
+        self, blindtest_client, blindtest_engine, monkeypatch
+    ):
+        """spec-blindtest-late-guess-round-guard : une devinette du round N,
+        retardée par le réseau, arrive pendant le round N+1 (après un vrai
+        enchaînement automatique) -> ignorée, le score du round N+1 n'en
+        tient pas compte."""
+        import main_blindtest
+
+        monkeypatch.setattr(main_blindtest, "REVEAL_DISPLAY_SECONDS", 0.05)
+
+        code = _create_game(blindtest_client)
+        # Les deux morceaux appartiennent à Alice : une devinette ["Alice"]
+        # de Bob vaudrait +2 si elle était (à tort) comptée au round 2.
+        _add_track(blindtest_engine, code, youtube_video_id="track-a")
+        _add_track(blindtest_engine, code, youtube_video_id="track-b")
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
+                ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                ws2.receive_json()
+                ws1.receive_json()
+
+                ws1.send_json({"type": "start_game", "payload": {}})
+                ws1.receive_json()  # game_state {phase: round_started}
+                ws2.receive_json()
+                ws1.receive_json()  # round_started (round 1)
+                round1 = ws2.receive_json()
+                round1_track_id = round1["payload"]["trackId"]
+
+                # Round 1 : Bob ne devine pas à temps -> clôture par minuteur.
+                for ws in (ws1, ws2):
+                    assert ws.receive_json()["type"] == "reveal"
+                for ws in (ws1, ws2):
+                    assert ws.receive_json()["payload"]["phase"] == "next_round"
+                for ws in (ws1, ws2):
+                    assert ws.receive_json()["payload"]["phase"] == "round_started"
+                ws1.receive_json()  # round_started (round 2)
+                round2 = ws2.receive_json()
+                assert round2["type"] == "round_started"
+                assert round2["payload"]["trackId"] != round1_track_id
+
+                # La devinette du round 1 arrive en retard, pendant le round 2.
+                ws2.send_json(
+                    {"type": "guess_submitted", "payload": {"track_id": round1_track_id, "target_player_ids": ["Alice"]}}
+                )
+
+                # Clôture du round 2 par minuteur : Bob n'a aucune devinette
+                # valide pour ce round -> delta 0 (et non +2).
+                # ws1 (dont la boucle porte minuteurs/broadcasts) est lu en
+                # premier : sous `TestClient`, attendre d'abord sur ws2 un
+                # message pas encore envoyé depuis la boucle de ws1 bloque.
+                ws1.receive_json()
+                reveal2 = ws2.receive_json()
+                assert reveal2["type"] == "reveal"
+                assert reveal2["payload"]["owner_pseudo"] == "Alice"
+                assert reveal2["payload"]["deltas"]["Bob"] == 0
 
     def test_pot_exhausted_early_ends_game_with_final_scores(
         self, blindtest_client, blindtest_engine, monkeypatch
@@ -1285,7 +1483,7 @@ class TestRoundAdvancement:
                 ws2.receive_json()  # game_state {phase: round_started}
                 ws2.receive_json()
 
-                ws2.send_json({"type": "guess_submitted", "payload": {"target_player_ids": ["Alice"]}})
+                ws2.send_json({"type": "guess_submitted", "payload": {"track_id": _track_id(blindtest_engine, code), "target_player_ids": ["Alice"]}})
 
                 ws1.receive_json()  # reveal
                 ws2.receive_json()  # reveal
@@ -1330,7 +1528,7 @@ class TestRoundAdvancement:
                 ws2.receive_json()  # game_state {phase: round_started}
                 ws2.receive_json()
 
-                ws2.send_json({"type": "guess_submitted", "payload": {"target_player_ids": ["Alice"]}})
+                ws2.send_json({"type": "guess_submitted", "payload": {"track_id": _track_id(blindtest_engine, code), "target_player_ids": ["Alice"]}})
 
                 ws1.receive_json()  # reveal
                 ws2.receive_json()  # reveal
@@ -1382,7 +1580,7 @@ class TestRoundAdvancement:
                 ws2.receive_json()  # game_state {phase: round_started}
                 ws2.receive_json()
 
-                ws2.send_json({"type": "guess_submitted", "payload": {"target_player_ids": ["Alice"]}})
+                ws2.send_json({"type": "guess_submitted", "payload": {"track_id": _track_id(blindtest_engine, code), "target_player_ids": ["Alice"]}})
 
                 ws1.receive_json()  # reveal
                 ws2.receive_json()  # reveal
@@ -1425,7 +1623,7 @@ class TestRoundAdvancement:
                 ws2.receive_json()  # game_state {phase: round_started}
                 ws2.receive_json()
 
-                ws2.send_json({"type": "guess_submitted", "payload": {"target_player_ids": ["Alice"]}})
+                ws2.send_json({"type": "guess_submitted", "payload": {"track_id": _track_id(blindtest_engine, code), "target_player_ids": ["Alice"]}})
 
                 ws1.receive_json()  # reveal
                 ws2.receive_json()  # reveal
@@ -1461,7 +1659,7 @@ class TestRoundAdvancement:
                 ws2.receive_json()  # game_state {phase: round_started}
                 ws2.receive_json()
 
-                ws2.send_json({"type": "guess_submitted", "payload": {"target_player_ids": ["Alice"]}})
+                ws2.send_json({"type": "guess_submitted", "payload": {"track_id": _track_id(blindtest_engine, code), "target_player_ids": ["Alice"]}})
 
                 ws1.receive_json()  # reveal
                 ws2.receive_json()  # reveal
@@ -1501,7 +1699,7 @@ class TestRoundAdvancement:
                 ws2.receive_json()  # game_state {phase: round_started}
                 ws2.receive_json()
 
-                ws2.send_json({"type": "guess_submitted", "payload": {"target_player_ids": ["Alice"]}})
+                ws2.send_json({"type": "guess_submitted", "payload": {"track_id": _track_id(blindtest_engine, code), "target_player_ids": ["Alice"]}})
 
                 ws1.receive_json()  # reveal
                 ws2.receive_json()  # reveal

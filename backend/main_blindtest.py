@@ -504,6 +504,10 @@ def _handle_start_game(db: Session, game: Game, requesting_pseudo: str, payload:
         "startSeconds": start_seconds,
         "title": track.title,
         "artist": track.artist,
+        # Identifiant du round renvoyé par le client dans chaque
+        # `guess_submitted` : une devinette en retard (round précédent) est
+        # ignorée par `_handle_guess_submitted`.
+        "trackId": track.id,
     }
 
 
@@ -834,6 +838,7 @@ async def _advance_round(game_id: int, game_code: str) -> None:
                 "startSeconds": start_seconds,
                 "title": track.title,
                 "artist": track.artist,
+                "trackId": track.id,
             },
         )
         _schedule_round_timer(game.id, game_code, track.id)
@@ -897,6 +902,18 @@ async def _handle_guess_submitted(db: Session, game: Game, pseudo: str, payload:
     fonction partagée."""
     db.refresh(game)
     if game.phase != "round_started":
+        return
+
+    # Une devinette est liée au round dans lequel elle a été faite : le client
+    # renvoie le `trackId` reçu dans `round_started`. Une devinette retardée
+    # par le réseau qui arrive après l'enchaînement automatique du round
+    # suivant porte l'id de l'ancien morceau et est ignorée (no-op silencieux,
+    # comme toute autre validation). `bool` est exclu explicitement car c'est
+    # une sous-classe de `int` en Python.
+    track_id = payload.get("track_id") if isinstance(payload, dict) else None
+    if not isinstance(track_id, int) or isinstance(track_id, bool):
+        return
+    if track_id != game.current_track_id:
         return
 
     target_player_ids = payload.get("target_player_ids") if isinstance(payload, dict) else None
@@ -998,6 +1015,10 @@ async def game_lobby_ws(websocket: WebSocket, code: str, db: Session = Depends(g
         join_state_extra = {"phase": game.phase, "host_pseudo": game.host_pseudo}
         if game.phase == "ended":
             join_state_extra["final_scores"] = score_store.snapshot(game.id)
+        elif game.phase == "round_started" and game.current_track_id is not None:
+            # Un joignant en cours de round doit pouvoir deviner : il reçoit
+            # l'id du round en cours à renvoyer dans `guess_submitted`.
+            join_state_extra["track_id"] = game.current_track_id
 
         await connection_manager.broadcast_game_state(game_code, join_state_extra, game_id=game.id)
 

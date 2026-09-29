@@ -380,6 +380,10 @@ export interface BlindtestGameStatePayload {
   // que les pseudos déjà scorés au moins une fois, d'où le merge avec
   // `players` (défaut 0) côté rendu plutôt qu'ici.
   scores?: Record<string, number>
+  // Id du morceau du round en cours, présent sur le `game_state` de join
+  // quand `phase === "round_started"` : permet à un joignant en cours de
+  // round de deviner sans avoir reçu le `round_started`.
+  track_id?: number
 }
 
 // Story 2.4 : payload de `round_started`, poussé par le serveur au host
@@ -389,6 +393,9 @@ export interface BlindtestRoundStartedPayload {
   startSeconds: number
   title: string
   artist: string
+  // Id du morceau du round (`Track.id`), à renvoyer tel quel dans chaque
+  // `guess_submitted` : le serveur ignore une devinette d'un autre round.
+  trackId: number
 }
 
 // Story 2.6 : payload de `reveal`, poussé par le serveur à la clôture du

@@ -82,6 +82,21 @@ describe('BlindtestSocket', () => {
     expect(onGameState).toHaveBeenCalledWith({ players: ['Alice'] })
   })
 
+  it('sendGuess envoie track_id et target_player_ids (contrat serveur)', () => {
+    const socket = new BlindtestSocket()
+    socket.connect('ABC123', 'Alice')
+
+    const ws = MockWebSocket.instances[0]
+    ws.triggerOpen()
+    socket.sendGuess(7, ['Bob'])
+
+    expect(ws.sent).toHaveLength(2)
+    expect(JSON.parse(ws.sent[1])).toEqual({
+      type: 'guess_submitted',
+      payload: { track_id: 7, target_player_ids: ['Bob'] },
+    })
+  })
+
   it('appelle onClose avec le code et la raison de fermeture', () => {
     const socket = new BlindtestSocket()
     const onClose = vi.fn()

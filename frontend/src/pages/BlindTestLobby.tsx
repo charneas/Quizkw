@@ -56,6 +56,10 @@ export default function BlindTestLobby() {
     title: string
     artist: string
   } | null>(null)
+  // Id du morceau du round en cours, renvoyé dans chaque `guess_submitted`
+  // (le serveur ignore une devinette arrivée au round suivant). État séparé
+  // de `roundTrack`, qui est remis à `null` dès le reveal.
+  const [currentTrackId, setCurrentTrackId] = useState<number | null>(null)
   const playerContainerId = 'blindtest-hidden-player'
 
   // Retour utilisateur (2026-09-14) : "pouvoir baisser le son de la page" —
@@ -206,6 +210,11 @@ export default function BlindTestLobby() {
         if (payload.scores) {
           setScores(payload.scores)
         }
+        // Joignant en cours de round : pas de `round_started` rejoué, l'id
+        // du round arrive sur le `game_state` de join.
+        if (typeof payload.track_id === 'number') {
+          setCurrentTrackId(payload.track_id)
+        }
         if (payload.phase === 'ended') {
           // Revue de code : sans ceci, le lecteur YouTube caché du dernier
           // round joué continue de tourner (audio) derrière l'écran de
@@ -218,6 +227,7 @@ export default function BlindTestLobby() {
         setIsJoining(false)
       },
       onRoundStarted: (payload) => {
+        setCurrentTrackId(payload.trackId)
         setRoundTrack({
           videoId: payload.videoId,
           startSeconds: payload.startSeconds,
@@ -268,8 +278,8 @@ export default function BlindTestLobby() {
   }
 
   function handleSubmitGuess() {
-    if (selectedPlayers.length === 0) return
-    socketRef.current?.sendGuess(selectedPlayers)
+    if (selectedPlayers.length === 0 || currentTrackId === null) return
+    socketRef.current?.sendGuess(currentTrackId, selectedPlayers)
   }
 
   function handleImportPlaylist() {
