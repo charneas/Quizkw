@@ -15,13 +15,29 @@ const QUESTION_COUNT_OPTIONS = [20, 25, 30, 35, 40, 45, 50]
 
 const WHEEL_FREQUENCY_OPTIONS = [5, 10]
 
+const MIN_TOTAL_PLAYERS = 4
+const MAX_TOTAL_PLAYERS = 16
+const DEFAULT_TOTAL_PLAYERS = 6
+
+/** Nombre total de joueurs effectif : saisie vide/invalide -> défaut, sinon
+ * borné à [MIN, MAX] (bornes de l'input). Sans ça, "0" ou un champ vidé
+ * affichait "0 équipes"/"NaN équipes" et partait tel quel au backend. */
+function clampTotalPlayers(raw: string): number {
+  const n = Math.floor(Number(raw))
+  if (raw.trim() === '' || !Number.isFinite(n)) return DEFAULT_TOTAL_PLAYERS
+  return Math.min(MAX_TOTAL_PLAYERS, Math.max(MIN_TOTAL_PLAYERS, n))
+}
+
 function Home() {
   const navigate = useNavigate()
   const [joinCode, setJoinCode] = useState('')
   const [blindtestCode, setBlindtestCode] = useState('')
   const [isCreatingBlindtest, setIsCreatingBlindtest] = useState(false)
   const [blindtestCreateError, setBlindtestCreateError] = useState('')
-  const [totalPlayers, setTotalPlayers] = useState(6)
+  // Texte brut saisi (peut être vide/hors bornes pendant la frappe) ; le
+  // nombre réellement utilisé (résumé, création) est toujours borné.
+  const [totalPlayersInput, setTotalPlayersInput] = useState(String(DEFAULT_TOTAL_PLAYERS))
+  const totalPlayers = clampTotalPlayers(totalPlayersInput)
   const [playersPerTeam, setPlayersPerTeam] = useState(2)
   const [questionCount, setQuestionCount] = useState(20)
   const [wheelFrequency, setWheelFrequency] = useState(5)
@@ -303,10 +319,11 @@ function Home() {
                         </label>
                         <input
                           type="number"
-                          min={4}
-                          max={12}
-                          value={totalPlayers}
-                          onChange={(e) => setTotalPlayers(Number(e.target.value))}
+                          min={MIN_TOTAL_PLAYERS}
+                          max={MAX_TOTAL_PLAYERS}
+                          value={totalPlayersInput}
+                          onChange={(e) => setTotalPlayersInput(e.target.value)}
+                          onBlur={() => setTotalPlayersInput(String(totalPlayers))}
                           className="input-field"
                           tabIndex={quizExpand === 'create' && !soloFinale ? undefined : -1}
                         />

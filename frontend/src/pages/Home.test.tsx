@@ -216,6 +216,55 @@ describe('Home — carte Blindtest (spec-blindtest-integration-ui, story 1)', ()
   })
 })
 
+describe('Home — création de quiz : nombre total de joueurs borné', () => {
+  beforeEach(() => {
+    vi.spyOn(api, 'fetchDiscordAccount').mockResolvedValue(null)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  function openCreateForm() {
+    renderHome()
+    fireEvent.click(screen.getByRole('button', { name: /Créer$/ }))
+    return screen.getByRole('spinbutton')
+  }
+
+  it.each([
+    ['0', '2 équipes'],
+    ['', '3 équipes'],
+    ['50', '8 équipes'],
+    ['16', '8 équipes'],
+    ['7', '3 équipes'],
+  ])('saisie %j -> résumé "%s" (jamais 0/NaN)', (typed, summary) => {
+    const input = openCreateForm()
+    fireEvent.change(input, { target: { value: typed } })
+    expect(screen.getByText(new RegExp(`^${summary} de 2 joueurs$`))).toBeInTheDocument()
+    expect(screen.queryByText(/NaN|^0 équipes/)).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['0', 4],
+    ['', 6],
+    ['50', 16],
+  ])('ramène la saisie %j à %i quand le champ perd le focus', (typed, expected) => {
+    const input = openCreateForm()
+    fireEvent.change(input, { target: { value: typed } })
+    fireEvent.blur(input)
+    expect(input).toHaveValue(expected)
+  })
+
+  it('envoie toujours un total_players borné à la création', async () => {
+    const createSpy = vi.spyOn(api, 'createGame').mockRejectedValue(new Error('stop'))
+    const input = openCreateForm()
+    fireEvent.change(input, { target: { value: '0' } })
+    fireEvent.click(screen.getByRole('button', { name: /Créer la partie/ }))
+    await waitFor(() => expect(createSpy).toHaveBeenCalled())
+    expect(createSpy.mock.calls[0][0].total_players).toBe(4)
+  })
+})
+
 describe('Game — non-régression : bouton Connexion absent en partie', () => {
   beforeEach(() => {
     vi.spyOn(api, 'getGame').mockRejectedValue(new Error('not needed for this check'))
