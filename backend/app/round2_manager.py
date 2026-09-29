@@ -598,9 +598,25 @@ class Round2Manager:
 
         teams = self.db.query(models.Team).filter(
             models.Team.game_session_id == game_session_id
-        ).order_by(models.Team.score.desc()).all()
+        ).all()
         if not teams:
             raise ValueError("Aucune équipe à qualifier")
+
+        # Départage à score égal (décision owner 2026-09-30) : plus de bonnes
+        # réponses en Manche 1, puis l'équipe inscrite en premier. Le duel
+        # ping-pong de fin de Manche 1 tranche déjà via le score quand il a
+        # lieu ; ceci couvre le reste (qualification anticipée via /advance,
+        # 3+ équipes à égalité, duel impossible) au lieu d'un ordre arbitraire.
+        correct_counts = dict(
+            self.db.query(models.Answer.team_id, func.count(models.Answer.id))
+            .filter(
+                models.Answer.team_id.in_([t.id for t in teams]),
+                models.Answer.is_correct.is_(True),
+            )
+            .group_by(models.Answer.team_id)
+            .all()
+        )
+        teams.sort(key=lambda t: (-(t.score or 0), -correct_counts.get(t.id, 0), t.id))
 
         qualified: List[models.Player] = []
         for team in teams:

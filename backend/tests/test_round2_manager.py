@@ -699,6 +699,67 @@ class TestRound1ToRound2Qualification:
         with pytest.raises(ValueError):
             round2_manager.qualify_players_from_round1(sample_game_session.id)
 
+    def _answer(self, db_session, team, question, correct):
+        from app import models
+        db_session.add(models.Answer(
+            question_id=question.id, team_id=team.id, player_answer="x", is_correct=correct,
+        ))
+        db_session.commit()
+
+    def _qualified_team_ids(self, db_session, game):
+        from app import models
+        stats = db_session.query(models.PlayerRound2Stats).filter(
+            models.PlayerRound2Stats.game_session_id == game.id
+        ).all()
+        players = db_session.query(models.Player).filter(
+            models.Player.id.in_([s.player_id for s in stats])
+        ).all()
+        return {p.team_id for p in players}
+
+    def test_score_tie_at_boundary_goes_to_more_correct_answers(
+        self, round2_manager, db_session, sample_game_session, sample_questions_for_theme
+    ):
+        """Départage (décision owner 2026-09-30) : à score égal à la frontière,
+        l'équipe avec le plus de bonnes réponses en Manche 1 passe, même
+        inscrite après l'autre. Les mauvaises réponses ne comptent pas."""
+        q = sample_questions_for_theme
+        self._make_team(db_session, sample_game_session, "T1", 100, 2)
+        self._make_team(db_session, sample_game_session, "T2", 90, 2)
+        self._make_team(db_session, sample_game_session, "T3", 80, 2)
+        early = self._make_team(db_session, sample_game_session, "Early", 70, 2)
+        late = self._make_team(db_session, sample_game_session, "Late", 70, 2)
+        self._answer(db_session, early, q[0], True)
+        for i in (1, 2, 3):
+            self._answer(db_session, early, q[i], False)
+        self._answer(db_session, late, q[0], True)
+        self._answer(db_session, late, q[1], True)
+
+        round2_manager.qualify_players_from_round1(sample_game_session.id)
+        db_session.commit()
+
+        qualified = self._qualified_team_ids(db_session, sample_game_session)
+        assert late.id in qualified
+        assert early.id not in qualified
+
+    def test_full_tie_at_boundary_goes_to_earliest_registered_team(
+        self, round2_manager, db_session, sample_game_session, sample_questions_for_theme
+    ):
+        q = sample_questions_for_theme
+        self._make_team(db_session, sample_game_session, "T1", 100, 2)
+        self._make_team(db_session, sample_game_session, "T2", 90, 2)
+        self._make_team(db_session, sample_game_session, "T3", 80, 2)
+        early = self._make_team(db_session, sample_game_session, "Early", 70, 2)
+        late = self._make_team(db_session, sample_game_session, "Late", 70, 2)
+        self._answer(db_session, early, q[0], True)
+        self._answer(db_session, late, q[0], True)
+
+        round2_manager.qualify_players_from_round1(sample_game_session.id)
+        db_session.commit()
+
+        qualified = self._qualified_team_ids(db_session, sample_game_session)
+        assert early.id in qualified
+        assert late.id not in qualified
+
     def test_qualify_endpoint_maps_concurrent_integrity_error_to_409(
         self, test_client, db_session, sample_game_session, host_headers
     ):
