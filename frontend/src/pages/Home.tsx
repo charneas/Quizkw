@@ -204,6 +204,7 @@ function Home() {
               <input
                 type="text"
                 placeholder="Code de la partie"
+                aria-label="Code de la partie (quiz)"
                 value={joinCode}
                 onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
                 onKeyDown={(e) => e.key === 'Enter' && handleJoinGame()}
@@ -261,6 +262,7 @@ function Home() {
                     <input
                       type="text"
                       placeholder="Ton pseudo"
+                      aria-label="Ton pseudo (file publique)"
                       value={publicPseudo}
                       onChange={(e) => setPublicPseudo(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && handleJoinPublicQueue()}
@@ -278,7 +280,7 @@ function Home() {
                     </button>
                   </div>
                   {publicError && (
-                    <div className="text-danger text-sm text-center bg-danger/10 rounded-lg p-2 mt-3">
+                    <div role="alert" className="text-danger text-sm text-center bg-danger/10 rounded-lg p-2 mt-3">
                       {publicError}
                     </div>
                   )}
@@ -314,10 +316,11 @@ function Home() {
                   >
                     <div className="overflow-hidden space-y-4">
                       <div>
-                        <label className="block text-sm text-text-muted mb-1">
+                        <label htmlFor="home-total-players" className="block text-sm text-text-muted mb-1">
                           Nombre total de joueurs
                         </label>
                         <input
+                          id="home-total-players"
                           type="number"
                           min={MIN_TOTAL_PLAYERS}
                           max={MAX_TOTAL_PLAYERS}
@@ -330,13 +333,15 @@ function Home() {
                       </div>
 
                       <div>
-                        <label className="block text-sm text-text-muted mb-1">
+                        <span id="home-players-per-team-label" className="block text-sm text-text-muted mb-1">
                           Joueurs par équipe
-                        </label>
-                        <div className="flex gap-3">
+                        </span>
+                        <div className="flex gap-3" role="group" aria-labelledby="home-players-per-team-label">
                           {PLAYERS_PER_TEAM_OPTIONS.map((option) => (
                             <button
                               key={option.value}
+                              type="button"
+                              aria-pressed={playersPerTeam === option.value}
                               onClick={() => setPlayersPerTeam(option.value)}
                               className={`flex-1 min-h-[44px] py-2 px-4 rounded-lg border transition-colors ${
                                 playersPerTeam === option.value
@@ -377,10 +382,11 @@ function Home() {
                   >
                     <div className="overflow-hidden grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-xs text-text-muted mb-1">
+                        <label htmlFor="home-question-count" className="block text-xs text-text-muted mb-1">
                           Questions (Manche 1)
                         </label>
                         <select
+                          id="home-question-count"
                           value={questionCount}
                           onChange={(e) => setQuestionCount(Number(e.target.value))}
                           className="input-field text-sm py-1.5"
@@ -395,10 +401,11 @@ function Home() {
                       </div>
 
                       <div>
-                        <label className="block text-xs text-text-muted mb-1">
+                        <label htmlFor="home-wheel-frequency" className="block text-xs text-text-muted mb-1">
                           Tours entre chaque roue
                         </label>
                         <select
+                          id="home-wheel-frequency"
                           value={wheelFrequency}
                           onChange={(e) => setWheelFrequency(Number(e.target.value))}
                           className="input-field text-sm py-1.5"
@@ -415,7 +422,7 @@ function Home() {
                   </div>
 
                   {error && (
-                    <div className="text-danger text-sm text-center bg-danger/10 rounded-lg p-2">
+                    <div role="alert" className="text-danger text-sm text-center bg-danger/10 rounded-lg p-2">
                       {error}
                     </div>
                   )}
@@ -465,6 +472,7 @@ function Home() {
               <input
                 type="text"
                 placeholder="Code de la partie"
+                aria-label="Code de la partie (blindtest)"
                 value={blindtestCode}
                 onChange={(e) => setBlindtestCode(e.target.value.toUpperCase())}
                 onKeyDown={(e) => e.key === 'Enter' && handleJoinBlindtest()}
@@ -491,7 +499,7 @@ function Home() {
               {isCreatingBlindtest ? '⏳ Création...' : 'Créer une partie'}
             </button>
             {blindtestCreateError && (
-              <div className="text-danger text-sm text-center bg-danger/10 rounded-lg p-2 mt-3">
+              <div role="alert" className="text-danger text-sm text-center bg-danger/10 rounded-lg p-2 mt-3">
                 {blindtestCreateError}
               </div>
             )}

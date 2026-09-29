@@ -265,6 +265,71 @@ describe('Home — création de quiz : nombre total de joueurs borné', () => {
   })
 })
 
+describe('Home — accessibilité (spec-home-accessibility)', () => {
+  beforeEach(() => {
+    vi.spyOn(api, 'fetchDiscordAccount').mockResolvedValue(null)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  function openCreateForm() {
+    renderHome()
+    fireEvent.click(screen.getByRole('button', { name: /Créer$/ }))
+  }
+
+  it('expose la sélection "Joueurs par équipe" via aria-pressed dans un groupe nommé', () => {
+    openCreateForm()
+    const group = screen.getByRole('group', { name: 'Joueurs par équipe' })
+    const two = within(group).getByRole('button', { name: '2 joueurs' })
+    const three = within(group).getByRole('button', { name: '3 joueurs' })
+    expect(two).toHaveAttribute('aria-pressed', 'true')
+    expect(three).toHaveAttribute('aria-pressed', 'false')
+
+    fireEvent.click(three)
+    expect(three).toHaveAttribute('aria-pressed', 'true')
+    expect(two).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('associe les libellés du formulaire de création à leurs champs', () => {
+    openCreateForm()
+    expect(screen.getByLabelText('Nombre total de joueurs')).toHaveAttribute('type', 'number')
+    expect(screen.getByLabelText('Questions (Manche 1)').tagName).toBe('SELECT')
+    expect(screen.getByLabelText('Tours entre chaque roue').tagName).toBe('SELECT')
+  })
+
+  it('distingue les deux champs "Code de la partie" (quiz et blindtest)', () => {
+    renderHome()
+    expect(screen.getByRole('textbox', { name: 'Code de la partie (quiz)' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Code de la partie (blindtest)' })).toBeInTheDocument()
+  })
+
+  it("annonce l'erreur de création de quiz (role=alert)", async () => {
+    vi.spyOn(api, 'createGame').mockRejectedValue(new Error('Données invalides.'))
+    openCreateForm()
+    fireEvent.click(screen.getByRole('button', { name: /Créer la partie/ }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Données invalides.')
+  })
+
+  it("annonce l'erreur de la file publique (role=alert), champ pseudo nommé", async () => {
+    vi.spyOn(api, 'joinPublicQueue').mockRejectedValue(new Error('File pleine'))
+    renderHome()
+    fireEvent.click(screen.getByRole('button', { name: /Inconnus/ }))
+    const pseudo = screen.getByRole('textbox', { name: 'Ton pseudo (file publique)' })
+    fireEvent.change(pseudo, { target: { value: 'Alice' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Jouer avec des inconnus' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('File pleine')
+  })
+
+  it("annonce l'erreur de création de blindtest (role=alert)", async () => {
+    vi.spyOn(api, 'createBlindtestGame').mockRejectedValue(new Error('Erreur serveur'))
+    renderHome()
+    fireEvent.click(screen.getByRole('button', { name: 'Créer une partie' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Erreur serveur')
+  })
+})
+
 describe('Game — non-régression : bouton Connexion absent en partie', () => {
   beforeEach(() => {
     vi.spyOn(api, 'getGame').mockRejectedValue(new Error('not needed for this check'))
