@@ -695,6 +695,114 @@ class TestDeezerProvider:
         assert tracks == 2
 
 
+DEEZER_SHORT_URL = "https://link.deezer.com/s/34wXl3NonleLhvFum28Fu"
+
+
+class TestDeezerShortLink:
+    """spec-deezer-short-links : `link.deezer.com/s/{code}` résolu en UNE
+    requête (301 dont `Location` porte `dest=` l'URL canonique), sans suivre
+    de redirection. Réponses calquées sur le comportement observé en live."""
+
+    @staticmethod
+    def _redirect(status, location):
+        resp = MagicMock(status_code=status)
+        resp.headers = {"location": location} if location else {}
+        return resp
+
+    @staticmethod
+    def _api_page():
+        resp = MagicMock(status_code=200)
+        resp.json.return_value = {"data": [{"title": "Song A", "artist": {"name": "Artist A"}}]}
+        return resp
+
+    def _fetch(self, short_resp=None, short_side_effect=None):
+        from app.blindtest.providers import deezer
+
+        calls = []
+
+        def get(url, **kwargs):
+            calls.append((url, kwargs))
+            if url.startswith("https://link.deezer.com/"):
+                if short_side_effect is not None:
+                    raise short_side_effect
+                return short_resp
+            return self._api_page()
+
+        with patch("httpx.Client") as client_cls:
+            client_cls.return_value.__enter__.return_value.get.side_effect = get
+            tracks = deezer.fetch_tracks(DEEZER_SHORT_URL)
+        return tracks, calls
+
+    def test_matches_short_link(self):
+        from app.blindtest.providers import deezer
+        from app.blindtest.import_pipeline import detect_provider
+
+        assert deezer.matches(DEEZER_SHORT_URL)
+        assert detect_provider(DEEZER_SHORT_URL) == "deezer"
+        assert not deezer.matches("https://link.deezer.com/other/abc")
+
+    def test_resolves_dest_param_without_following_redirects(self):
+        dest = "https%3A%2F%2Fwww.deezer.com%2Fplaylist%2F53362031%3Fhost%3D0%26utm_source%3Duser_sharing"
+        location = f"https://link.deezer.com/?awf={dest}&dest={dest}"
+        tracks, calls = self._fetch(self._redirect(301, location))
+
+        assert [t.title for t in tracks] == ["Song A"]
+        assert calls[0] == (DEEZER_SHORT_URL, {"follow_redirects": False})
+        assert calls[1][0] == "https://api.deezer.com/playlist/53362031/tracks"
+        assert len(calls) == 2  # aucune autre URL (hôte de redirection) contactée
+
+    @pytest.mark.parametrize("location", [
+        "https://www.deezer.com/fr/playlist/42",
+        "https://www.deezer.com:443/playlist/42",
+        "https://link.deezer.com/?dest=&x=1&dest=https%3A%2F%2Fwww.deezer.com%2Fplaylist%2F42",
+    ])
+    def test_location_variants_resolving_to_playlist_are_accepted(self, location):
+        tracks, calls = self._fetch(self._redirect(302, location))
+        assert [t.title for t in tracks] == ["Song A"]
+        assert calls[1][0] == "https://api.deezer.com/playlist/42/tracks"
+
+    @pytest.mark.parametrize("status,location", [
+        (302, "https://www.deezer.com/deezer-links-404"),
+        (302, "https://www.deezer.com/fr/deezer-links-404"),
+        (404, None),
+    ])
+    def test_unknown_code_is_private_not_found(self, status, location):
+        with pytest.raises(PrivatePlaylistError):
+            self._fetch(self._redirect(status, location))
+
+    @pytest.mark.parametrize("location", [
+        "https://www.deezer.com/fr/track/123",
+        "https://evil.example.com/playlist/42",
+        "https://link.deezer.com/?dest=https%3A%2F%2Fevil.example.com%2Fplaylist%2F42",
+        "https://www.deezer.com@evil.example.com/playlist/42",
+        "javascript://www.deezer.com/playlist/42",
+        "/s/other",
+    ])
+    def test_non_playlist_or_foreign_destination_is_unrecognized(self, location):
+        from app.blindtest.errors import UnrecognizedUrlError
+
+        with pytest.raises(UnrecognizedUrlError):
+            self._fetch(self._redirect(301, location))
+
+    def test_network_error_is_unavailable(self):
+        with pytest.raises(ProviderUnavailableError):
+            self._fetch(short_side_effect=httpx.ConnectError("boom"))
+
+    @pytest.mark.parametrize("status", [200, 301, 429, 500])
+    def test_answer_without_redirect_location_is_unavailable(self, status):
+        with pytest.raises(ProviderUnavailableError):
+            self._fetch(self._redirect(status, None))
+
+    def test_fetch_tracks_on_non_short_link_path_makes_no_resolution_call(self):
+        from app.blindtest.errors import UnrecognizedUrlError
+        from app.blindtest.providers import deezer
+
+        with patch("httpx.Client") as client_cls:
+            with pytest.raises(UnrecognizedUrlError):
+                deezer.fetch_tracks("https://link.deezer.com/other/abc")
+            client_cls.return_value.__enter__.return_value.get.assert_not_called()
+
+
 class TestProviderUnavailable:
     """spec-blindtest-provider-unavailable : une panne côté provider (réseau,
     5xx, 429, 400, quota épuisé, corps non-JSON) lève ProviderUnavailableError
