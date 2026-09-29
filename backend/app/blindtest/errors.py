@@ -14,6 +14,17 @@ class PrivatePlaylistError(Exception):
     inexistante."""
 
 
+class ProviderUnavailableError(Exception):
+    """Le provider est injoignable ou répond de façon inexploitable (réseau,
+    5xx, 429, quota épuisé, corps non-JSON) : panne côté provider, pas un
+    problème avec la playlist de l'utilisateur."""
+
+    def __init__(self, provider: str, reason: str):
+        self.provider = provider
+        self.reason = reason
+        super().__init__(f"{provider} indisponible : {reason}")
+
+
 class ProviderConfigError(Exception):
     """Credentials applicatifs manquants/invalides pour ce provider."""
 

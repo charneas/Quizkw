@@ -15,7 +15,12 @@ from sqlalchemy.orm import Session, joinedload
 from app.auth import require_admin_session
 from app.blindtest import cache, matching, schemas
 from app.blindtest.database import SessionLocal, get_db
-from app.blindtest.errors import PrivatePlaylistError, ProviderConfigError, UnrecognizedUrlError
+from app.blindtest.errors import (
+    PrivatePlaylistError,
+    ProviderConfigError,
+    ProviderUnavailableError,
+    UnrecognizedUrlError,
+)
 from app.blindtest.game_connections import guess_store, played_tracks_store, score_store
 from app.blindtest.game_connections import manager as connection_manager
 from app.blindtest.import_pipeline import extract_tracks
@@ -212,6 +217,12 @@ def import_playlist(
     except ProviderConfigError as exc:
         logger.error("Configuration provider manquante: %s", exc)
         raise HTTPException(status_code=503, detail=str(exc))
+    except ProviderUnavailableError as exc:
+        # Panne côté provider (réseau, 5xx, 429, quota, corps invalide) : 502
+        # explicite plutôt qu'un 500 brut ou un "playlist privée" trompeur.
+        logger.warning("Provider indisponible pendant l'import: %s", exc)
+        label = {"youtube": "YouTube", "deezer": "Deezer"}.get(exc.provider, exc.provider)
+        raise HTTPException(status_code=502, detail=f"Service {label} indisponible, réessayez plus tard")
 
     # Re-vérification juste avant la persistance : `extract_tracks` est un
     # aller-retour réseau qui peut prendre plusieurs secondes, pendant

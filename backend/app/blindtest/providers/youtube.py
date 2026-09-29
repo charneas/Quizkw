@@ -15,7 +15,12 @@ from urllib.parse import urlparse, parse_qs
 
 import httpx
 
-from app.blindtest.errors import PrivatePlaylistError, ProviderConfigError, UnrecognizedUrlError
+from app.blindtest.errors import (
+    PrivatePlaylistError,
+    ProviderConfigError,
+    ProviderUnavailableError,
+    UnrecognizedUrlError,
+)
 from app.blindtest.extraction_types import ExtractedTrack
 
 # Retour utilisateur (2026-09-13) : les chaînes auto-générées "Topic" de
@@ -63,6 +68,21 @@ def _extract_playlist_id(url: str) -> str:
     return list_ids[0]
 
 
+# Raisons d'erreur de l'API YouTube Data qui signalent un quota/débit épuisé
+# (réponse 403, comme une playlist privée) plutôt qu'un problème de playlist.
+_QUOTA_REASONS = {"quotaExceeded", "dailyLimitExceeded", "rateLimitExceeded", "userRateLimitExceeded"}
+
+
+def _error_reason(resp) -> Optional[str]:
+    """`error.errors[0].reason` d'une réponse d'erreur YouTube, ou None si le
+    corps est absent/inattendu."""
+    try:
+        reason = resp.json()["error"]["errors"][0]["reason"]
+    except (ValueError, KeyError, IndexError, TypeError):
+        return None
+    return reason if isinstance(reason, str) else None
+
+
 def fetch_tracks(url: str) -> List[ExtractedTrack]:
     playlist_id = _extract_playlist_id(url)
 
@@ -95,16 +115,37 @@ def fetch_tracks(url: str) -> List[ExtractedTrack]:
             if page_token:
                 params["pageToken"] = page_token
 
-            resp = client.get(_API_BASE, params=params)
+            try:
+                resp = client.get(_API_BASE, params=params)
+            except httpx.HTTPError as exc:
+                raise ProviderUnavailableError("youtube", f"erreur réseau ({type(exc).__name__})") from exc
+            if resp.status_code == 403 and _error_reason(resp) in _QUOTA_REASONS:
+                # Quota/limite de débit épuisé : l'API répond 403 comme pour
+                # une playlist privée, mais c'est une panne côté service.
+                raise ProviderUnavailableError("youtube", "quota épuisé")
             if resp.status_code in (403, 404):
                 raise PrivatePlaylistError("Playlist YouTube privée, introuvable ou supprimée")
-            resp.raise_for_status()
-            payload = resp.json()
+            if not 200 <= resp.status_code < 300:
+                raise ProviderUnavailableError("youtube", f"HTTP {resp.status_code}")
+            try:
+                payload = resp.json()
+            except ValueError as exc:
+                raise ProviderUnavailableError("youtube", "réponse non JSON") from exc
+            if not isinstance(payload, dict):
+                raise ProviderUnavailableError("youtube", "réponse invalide")
 
-            for item in payload.get("items", []):
-                snippet = item.get("snippet") or {}
+            items = payload.get("items", [])
+            if not isinstance(items, list):
+                raise ProviderUnavailableError("youtube", "réponse invalide")
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                snippet = item.get("snippet")
+                if not isinstance(snippet, dict):
+                    continue
                 title = snippet.get("title")
-                video_id = (snippet.get("resourceId") or {}).get("videoId")
+                resource_id = snippet.get("resourceId")
+                video_id = resource_id.get("videoId") if isinstance(resource_id, dict) else None
                 if not title or not video_id:
                     continue
                 if title in ("Private video", "Deleted video"):

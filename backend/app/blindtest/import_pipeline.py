@@ -25,7 +25,7 @@ def detect_provider(url: str) -> str:
 
 def extract_tracks(url: str) -> tuple[str, List[ExtractedTrack]]:
     """Retourne (provider, tracks). Lève UnrecognizedUrlError,
-    PrivatePlaylistError ou ProviderConfigError — jamais d'exception brute de
+    PrivatePlaylistError, ProviderConfigError ou ProviderUnavailableError — jamais d'exception brute de
     provider (httpx, jwt, ...) ne doit fuiter jusqu'ici sans être mappée."""
     provider = detect_provider(url)
     module = dict(_PROVIDERS)[provider]

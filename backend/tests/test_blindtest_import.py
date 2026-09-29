@@ -20,7 +20,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.blindtest.database import Base, get_db
-from app.blindtest.errors import PrivatePlaylistError
+from app.blindtest.errors import PrivatePlaylistError, ProviderUnavailableError
 from app.blindtest.extraction_types import ExtractedTrack
 from main import app as main_app
 
@@ -547,7 +547,7 @@ class TestScopedImport:
             connection_manager._games.pop("SHARED", None)
 
 
-class TestDeezerImport:
+class TestDeezerProvider:
     def test_matches_playlist_url(self):
         from app.blindtest.providers import deezer
 
@@ -693,6 +693,158 @@ class TestDeezerImport:
         playlists, tracks = _count_rows(blindtest_engine)
         assert playlists == 1
         assert tracks == 2
+
+
+class TestProviderUnavailable:
+    """spec-blindtest-provider-unavailable : une panne côté provider (réseau,
+    5xx, 429, 400, quota épuisé, corps non-JSON) lève ProviderUnavailableError
+    -> 502 explicite, jamais un 500 brut ni un "playlist privée" trompeur."""
+
+    @staticmethod
+    def _youtube_fetch_with(resp=None, side_effect=None):
+        from app.blindtest.providers import youtube
+
+        with patch("httpx.Client") as client_cls,              patch.dict(os.environ, {"YOUTUBE_API_KEY": "fake-key"}):
+            get = client_cls.return_value.__enter__.return_value.get
+            if side_effect is not None:
+                get.side_effect = side_effect
+            else:
+                get.return_value = resp
+            return youtube.fetch_tracks(YOUTUBE_URL)
+
+    @staticmethod
+    def _deezer_fetch_with(resp=None, side_effect=None):
+        from app.blindtest.providers import deezer
+
+        with patch("httpx.Client") as client_cls:
+            get = client_cls.return_value.__enter__.return_value.get
+            if side_effect is not None:
+                get.side_effect = side_effect
+            else:
+                get.return_value = resp
+            return deezer.fetch_tracks(DEEZER_URL)
+
+    @pytest.mark.parametrize("status", [400, 429, 500, 503])
+    def test_youtube_non_2xx_other_than_403_404_is_unavailable(self, status):
+        resp = MagicMock(status_code=status)
+        resp.json.return_value = {"error": {"code": status}}
+        with pytest.raises(ProviderUnavailableError):
+            self._youtube_fetch_with(resp)
+
+    def test_youtube_network_error_is_unavailable(self):
+        with pytest.raises(ProviderUnavailableError):
+            self._youtube_fetch_with(side_effect=httpx.ConnectError("boom"))
+
+    @pytest.mark.parametrize("reason", ["quotaExceeded", "dailyLimitExceeded", "rateLimitExceeded", "userRateLimitExceeded"])
+    def test_youtube_403_quota_reason_is_unavailable_not_private(self, reason):
+        resp = MagicMock(status_code=403)
+        resp.json.return_value = {"error": {"code": 403, "errors": [{"reason": reason}]}}
+        with pytest.raises(ProviderUnavailableError):
+            self._youtube_fetch_with(resp)
+
+    @pytest.mark.parametrize("status,body", [
+        (403, {"error": {"code": 403, "errors": [{"reason": "playlistItemsNotAccessible"}]}}),
+        (403, ValueError("not json")),
+        (404, {"error": {"code": 404, "errors": [{"reason": "playlistNotFound"}]}}),
+    ])
+    def test_youtube_private_or_missing_playlist_still_private(self, status, body):
+        resp = MagicMock(status_code=status)
+        if isinstance(body, Exception):
+            resp.json.side_effect = body
+        else:
+            resp.json.return_value = body
+        with pytest.raises(PrivatePlaylistError):
+            self._youtube_fetch_with(resp)
+
+    def test_youtube_non_json_body_is_unavailable(self):
+        resp = MagicMock(status_code=200)
+        resp.json.side_effect = ValueError("not json")
+        with pytest.raises(ProviderUnavailableError):
+            self._youtube_fetch_with(resp)
+
+    def test_youtube_non_object_body_is_unavailable(self):
+        resp = MagicMock(status_code=200)
+        resp.json.return_value = ["unexpected"]
+        with pytest.raises(ProviderUnavailableError):
+            self._youtube_fetch_with(resp)
+
+    @pytest.mark.parametrize("reason", [["quotaExceeded"], {"x": 1}])
+    def test_youtube_403_non_string_reason_does_not_crash(self, reason):
+        resp = MagicMock(status_code=403)
+        resp.json.return_value = {"error": {"errors": [{"reason": reason}]}}
+        with pytest.raises(PrivatePlaylistError):
+            self._youtube_fetch_with(resp)
+
+    @pytest.mark.parametrize("items", [{"not": "a list"}, "str"])
+    def test_youtube_non_list_items_is_unavailable(self, items):
+        resp = MagicMock(status_code=200)
+        resp.json.return_value = {"items": items}
+        with pytest.raises(ProviderUnavailableError):
+            self._youtube_fetch_with(resp)
+
+    def test_youtube_malformed_items_are_skipped_not_crashing(self):
+        resp = MagicMock(status_code=200)
+        resp.json.return_value = {"items": [
+            None,
+            {"snippet": None},
+            {"snippet": {"title": "T", "resourceId": "not-a-dict"}},
+            {"snippet": {"title": "Ok", "videoOwnerChannelTitle": "A", "resourceId": {"videoId": "v1"}}},
+        ]}
+        tracks = self._youtube_fetch_with(resp)
+        assert [t.youtube_video_id for t in tracks] == ["v1"]
+
+    @pytest.mark.parametrize("status", [429, 500, 503])
+    def test_deezer_non_2xx_is_unavailable(self, status):
+        resp = MagicMock(status_code=status)
+        resp.json.return_value = {"data": []}
+        with pytest.raises(ProviderUnavailableError):
+            self._deezer_fetch_with(resp)
+
+    @pytest.mark.parametrize("code", [4, 700])
+    def test_deezer_quota_or_busy_error_body_is_unavailable(self, code):
+        resp = MagicMock(status_code=200)
+        resp.json.return_value = {"error": {"type": "Exception", "message": "x", "code": code}}
+        with pytest.raises(ProviderUnavailableError):
+            self._deezer_fetch_with(resp)
+
+    def test_deezer_not_found_error_body_is_still_private(self):
+        resp = MagicMock(status_code=200)
+        resp.json.return_value = {"error": {"type": "DataException", "message": "no data", "code": 800}}
+        with pytest.raises(PrivatePlaylistError):
+            self._deezer_fetch_with(resp)
+
+    def test_deezer_network_error_is_unavailable(self):
+        with pytest.raises(ProviderUnavailableError):
+            self._deezer_fetch_with(side_effect=httpx.ReadTimeout("slow"))
+
+    def test_deezer_non_json_body_is_unavailable(self):
+        resp = MagicMock(status_code=200)
+        resp.json.side_effect = ValueError("not json")
+        with pytest.raises(ProviderUnavailableError):
+            self._deezer_fetch_with(resp)
+
+    def test_deezer_non_object_body_is_unavailable(self):
+        resp = MagicMock(status_code=200)
+        resp.json.return_value = ["unexpected"]
+        with pytest.raises(ProviderUnavailableError):
+            self._deezer_fetch_with(resp)
+
+    @pytest.mark.parametrize("provider,url,label", [
+        ("youtube", YOUTUBE_URL, "YouTube"),
+        ("deezer", DEEZER_URL, "Deezer"),
+    ])
+    def test_import_endpoint_maps_unavailable_to_502_no_partial_write(
+        self, blindtest_client, blindtest_engine, provider, url, label
+    ):
+        with patch(
+            f"app.blindtest.providers.{provider}.fetch_tracks",
+            side_effect=ProviderUnavailableError(provider, "HTTP 503"),
+        ):
+            resp = blindtest_client.post("/blindtest/playlists", json={"url": url})
+
+        assert resp.status_code == 502
+        assert resp.json()["detail"] == f"Service {label} indisponible, réessayez plus tard"
+        assert _count_rows(blindtest_engine) == (0, 0)
 
 
 class TestDbIsolation:
