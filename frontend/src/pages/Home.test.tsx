@@ -234,8 +234,8 @@ describe('Home — création de quiz : nombre total de joueurs borné', () => {
   it.each([
     ['0', '2 équipes'],
     ['', '3 équipes'],
-    ['50', '8 équipes'],
-    ['16', '8 équipes'],
+    ['50', '12 équipes'],
+    ['24', '12 équipes'],
     ['7', '3 équipes'],
   ])('saisie %j -> résumé "%s" (jamais 0/NaN)', (typed, summary) => {
     const input = openCreateForm()
@@ -247,7 +247,7 @@ describe('Home — création de quiz : nombre total de joueurs borné', () => {
   it.each([
     ['0', 4],
     ['', 6],
-    ['50', 16],
+    ['50', 24],
   ])('ramène la saisie %j à %i quand le champ perd le focus', (typed, expected) => {
     const input = openCreateForm()
     fireEvent.change(input, { target: { value: typed } })

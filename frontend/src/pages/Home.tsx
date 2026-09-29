@@ -16,7 +16,7 @@ const QUESTION_COUNT_OPTIONS = [20, 25, 30, 35, 40, 45, 50]
 const WHEEL_FREQUENCY_OPTIONS = [5, 10]
 
 const MIN_TOTAL_PLAYERS = 4
-const MAX_TOTAL_PLAYERS = 16
+const MAX_TOTAL_PLAYERS = 24
 const DEFAULT_TOTAL_PLAYERS = 6
 
 /** Nombre total de joueurs effectif : saisie vide/invalide -> défaut, sinon

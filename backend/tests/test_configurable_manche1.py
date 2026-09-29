@@ -60,6 +60,19 @@ class TestQuestionCountValidation:
         assert response.status_code == 422
 
 
+class TestTotalPlayersValidation:
+    """Plafond relevé à 24 joueurs (décision owner 2026-09-30) : 12 équipes
+    de 2 max en lobby (max_teams = total_players // players_per_team)."""
+
+    def test_accepts_twenty_four_players(self, test_client):
+        game = _create_game(test_client, total_players=24)
+        assert game["game"]["total_players"] == 24
+
+    def test_rejects_above_twenty_four(self, test_client):
+        response = test_client.post("/games/", json={"total_players": 25, "players_per_team": 2})
+        assert response.status_code == 422
+
+
 class TestWheelFrequencyValidation:
     def test_accepts_five_and_ten(self, test_client):
         for value in (5, 10):

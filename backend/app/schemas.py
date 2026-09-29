@@ -151,7 +151,7 @@ class Token(TokenBase):
         from_attributes = True
 
 class GameSessionBase(BaseModel):
-    total_players: int = Field(..., ge=1, le=16)
+    total_players: int = Field(..., ge=1, le=24)
     players_per_team: int = Field(..., ge=1, le=3)
     manche1_question_count: int = Field(default=20, ge=20, le=50)
     wheel_frequency: int = Field(default=5, ge=5, le=10)
