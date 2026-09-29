@@ -20,19 +20,28 @@ def _make_team(db_session, game, name, score, n_players=2):
     return team
 
 
+def _pin_wheel_to_ping_pong(monkeypatch):
+    """La roue se déclenche tous les wheel_frequency tours pendant la Manche 1
+    et modifierait les scores (malus/bonus) — ce qui ferait disparaître
+    l'égalité construite par le test. 11-18 => ping_pong : simple annonce,
+    aucun changement de score ni duel démarré (trigger_wheel_effect)."""
+    monkeypatch.setattr(main.random, "randint", lambda a, b: 12)
+
+
 def _play_to_question(test_client, code, n, host_headers):
     for _ in range(n):
         test_client.post(f"/games/{code}/next-question", headers=host_headers)
 
 
-def test_manche1_caps_at_20_questions_no_tie(test_client, db_session, sample_game_session, sample_question, host_headers):
+def test_manche1_caps_at_20_questions_no_tie(test_client, db_session, sample_game_session, sample_question, host_headers, monkeypatch):
+    _pin_wheel_to_ping_pong(monkeypatch)
     # 4 équipes de 2 joueurs = exactement 8 places (ROUND2_SLOTS) : pas d'ambiguïté.
     for i in range(4):
         _make_team(db_session, sample_game_session, f"Team {i}", score=100 - i * 10)
 
     for _ in range(19):
         resp = test_client.post(f"/games/{sample_game_session.code}/next-question", headers=host_headers)
-        assert resp.json()["question_id"] is not None or resp.json().get("wheel_event") is not None
+        assert resp.json()["question_id"] is not None or resp.json().get("wheel_events")
 
     resp = test_client.post(f"/games/{sample_game_session.code}/next-question", headers=host_headers)
     assert resp.status_code == 200
@@ -44,7 +53,8 @@ def test_manche1_caps_at_20_questions_no_tie(test_client, db_session, sample_gam
     assert sample_game_session.current_round == models.RoundType.MANCHE_2
 
 
-def test_manche1_end_triggers_tiebreak_duel_on_ambiguous_tie(test_client, db_session, sample_game_session, sample_question, host_headers):
+def test_manche1_end_triggers_tiebreak_duel_on_ambiguous_tie(test_client, db_session, sample_game_session, sample_question, host_headers, monkeypatch):
+    _pin_wheel_to_ping_pong(monkeypatch)
     # 5 équipes de 2 joueurs = 10 places demandées pour 8 disponibles.
     # Les deux moins bien classées sont à égalité (70) pour la dernière place.
     t1 = _make_team(db_session, sample_game_session, "T1", score=100)
@@ -81,11 +91,12 @@ def test_manche1_end_triggers_tiebreak_duel_on_ambiguous_tie(test_client, db_ses
 
     # Le vainqueur du duel remporte la place qualificative litigieuse.
     winner_team_id = duel.team1_id
+    tokens = {t.id: t.team_token for t in (t4, t5)}
     answer_resp = test_client.post("/ping-pong/duel/answer", json={
         "duel_id": duel.id,
         "team_id": winner_team_id,
         "answer": "Paris",
-    })
+    }, headers={"X-Team-Token": tokens[winner_team_id]})
     # Réponse correcte -> le duel continue (tour de l'autre équipe) ; on le
     # fait perdre pour terminer le duel immédiatement et connaître le gagnant.
     assert answer_resp.status_code == 200
@@ -94,7 +105,7 @@ def test_manche1_end_triggers_tiebreak_duel_on_ambiguous_tie(test_client, db_ses
         "duel_id": duel.id,
         "team_id": loser_team_id,
         "answer": "wrong answer",
-    })
+    }, headers={"X-Team-Token": tokens[loser_team_id]})
     assert final_resp.status_code == 200
     assert final_resp.json()["winner_team_id"] == winner_team_id
 
@@ -109,7 +120,8 @@ def test_manche1_end_triggers_tiebreak_duel_on_ambiguous_tie(test_client, db_ses
     assert winner_team.score == 73
 
 
-def test_manche1_end_qualifies_without_crashing_if_tiebreak_duel_unavailable(test_client, db_session, sample_game_session, sample_question, host_headers):
+def test_manche1_end_qualifies_without_crashing_if_tiebreak_duel_unavailable(test_client, db_session, sample_game_session, sample_question, host_headers, monkeypatch):
+    _pin_wheel_to_ping_pong(monkeypatch)
     """BUG-101c : PingPongManager.start_duel refuse désormais de créer un
     duel si une des deux équipes en a déjà un actif (ex. duel abandonné
     jamais complété). resolve_manche1_end doit absorber ce refus et qualifier

@@ -155,8 +155,11 @@ describe('Home — carte Blindtest (spec-blindtest-integration-ui, story 1)', ()
   }
 
   function getBlindtestCard() {
-    const heading = screen.getByText('🎵 Blindtest')
-    return heading.closest('.card') as HTMLElement
+    // Layout "deux tuiles" (5e2490d) : la tuile Blindtest n'est plus une
+    // `.card` avec le titre "🎵 Blindtest", mais une tuile `.rounded-2xl`
+    // dont le h2 "Blindtest" est précédé d'une icône décorative séparée.
+    const heading = screen.getByRole('heading', { name: 'Blindtest' })
+    return heading.closest('.rounded-2xl') as HTMLElement
   }
 
   it('désactive le bouton Rejoindre tant que le code est vide', async () => {

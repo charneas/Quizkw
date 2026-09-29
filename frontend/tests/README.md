@@ -6,30 +6,11 @@ This directory contains end-to-end tests for the Quiz application covering all 3
 
 ### 📁 Test Files
 
-- **`round1.spec.ts`** - Round 1 Classic Quiz (3 tests)
 - **`round2.spec.ts`** - Round 2 Thematic 1v1 (4 tests)
 - **`round3.spec.ts`** - Round 3 Memory Grid 7x5 (10 tests)
 - **`full-game.spec.ts`** - Complete game flow (1 test)
 
-**Total: 18 E2E tests**
-
----
-
-## Round 1: Classic Quiz
-
-Round 1 tests team-based gameplay with tokens and scoreboards.
-
-### Tests:
-1. **Complete Round 1 flow** - Team creation, player addition, gameplay
-2. **Token usage** - Verifies token panel and functionality
-3. **Intermediate leaderboard** - Checks scoreboard display
-
-### Key Features Tested:
-- Team creation (2 teams, 2 players each)
-- Question answering flow
-- Token panel visibility
-- Scoreboard display
-- Navigation
+**Total: 15 E2E tests**
 
 ---
 
@@ -112,9 +93,6 @@ npm run test:e2e
 
 ### Run Specific Test Suite
 ```bash
-# Round 1 only
-npx playwright test round1.spec.ts
-
 # Round 2 only
 npx playwright test round2.spec.ts
 

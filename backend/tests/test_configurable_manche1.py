@@ -114,7 +114,7 @@ class TestWheelFrequencyControlsCadence:
 
         response = test_client.post(f"/games/{code}/next-question", headers=host_headers)
         assert response.status_code == 200
-        assert "wheel_event" not in response.json()
+        assert "wheel_events" not in response.json()
 
     def test_wheel_triggers_at_the_tenth_question_when_frequency_is_ten(self, test_client, db_session):
         game = _create_game(test_client, wheel_frequency=10, manche1_question_count=50)
@@ -135,4 +135,4 @@ class TestWheelFrequencyControlsCadence:
         with patch("main.random.randint", return_value=19):
             response = test_client.post(f"/games/{code}/next-question", headers=host_headers)
         assert response.status_code == 200
-        assert response.json().get("wheel_event") is not None
+        assert response.json().get("wheel_events")

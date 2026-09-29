@@ -15,7 +15,7 @@ describe('ThemeSelector', () => {
   it('renders correctly with themes', () => {
     render(<ThemeSelector themes={mockThemes} onSelectTheme={mockOnSelectTheme} gameCode="ABC" />);
     
-    expect(screen.getByText('Choose Your Theme')).toBeInTheDocument();
+    expect(screen.getByText('Choisissez votre thème')).toBeInTheDocument();
     expect(screen.getByText('Science')).toBeInTheDocument();
     expect(screen.getByText('Movies')).toBeInTheDocument();
     expect(screen.getByText('History')).toBeInTheDocument();

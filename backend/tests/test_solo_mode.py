@@ -107,7 +107,10 @@ class TestNoMixedTeamSizeInvariant:
 
     def test_team_create_schema_has_no_size_field(self):
         from app import schemas
-        assert set(schemas.TeamCreate.model_fields.keys()) == {"name"}
+        fields = set(schemas.TeamCreate.model_fields.keys())
+        assert "name" in fields
+        # Liste blanche explicite : aucun champ de taille d'équipe (icon est cosmétique).
+        assert fields <= {"name", "icon"}
 
     def test_every_team_in_a_solo_game_is_capped_at_the_same_size(self, test_client):
         game = _create_solo_game(test_client, total_players=4)

@@ -6,7 +6,7 @@ import * as api from '../services/api'
 describe('Propositions', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
-    vi.spyOn(api, 'adminListThemes').mockResolvedValue([])
+    vi.spyOn(api, 'listThemesForProposition').mockResolvedValue([])
   })
 
   it('disables the submit button until question, correct answer and difficulty are filled', async () => {
@@ -65,7 +65,7 @@ describe('Propositions', () => {
   })
 
   it('filters out blank wrong answers and threads the selected theme_id into the submitted payload', async () => {
-    vi.spyOn(api, 'adminListThemes').mockResolvedValue([
+    vi.spyOn(api, 'listThemesForProposition').mockResolvedValue([
       { id: 7, name: 'Cinéma', category: 'pop_culture', difficulty_level: 3, created_at: '2026-07-01' },
     ])
     const submitSpy = vi.spyOn(api, 'submitProposition').mockResolvedValue({
@@ -102,7 +102,7 @@ describe('Propositions', () => {
   })
 
   it('does not block the form when the theme list fails to load', async () => {
-    vi.spyOn(api, 'adminListThemes').mockRejectedValue(new Error('Erreur réseau'))
+    vi.spyOn(api, 'listThemesForProposition').mockRejectedValue(new Error('Erreur réseau'))
 
     render(<Propositions />)
 

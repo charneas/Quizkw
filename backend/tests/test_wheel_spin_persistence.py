@@ -126,7 +126,7 @@ class TestWheelSpinPersistence:
         refreshed = db_session.query(models.Team).filter(models.Team.id == team1.id).first()
         assert refreshed.score == 7
 
-    def test_spin_broadcast_to_other_teams_via_last_wheel_event(self, test_client, db_session, sample_game_session):
+    def test_spin_event_visible_only_to_target_team(self, test_client, db_session, sample_game_session):
         team1 = _make_team(db_session, sample_game_session, "Team A", score=5)
         team2 = _make_team(db_session, sample_game_session, "Team B", score=5)
 
@@ -134,8 +134,14 @@ class TestWheelSpinPersistence:
             spin_response = test_client.post("/wheel/spin", json={"team_id": team1.id}, headers={"X-Team-Token": team1.team_token})
         assert spin_response.status_code == 200
 
-        # AC #2 : une AUTRE équipe (pas celle qui a tourné) voit l'événement.
-        state_response = test_client.get(f"/game/{sample_game_session.code}/team/{team2.id}/state")
+        # AC #2 : l'effet persisté est exposé via last_wheel_event. Depuis
+        # deb4957 (2026-08-12, tirage indépendant par équipe), last_wheel_event
+        # est filtré sur target_team_id : chaque équipe voit SON résultat, pas
+        # celui d'une autre (team_state_service.py, "Dernier effet de roue").
+        state_response = test_client.get(
+            f"/game/{sample_game_session.code}/team/{team1.id}/state",
+            headers={"X-Team-Token": team1.team_token},
+        )
         assert state_response.status_code == 200
         event = state_response.json()["last_wheel_event"]
         assert event is not None
@@ -143,6 +149,13 @@ class TestWheelSpinPersistence:
         assert event["value"] == 3
         assert event["target_team_id"] == team1.id
         assert event["target_team_name"] == "Team A"
+
+        other_response = test_client.get(
+            f"/game/{sample_game_session.code}/team/{team2.id}/state",
+            headers={"X-Team-Token": team2.team_token},
+        )
+        assert other_response.status_code == 200
+        assert other_response.json()["last_wheel_event"] is None
 
     def test_spin_unknown_team_returns_403_without_valid_token(self, test_client, db_session, sample_game_session):
         # BUG-101d-like : même 403 qu'un token invalide sur une équipe
