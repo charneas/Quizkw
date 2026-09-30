@@ -4,6 +4,7 @@ import { createGame, createBlindtestGame, storeHostToken, joinPublicQueue } from
 import { pluralJoueurs } from '../utils/pluralize'
 import { useDiscordAccount } from '../contexts/DiscordAccountContext'
 import quizclimbLogo from '../assets/quizclimb-logo.png'
+import DemoCarousel from '../components/DemoCarousel'
 
 const PLAYERS_PER_TEAM_OPTIONS = [
   { value: 1, label: '1 joueur' },
@@ -505,6 +506,10 @@ function Home() {
             )}
           </div>
         </div>
+
+        {/* Idée #8 du brainstorm trafic (2026-09-28) : montrer à quoi ressemble
+            une partie pour donner envie aux futurs hôtes (spec-home-demo-carousel). */}
+        <DemoCarousel />
       </div>
     </div>
   )

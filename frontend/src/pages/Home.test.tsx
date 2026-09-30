@@ -299,6 +299,11 @@ describe('Home — accessibilité (spec-home-accessibility)', () => {
     expect(screen.getByLabelText('Tours entre chaque roue').tagName).toBe('SELECT')
   })
 
+  it("affiche le carrousel « À quoi ressemble une partie ? » sous les tuiles", () => {
+    renderHome()
+    expect(screen.getByRole('region', { name: 'À quoi ressemble une partie ?' })).toBeInTheDocument()
+  })
+
   it('distingue les deux champs "Code de la partie" (quiz et blindtest)', () => {
     renderHome()
     expect(screen.getByRole('textbox', { name: 'Code de la partie (quiz)' })).toBeInTheDocument()
