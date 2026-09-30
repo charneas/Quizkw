@@ -162,7 +162,7 @@ function Results() {
                   <div>
                     <p className="font-display font-semibold text-lg">{player.player_name}</p>
                     <p className="text-sm text-text-muted">
-                      {player.own_theme_cells} propres • {player.stolen_cells} volées
+                      {player.own_theme_cells} {player.own_theme_cells > 1 ? 'propres' : 'propre'} • {player.stolen_cells} {player.stolen_cells > 1 ? 'volées' : 'volée'}
                     </p>
                   </div>
                 </div>

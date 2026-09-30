@@ -27,9 +27,11 @@ def wheel_effect_message(effect_type: str, target_name: str, value: int | None) 
     ce formatage à deux endroits.
     """
     if effect_type == "malus":
-        return f"💀 Malus : {target_name} perd {abs(value or 0)} points"
+        n = abs(value or 0)
+        return f"💀 Malus : {target_name} perd {n} point{'s' if n > 1 else ''}"
     if effect_type == "bonus":
-        return f"🎉 Bonus : {target_name} gagne {value or 0} points"
+        n = value or 0
+        return f"🎉 Bonus : {target_name} gagne {n} point{'s' if n > 1 else ''}"
     if effect_type == "ping_pong":
         return f"🏓 Duel Ping-Pong déclenché pour {target_name} !"
     if effect_type == "tiebreak":

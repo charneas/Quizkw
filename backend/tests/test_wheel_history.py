@@ -79,3 +79,15 @@ class TestWheelHistory:
 
         response = test_client.get(f"/games/{sample_game_session.code}/wheel-history")
         assert response.json() == {"history": []}
+
+class TestWheelEffectMessagePlural:
+    """"1 point" au singulier, "3 points" au pluriel (captures de l'accueil,
+    2026-09-30 : la roue affichait "gagne 1 points")."""
+
+    def test_bonus_and_malus_agree_in_number(self):
+        from app.game_helpers import wheel_effect_message
+
+        assert wheel_effect_message("bonus", "Team A", 1) == "🎉 Bonus : Team A gagne 1 point"
+        assert wheel_effect_message("bonus", "Team A", 3) == "🎉 Bonus : Team A gagne 3 points"
+        assert wheel_effect_message("malus", "Team A", -1) == "💀 Malus : Team A perd 1 point"
+        assert wheel_effect_message("malus", "Team A", -3) == "💀 Malus : Team A perd 3 points"

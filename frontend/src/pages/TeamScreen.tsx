@@ -576,7 +576,7 @@ function TeamScreen() {
           <p className="text-text-muted">
             Score : <span className="text-brand font-bold">{state.team_score} pts</span>
             {' • '}
-            Manche : <span className="text-text font-semibold">{state.game_phase}</span>
+            Manche : <span className="text-text font-semibold">{state.game_phase.replace(/^manche_/, '')}</span>
           </p>
         </div>
 

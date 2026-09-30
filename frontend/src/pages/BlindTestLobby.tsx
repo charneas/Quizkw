@@ -325,7 +325,10 @@ export default function BlindTestLobby() {
     // plein écran que Home.tsx (min-h-screen flex) au lieu d'un conteneur
     // sans notion de hauteur — corrige le rendu "tout tassé en haut".
     <div className="min-h-screen flex items-center justify-center p-4">
-      <div className="max-w-md w-full space-y-4">
+      {/* Round en cours : deux colonnes sur grand écran (devinette à gauche,
+          scores à droite) au lieu d'une colonne étroite où le scoreboard
+          finissait sous la ligne de flottaison. */}
+      <div className={`max-w-md w-full space-y-4 ${phase === 'round_started' ? 'lg:max-w-3xl' : ''}`}>
         {/* Story 1 (spec-blindtest-integration-ui) : visible dans toutes les
             phases (partagent ce même retour racine) pour laisser un moyen de
             sortir de l'écran blindtest à tout moment. */}
@@ -481,47 +484,49 @@ export default function BlindTestLobby() {
             </div>
           </div>
         ) : phase === 'round_started' ? (
-          <div className="space-y-4">
-            <p className="text-text-muted">Round en cours — écoute l'extrait et devine qui l'a importé !</p>
-            {/* Story 3 (spec-blindtest-integration-ui) : le titre/artiste ne
-                spoile pas la devinette (deviner la playlist d'origine, jamais
-                le morceau) — affichés en permanence pendant toute la durée du
-                round. */}
-            {roundTrack && (
-              <p className="font-semibold">
-                {roundTrack.title} — {roundTrack.artist}
-              </p>
-            )}
+          <div className="space-y-4 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-6 lg:items-start">
+            <div className="space-y-4">
+              <p className="text-text-muted">Round en cours — écoute l'extrait et devine qui l'a importé !</p>
+              {/* Story 3 (spec-blindtest-integration-ui) : le titre/artiste ne
+                  spoile pas la devinette (deviner la playlist d'origine, jamais
+                  le morceau) — affichés en permanence pendant toute la durée du
+                  round. */}
+              {roundTrack && (
+                <p className="font-semibold">
+                  {roundTrack.title} — {roundTrack.artist}
+                </p>
+              )}
 
-            {/* Story 2.5 : sélection multiple des joueurs présents — jamais de
-                champ texte libre pour nommer une cible (FR8, cf. Boundaries de
-                la spec). */}
-            <div className="space-y-2">
-              <p className="text-text-muted">Qui a ajouté ce morceau à sa playlist ? (plusieurs choix possibles)</p>
-              <ul className="space-y-1">
-                {players.map((p) => {
-                  const isSelected = selectedPlayers.includes(p)
-                  return (
-                    <li key={p}>
-                      <button
-                        type="button"
-                        className={`card px-3 py-2 w-full text-left ${isSelected ? 'ring-2 ring-primary' : ''}`}
-                        onClick={() => toggleSelectedPlayer(p)}
-                        aria-pressed={isSelected}
-                      >
-                        {p}
-                      </button>
-                    </li>
-                  )
-                })}
-              </ul>
-              <button
-                className="btn-primary w-full"
-                onClick={handleSubmitGuess}
-                disabled={selectedPlayers.length === 0}
-              >
-                Valider ma réponse
-              </button>
+              {/* Story 2.5 : sélection multiple des joueurs présents — jamais de
+                  champ texte libre pour nommer une cible (FR8, cf. Boundaries de
+                  la spec). */}
+              <div className="space-y-2">
+                <p className="text-text-muted">Qui a ajouté ce morceau à sa playlist ? (plusieurs choix possibles)</p>
+                <ul className="space-y-1">
+                  {players.map((p) => {
+                    const isSelected = selectedPlayers.includes(p)
+                    return (
+                      <li key={p}>
+                        <button
+                          type="button"
+                          className={`card px-3 py-2 w-full text-left ${isSelected ? 'ring-2 ring-brand' : ''}`}
+                          onClick={() => toggleSelectedPlayer(p)}
+                          aria-pressed={isSelected}
+                        >
+                          {p}
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+                <button
+                  className="btn-primary w-full"
+                  onClick={handleSubmitGuess}
+                  disabled={selectedPlayers.length === 0}
+                >
+                  Valider ma réponse
+                </button>
+              </div>
             </div>
 
             {/* Story 4 (spec-blindtest-integration-ui) : scoreboard visible
