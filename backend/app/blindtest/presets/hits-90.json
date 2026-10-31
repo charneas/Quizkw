@@ -1,0 +1,440 @@
+{
+  "slug": "hits-90",
+  "name": "Hits années 90",
+  "playlist_id": "RDCLAK5uy_nQkPLhMF6chdzKSlWdX8NHMrLVpdci-eU",
+  "fetched_at": "2026-10-31T20:21:59+00:00",
+  "tracks": [
+    {
+      "youtube_video_id": "TR3Vdo5etCQ",
+      "title": "Don't Speak",
+      "artist": "No Doubt",
+      "duration_seconds": 301,
+      "raw_title": "No Doubt - Don't Speak (Official 4K Music Video)",
+      "raw_channel": "NoDoubtVEVO"
+    },
+    {
+      "youtube_video_id": "6M6samPEMpM",
+      "title": "Everybody",
+      "artist": "Backstreet Boys",
+      "duration_seconds": 363,
+      "raw_title": "Backstreet Boys - Everybody (Backstreet's Back) (Official HD Video)",
+      "raw_channel": "BackstreetBoysVEVO"
+    },
+    {
+      "youtube_video_id": "oKOtzIo-uYw",
+      "title": "Killing Me Softly With His Song",
+      "artist": "Fugees",
+      "duration_seconds": 254,
+      "raw_title": "Fugees - Killing Me Softly With His Song (Official Video)",
+      "raw_channel": "TheFugeesVEVO"
+    },
+    {
+      "youtube_video_id": "FrLequ6dUdM",
+      "title": "No Scrubs",
+      "artist": "TLC",
+      "duration_seconds": 250,
+      "raw_title": "TLC - No Scrubs (Official HD Video)",
+      "raw_channel": "TLCVEVO"
+    },
+    {
+      "youtube_video_id": "3JcmQONgXJM",
+      "title": "Gettin' Jiggy Wit It",
+      "artist": "Will Smith",
+      "duration_seconds": 230,
+      "raw_title": "Will Smith - Gettin' Jiggy Wit It",
+      "raw_channel": "WillSmithVEVO"
+    },
+    {
+      "youtube_video_id": "sQgd6MccwZc",
+      "title": "Say My Name",
+      "artist": "Destiny's Child",
+      "duration_seconds": 240,
+      "raw_title": "Destiny's Child - Say My Name (Official Video)",
+      "raw_channel": "DestinysChildVEVO"
+    },
+    {
+      "youtube_video_id": "tscL_I2v7pU",
+      "title": "Wannabe",
+      "artist": "Spice Girls",
+      "duration_seconds": 174,
+      "raw_title": "Wannabe",
+      "raw_channel": "Spice Girls"
+    },
+    {
+      "youtube_video_id": "N0VdRLdg2ng",
+      "title": "California Love",
+      "artist": "2Pac",
+      "duration_seconds": 407,
+      "raw_title": "2Pac ft. Dr. Dre and Roger Troutman - California Love (Official Music Video)",
+      "raw_channel": "2Pac"
+    },
+    {
+      "youtube_video_id": "iqu132vTl5Y",
+      "title": "The Sign",
+      "artist": "Ace of Base",
+      "duration_seconds": 198,
+      "raw_title": "Ace of Base - The Sign (Official Music Video)",
+      "raw_channel": "Ace of Base"
+    },
+    {
+      "youtube_video_id": "6NXnxTNIWkc",
+      "title": "What's Up",
+      "artist": "4 Non Blondes",
+      "duration_seconds": 293,
+      "raw_title": "4 Non Blondes - What's Up (Official Music Video)",
+      "raw_channel": "4NonBlondesVEVO"
+    },
+    {
+      "youtube_video_id": "8SbUC-UaAxE",
+      "title": "November Rain",
+      "artist": "Guns N' Roses",
+      "duration_seconds": 557,
+      "raw_title": "Guns N' Roses - November Rain",
+      "raw_channel": "GunsNRosesVEVO"
+    },
+    {
+      "youtube_video_id": "hTWKbfoikeg",
+      "title": "Smells Like Teen Spirit",
+      "artist": "Nirvana",
+      "duration_seconds": 279,
+      "raw_title": "Nirvana - Smells Like Teen Spirit (Official Music Video)",
+      "raw_channel": "NirvanaVEVO"
+    },
+    {
+      "youtube_video_id": "3JWTaaS7LdU",
+      "title": "I Will Always Love You",
+      "artist": "Whitney Houston",
+      "duration_seconds": 274,
+      "raw_title": "Whitney Houston - I Will Always Love You (Official 4K Video)",
+      "raw_channel": "whitneyhoustonVEVO"
+    },
+    {
+      "youtube_video_id": "6Ejga4kJUts",
+      "title": "Zombie",
+      "artist": "The Cranberries",
+      "duration_seconds": 308,
+      "raw_title": "The Cranberries - Zombie (Official Music Video)",
+      "raw_channel": "TheCranberriesVEVO"
+    },
+    {
+      "youtube_video_id": "ZyhrYis509A",
+      "title": "Barbie Girl",
+      "artist": "Aqua",
+      "duration_seconds": 202,
+      "raw_title": "Aqua - Barbie Girl (Official Music Video)",
+      "raw_channel": "AquaVEVO"
+    },
+    {
+      "youtube_video_id": "4fndeDfaWCg",
+      "title": "I Want It That Way",
+      "artist": "Backstreet Boys",
+      "duration_seconds": 220,
+      "raw_title": "Backstreet Boys - I Want It That Way (Official HD Video)",
+      "raw_channel": "BackstreetBoysVEVO"
+    },
+    {
+      "youtube_video_id": "xwtdhWltSIg",
+      "title": "Losing My Religion",
+      "artist": "R.E.M.",
+      "duration_seconds": 294,
+      "raw_title": "R.E.M. - Losing My Religion (Official HD Music Video)",
+      "raw_channel": "remhq"
+    },
+    {
+      "youtube_video_id": "XFkzRNyygfk",
+      "title": "Creep",
+      "artist": "Radiohead",
+      "duration_seconds": 237,
+      "raw_title": "Radiohead - Creep",
+      "raw_channel": "Radiohead"
+    },
+    {
+      "youtube_video_id": "C-u5WLJ9Yk4",
+      "title": "...Baby One More Time",
+      "artist": "Britney Spears",
+      "duration_seconds": 237,
+      "raw_title": "Britney Spears - ...Baby One More Time (Official Video)",
+      "raw_channel": "BritneySpearsVEVO"
+    },
+    {
+      "youtube_video_id": "JkK8g6FMEXE",
+      "title": "I Don't Want to Miss a Thing",
+      "artist": "Aerosmith",
+      "duration_seconds": 293,
+      "raw_title": "Aerosmith - I Don't Want to Miss a Thing (Official HD Video)",
+      "raw_channel": "AerosmithVEVO"
+    },
+    {
+      "youtube_video_id": "0-EF60neguk",
+      "title": "Nothing Compares 2 U",
+      "artist": "Sinéad O'Connor",
+      "duration_seconds": 309,
+      "raw_title": "Sinéad O'Connor - Nothing Compares 2 U (Official Music Video) [HD]",
+      "raw_channel": "SineadOConnorVEVO"
+    },
+    {
+      "youtube_video_id": "k2C5TjS2sh4",
+      "title": "It Must Have Been Love",
+      "artist": "Roxette",
+      "duration_seconds": 260,
+      "raw_title": "Roxette - It Must Have Been Love (Official Music Video) (Remastered)",
+      "raw_channel": "Roxette"
+    },
+    {
+      "youtube_video_id": "nZXRV4MezEw",
+      "title": "Believe",
+      "artist": "Cher",
+      "duration_seconds": 237,
+      "raw_title": "Cher - Believe (Official Music Video) [4K Remaster]",
+      "raw_channel": "Cher"
+    },
+    {
+      "youtube_video_id": "CD-E-LDc384",
+      "title": "Enter Sandman",
+      "artist": "Metallica",
+      "duration_seconds": 331,
+      "raw_title": "Metallica: Enter Sandman (Official Music Video)",
+      "raw_channel": "Metallica"
+    },
+    {
+      "youtube_video_id": "otCpCn0l4Wo",
+      "title": "U Can't Touch This",
+      "artist": "M.C. Hammer",
+      "duration_seconds": 274,
+      "raw_title": "M.C. Hammer - U Can't Touch This",
+      "raw_channel": "MCHammerVevo"
+    },
+    {
+      "youtube_video_id": "UrIiLvg58SY",
+      "title": "More Than Words",
+      "artist": "Extreme",
+      "duration_seconds": 256,
+      "raw_title": "Extreme - More Than Words (Official Music Video)",
+      "raw_channel": "ExtremeVEVO"
+    },
+    {
+      "youtube_video_id": "p2Rch6WvPJE",
+      "title": "Un-Break My Heart",
+      "artist": "Toni Braxton",
+      "duration_seconds": 274,
+      "raw_title": "Toni Braxton - Un-Break My Heart (Official HD Video)",
+      "raw_channel": "ToniBraxtonVEVO"
+    },
+    {
+      "youtube_video_id": "_JZom_gVfuw",
+      "title": "Juicy",
+      "artist": "The Notorious B.I.G.",
+      "duration_seconds": 253,
+      "raw_title": "The Notorious B.I.G. - Juicy (Official Video) [4K]",
+      "raw_channel": "The Notorious B.I.G."
+    },
+    {
+      "youtube_video_id": "NdYWuo9OFAw",
+      "title": "Iris",
+      "artist": "Goo Goo Dolls",
+      "duration_seconds": 216,
+      "raw_title": "Goo Goo Dolls – Iris [Official Music Video] [4K Remaster]",
+      "raw_channel": "Goo Goo Dolls"
+    },
+    {
+      "youtube_video_id": "LeiFF0gvqcc",
+      "title": "Remember the Time",
+      "artist": "Michael Jackson",
+      "duration_seconds": 559,
+      "raw_title": "Michael Jackson - Remember the Time (Official Video - Upscaled)",
+      "raw_channel": "michaeljacksonVEVO"
+    },
+    {
+      "youtube_video_id": "rog8ou-ZepE",
+      "title": "Ice Ice Baby",
+      "artist": "Vanilla Ice",
+      "duration_seconds": 238,
+      "raw_title": "Vanilla Ice - Ice Ice Baby (Official Music Video)",
+      "raw_channel": "vanillaiceVEVO"
+    },
+    {
+      "youtube_video_id": "6hzrDeceEKc",
+      "title": "Wonderwall",
+      "artist": "Oasis",
+      "duration_seconds": 280,
+      "raw_title": "Oasis - Wonderwall (Official Video)",
+      "raw_channel": "Oasis"
+    },
+    {
+      "youtube_video_id": "p47fEXGabaY",
+      "title": "Livin' La Vida Loca",
+      "artist": "Ricky Martin",
+      "duration_seconds": 223,
+      "raw_title": "Ricky Martin - Livin' La Vida Loca (Official HD Video)",
+      "raw_channel": "RickyMartinVEVO"
+    },
+    {
+      "youtube_video_id": "EK_LN3XEcnw",
+      "title": "Mambo No. 5",
+      "artist": "Lou Bega",
+      "duration_seconds": 222,
+      "raw_title": "Lou Bega - Mambo No. 5 (A Little Bit of...)",
+      "raw_channel": "LouBegaVEVO"
+    },
+    {
+      "youtube_video_id": "qSIOp_K5GMw",
+      "title": "The Boy Is Mine",
+      "artist": "Brandy & Monica",
+      "duration_seconds": 242,
+      "raw_title": "Brandy & Monica - The Boy Is Mine (Official Video)",
+      "raw_channel": "Brandy Videos"
+    },
+    {
+      "youtube_video_id": "WQnAxOQxQIU",
+      "title": "Truly Madly Deeply",
+      "artist": "Savage Garden",
+      "duration_seconds": 262,
+      "raw_title": "Savage Garden - Truly Madly Deeply (Official Video)",
+      "raw_channel": "SavageGardenVEVO"
+    },
+    {
+      "youtube_video_id": "6Whgn_iE5uc",
+      "title": "Smooth",
+      "artist": "Santana",
+      "duration_seconds": 257,
+      "raw_title": "Santana - Smooth (Official Video) ft. Rob Thomas",
+      "raw_channel": "SantanaVEVO"
+    },
+    {
+      "youtube_video_id": "F2AitTPI5U0",
+      "title": "Black Or White",
+      "artist": "Michael Jackson",
+      "duration_seconds": 383,
+      "raw_title": "Michael Jackson - Black Or White (Official Video - Shortened Version)",
+      "raw_channel": "michaeljacksonVEVO"
+    },
+    {
+      "youtube_video_id": "L_jWHffIx5E",
+      "title": "All Star",
+      "artist": "Smash Mouth",
+      "duration_seconds": 237,
+      "raw_title": "Smash Mouth - All Star",
+      "raw_channel": "SmashMouthVEVO"
+    },
+    {
+      "youtube_video_id": "5sye_VxmNZA",
+      "title": "Bailamos",
+      "artist": "Enrique Iglesias",
+      "duration_seconds": 216,
+      "raw_title": "Enrique Iglesias - Bailamos",
+      "raw_channel": "EnriqueIglesiasVEVO"
+    },
+    {
+      "youtube_video_id": "LfRNRymrv9k",
+      "title": "Always Be My Baby",
+      "artist": "Mariah Carey",
+      "duration_seconds": 258,
+      "raw_title": "Mariah Carey - Always Be My Baby (Official Music Video)",
+      "raw_channel": "MariahCareyVEVO"
+    },
+    {
+      "youtube_video_id": "3KL9mRus19o",
+      "title": "No Diggity",
+      "artist": "Blackstreet",
+      "duration_seconds": 271,
+      "raw_title": "Blackstreet - No Diggity (Official Music Video) ft. Dr. Dre, Queen Pen",
+      "raw_channel": "BlackstreetVEVO"
+    },
+    {
+      "youtube_video_id": "pAyKJAtDNCw",
+      "title": "You Are Not Alone",
+      "artist": "Michael Jackson",
+      "duration_seconds": 336,
+      "raw_title": "Michael Jackson - You Are Not Alone (Official Video)",
+      "raw_channel": "michaeljacksonVEVO"
+    },
+    {
+      "youtube_video_id": "MUuNDb-nm5M",
+      "title": "When a Man Loves a Woman",
+      "artist": "Michael Bolton",
+      "duration_seconds": 233,
+      "raw_title": "Michael Bolton - When a Man Loves a Woman (Official Video)",
+      "raw_channel": "MichaelBoltonVEVO"
+    },
+    {
+      "youtube_video_id": "DXvMT_mVbqw",
+      "title": "All My Life",
+      "artist": "K-Ci & JoJo",
+      "duration_seconds": 230,
+      "raw_title": "K-Ci & JoJo - All My Life (Official Music Video)",
+      "raw_channel": "KCiAndJoJoVEVO"
+    },
+    {
+      "youtube_video_id": "-oqAU5VxFWs",
+      "title": "Mr. Jones",
+      "artist": "Counting Crows",
+      "duration_seconds": 270,
+      "raw_title": "Counting Crows - Mr. Jones (Official Music Video)",
+      "raw_channel": "CountingCrowsVEVO"
+    },
+    {
+      "youtube_video_id": "UXxRyNvTPr8",
+      "title": "One Sweet Day",
+      "artist": "Mariah Carey, Boyz II Men",
+      "duration_seconds": 286,
+      "raw_title": "Mariah Carey, Boyz II Men - One Sweet Day (Official Video)",
+      "raw_channel": "MariahCareyVEVO"
+    },
+    {
+      "youtube_video_id": "zDKO6XYXioc",
+      "title": "End Of The Road",
+      "artist": "Boyz II Men",
+      "duration_seconds": 255,
+      "raw_title": "Boyz II Men - End Of The Road",
+      "raw_channel": "BoyzIIMenVEVO"
+    },
+    {
+      "youtube_video_id": "eBG7P-K-r1Y",
+      "title": "Everlong",
+      "artist": "Foo Fighters",
+      "duration_seconds": 292,
+      "raw_title": "Foo Fighters - Everlong (Official HD Video)",
+      "raw_channel": "foofightersVEVO"
+    },
+    {
+      "youtube_video_id": "KNZH-emehxA",
+      "title": "You’re Still The One",
+      "artist": "Shania Twain",
+      "duration_seconds": 201,
+      "raw_title": "Shania Twain - You’re Still The One (Official Music Video)",
+      "raw_channel": "ShaniaTwainVEVO"
+    },
+    {
+      "youtube_video_id": "kIDWgqDBNXA",
+      "title": "Genie In A Bottle",
+      "artist": "Christina Aguilera",
+      "duration_seconds": 217,
+      "raw_title": "Christina Aguilera - Genie In A Bottle (Official Video)",
+      "raw_channel": "CAguileraVEVO"
+    },
+    {
+      "youtube_video_id": "rslMMY64BVg",
+      "title": "Wicked Game",
+      "artist": "Chris Isaak",
+      "duration_seconds": 290,
+      "raw_title": "Wicked Game",
+      "raw_channel": "Chris Isaak"
+    },
+    {
+      "youtube_video_id": "VV1XWJN3nJo",
+      "title": "Torn",
+      "artist": "Natalie Imbruglia",
+      "duration_seconds": 244,
+      "raw_title": "Natalie Imbruglia - Torn (Official Video)",
+      "raw_channel": "natalieimbrugliaVEVO"
+    },
+    {
+      "youtube_video_id": "9bFHsd3o1w0",
+      "title": "My Heart Will Go On",
+      "artist": "Céline Dion",
+      "duration_seconds": 281,
+      "raw_title": "Céline Dion - My Heart Will Go On (Official 25th Anniversary Alternate Music Video)",
+      "raw_channel": "CelineDionVEVO"
+    }
+  ]
+}

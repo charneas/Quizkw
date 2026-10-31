@@ -348,9 +348,12 @@ export interface UnresolvedBlindtestTrack {
 
 // === Blind-test — lobby / connexion à une partie (Story 2.1) ===
 
+export type BlindtestMode = 'owner' | 'classic'
+
 export interface BlindtestGameCreateResponse {
   id: number
   code: string
+  mode: BlindtestMode
 }
 
 /** Enveloppe commune à tous les messages WS blind-test, dans les deux sens
@@ -369,6 +372,8 @@ export interface BlindtestGameStatePayload {
   // vérité affichée).
   phase: string
   host_pseudo: string | null
+  // Absent d'un serveur pas encore à jour : le mode vaut alors "owner".
+  mode?: BlindtestMode
   // Story 2.7 : classement cumulatif final, présent uniquement quand
   // `phase === "ended"` (poussé à la fin de partie automatique ET à tout
   // (re)joignant qui rejoint/se reconnecte après coup — état terminal
@@ -391,11 +396,16 @@ export interface BlindtestGameStatePayload {
 export interface BlindtestRoundStartedPayload {
   videoId: string
   startSeconds: number
-  title: string
-  artist: string
+  // Absents en mode classique : c'est la réponse à trouver.
+  title?: string
+  artist?: string
   // Id du morceau du round (`Track.id`), à renvoyer tel quel dans chaque
   // `guess_submitted` : le serveur ignore une devinette d'un autre round.
   trackId: number
+  // Mode classique : durée du round, et temps déjà écoulé pour un joueur qui
+  // arrive en cours de round.
+  durationSeconds?: number
+  elapsedSeconds?: number
 }
 
 // Story 2.6 : payload de `reveal`, poussé par le serveur à la clôture du
@@ -414,6 +424,64 @@ export interface BlindtestRevealPayload {
   // qui reste le cumul depuis le début de la partie. Optionnel : le rendu
   // dégrade à 0 plutôt que de planter si absent (revue de code).
   deltas?: Record<string, number>
+}
+
+// === Blind test classique (spec-blindtest-classique) ===
+
+export type BlindtestFoundElement = 'title' | 'artist'
+
+/** Retour privé d'une réponse : ce qui est trouvé, jamais ce qu'il fallait
+ * répondre. `added` vide : la réponse n'a rien trouvé. */
+export interface BlindtestAnswerResultPayload {
+  track_id: number
+  added: BlindtestFoundElement[]
+  found: BlindtestFoundElement[]
+  points: number
+  // Rejeu après une reconnexion : pas une réponse du joueur.
+  restored?: boolean
+}
+
+export interface BlindtestScoresUpdatedPayload {
+  scores: Record<string, number>
+}
+
+export interface BlindtestRoundVoidedPayload {
+  scores: Record<string, number>
+}
+
+export interface BlindtestStartRefusedPayload {
+  reason: string
+  message: string
+  playable_count?: number
+}
+
+export interface BlindtestClassicRevealPayload {
+  title: string
+  artist: string
+  deltas: Record<string, number>
+  scores: Record<string, number>
+}
+
+export interface BlindtestPreset {
+  slug: string
+  name: string
+  track_count: number
+}
+
+/** La playlist choisie, sans ses morceaux. `playable_count` peut monter tant
+ * que `checking` est vrai. */
+export interface BlindtestClassicSource {
+  name: string | null
+  playable_count: number
+  checking: boolean
+}
+
+export interface BlindtestClassicPlaylistResponse {
+  id: number
+  provider: string
+  track_count: number
+  not_found_count: number
+  truncated: boolean
 }
 
 // === Blind-test — import de playlist scopé à une partie (Story 2.2) ===

@@ -1,5 +1,5 @@
 """Schémas Pydantic du module blindtest — Story 1.1/1.4."""
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, computed_field
 
@@ -83,8 +83,50 @@ class ResolveTrackRequest(BaseModel):
 
 # === Lobby / connexion à une partie (Story 2.1) ===
 
+class GameCreateRequest(BaseModel):
+    mode: Literal["owner", "classic"] = "owner"
+
+
 class GameCreateResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     code: str
+    mode: str
+
+
+# === Blind test classique (spec-blindtest-classique) ===
+#
+# Le titre et l'artiste sont la réponse à trouver : aucun de ces schémas ne
+# porte de morceau.
+
+class RedactedPlaylistResponse(BaseModel):
+    """`PlaylistResponse` d'une partie classique : des comptes, jamais les
+    morceaux."""
+    id: int
+    provider: str
+    game_id: Optional[int] = None
+    owner_pseudo: Optional[str] = None
+    track_count: int
+    not_found_count: int
+    truncated: bool
+
+
+class PresetResponse(BaseModel):
+    slug: str
+    name: str
+    track_count: int
+
+
+class PresetSelectRequest(BaseModel):
+    slug: str
+    pseudo: str
+
+
+class ClassicSourceResponse(BaseModel):
+    """`name` vaut `None` tant que l'hôte n'a choisi aucune playlist.
+    `playable_count` peut monter tant que `checking` est vrai : le matching de
+    fond tourne encore."""
+    name: Optional[str] = None
+    playable_count: int
+    checking: bool = False

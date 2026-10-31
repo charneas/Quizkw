@@ -1,7 +1,12 @@
 import type {
+  BlindtestAnswerResultPayload,
+  BlindtestClassicRevealPayload,
   BlindtestGameStatePayload,
   BlindtestRevealPayload,
   BlindtestRoundStartedPayload,
+  BlindtestRoundVoidedPayload,
+  BlindtestScoresUpdatedPayload,
+  BlindtestStartRefusedPayload,
   BlindtestWsEnvelope,
 } from '../types'
 
@@ -29,7 +34,11 @@ export class BlindtestSocket {
     handlers: {
       onGameState?: (payload: BlindtestGameStatePayload) => void
       onRoundStarted?: (payload: BlindtestRoundStartedPayload) => void
-      onReveal?: (payload: BlindtestRevealPayload) => void
+      onReveal?: (payload: BlindtestRevealPayload | BlindtestClassicRevealPayload) => void
+      onAnswerResult?: (payload: BlindtestAnswerResultPayload) => void
+      onScoresUpdated?: (payload: BlindtestScoresUpdatedPayload) => void
+      onRoundVoided?: (payload: BlindtestRoundVoidedPayload) => void
+      onStartRefused?: (payload: BlindtestStartRefusedPayload) => void
       onClose?: (event: CloseEvent) => void
       onError?: (event: Event) => void
     } = {},
@@ -53,7 +62,15 @@ export class BlindtestSocket {
       } else if (envelope.type === 'round_started' && handlers.onRoundStarted) {
         handlers.onRoundStarted(envelope.payload as BlindtestRoundStartedPayload)
       } else if (envelope.type === 'reveal' && handlers.onReveal) {
-        handlers.onReveal(envelope.payload as BlindtestRevealPayload)
+        handlers.onReveal(envelope.payload as BlindtestRevealPayload | BlindtestClassicRevealPayload)
+      } else if (envelope.type === 'answer_result' && handlers.onAnswerResult) {
+        handlers.onAnswerResult(envelope.payload as BlindtestAnswerResultPayload)
+      } else if (envelope.type === 'scores_updated' && handlers.onScoresUpdated) {
+        handlers.onScoresUpdated(envelope.payload as BlindtestScoresUpdatedPayload)
+      } else if (envelope.type === 'round_voided' && handlers.onRoundVoided) {
+        handlers.onRoundVoided(envelope.payload as BlindtestRoundVoidedPayload)
+      } else if (envelope.type === 'start_refused' && handlers.onStartRefused) {
+        handlers.onStartRefused(envelope.payload as BlindtestStartRefusedPayload)
       }
     }
 
@@ -91,6 +108,17 @@ export class BlindtestSocket {
    * retardée qui arrive au round suivant est ignorée par le serveur. */
   sendGuess(trackId: number, targetPlayerIds: string[]): void {
     this.send('guess_submitted', { track_id: trackId, target_player_ids: targetPlayerIds })
+  }
+
+  /** Mode classique : réponse tapée. Seul le texte part : le serveur juge et
+   * chronomètre. */
+  sendAnswer(trackId: number, text: string): void {
+    this.send('answer_submitted', { track_id: trackId, text })
+  }
+
+  /** Mode classique : le lecteur n'arrive pas à jouer la vidéo de ce round. */
+  sendVideoError(trackId: number, code: number): void {
+    this.send('video_error', { track_id: trackId, code })
   }
 
   /** Retour utilisateur (2026-09-14) : relance une partie dans le même

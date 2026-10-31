@@ -192,11 +192,20 @@ describe('Home — carte Blindtest (spec-blindtest-integration-ui, story 1)', ()
     expect(await screen.findByText('Blindtest lobby page: XYZ789')).toBeInTheDocument()
   })
 
+  it('crée une partie classique avec le bouton dédié', async () => {
+    const create = vi.spyOn(api, 'createBlindtestGame').mockResolvedValue({ id: 2, code: 'CL4551', mode: 'classic' })
+    renderHomeWithBlindtestRoute()
+    fireEvent.click(within(getBlindtestCard()).getByRole('button', { name: 'Trouve le titre' }))
+
+    expect(await screen.findByText('Blindtest lobby page: CL4551')).toBeInTheDocument()
+    expect(create).toHaveBeenCalledWith('classic')
+  })
+
   it('crée une partie blindtest et navigue vers /blindtest/<code> retourné par le backend (story 2)', async () => {
-    vi.spyOn(api, 'createBlindtestGame').mockResolvedValue({ id: 1, code: 'ZQ7K2P' })
+    vi.spyOn(api, 'createBlindtestGame').mockResolvedValue({ id: 1, code: 'ZQ7K2P', mode: 'owner' })
     renderHomeWithBlindtestRoute()
     const card = getBlindtestCard()
-    const button = within(card).getByRole('button', { name: 'Créer une partie' })
+    const button = within(card).getByRole('button', { name: 'Devine la playlist' })
 
     fireEvent.click(button)
 
@@ -207,12 +216,12 @@ describe('Home — carte Blindtest (spec-blindtest-integration-ui, story 1)', ()
     vi.spyOn(api, 'createBlindtestGame').mockRejectedValue(new Error('Erreur serveur'))
     renderHomeWithBlindtestRoute()
     const card = getBlindtestCard()
-    const button = within(card).getByRole('button', { name: 'Créer une partie' })
+    const button = within(card).getByRole('button', { name: 'Devine la playlist' })
 
     fireEvent.click(button)
 
     expect(await within(card).findByText('Erreur serveur')).toBeInTheDocument()
-    expect(within(card).getByRole('button', { name: 'Créer une partie' })).not.toBeDisabled()
+    expect(within(card).getByRole('button', { name: 'Devine la playlist' })).not.toBeDisabled()
   })
 })
 
@@ -330,7 +339,7 @@ describe('Home — accessibilité (spec-home-accessibility)', () => {
   it("annonce l'erreur de création de blindtest (role=alert)", async () => {
     vi.spyOn(api, 'createBlindtestGame').mockRejectedValue(new Error('Erreur serveur'))
     renderHome()
-    fireEvent.click(screen.getByRole('button', { name: 'Créer une partie' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Devine la playlist' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Erreur serveur')
   })
 })

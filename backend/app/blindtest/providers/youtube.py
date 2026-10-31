@@ -91,6 +91,7 @@ def fetch_tracks(url: str) -> List[ExtractedTrack]:
         raise ProviderConfigError("youtube", "YOUTUBE_API_KEY")
 
     tracks: List[ExtractedTrack] = []
+    seen_video_ids: set = set()
     page_token: Optional[str] = None
 
     with httpx.Client(timeout=10.0) as client:
@@ -137,6 +138,10 @@ def fetch_tracks(url: str) -> List[ExtractedTrack]:
             items = payload.get("items", [])
             if not isinstance(items, list):
                 raise ProviderUnavailableError("youtube", "réponse invalide")
+            # Les listes `RDCLAK...` de YouTube Music renvoient les mêmes pages
+            # en boucle, avec toujours un `nextPageToken` : sans ce dédoublonnage,
+            # 50 titres réels deviennent 2500 lignes.
+            page_had_new_video = False
             for item in items:
                 if not isinstance(item, dict):
                     continue
@@ -148,6 +153,10 @@ def fetch_tracks(url: str) -> List[ExtractedTrack]:
                 video_id = resource_id.get("videoId") if isinstance(resource_id, dict) else None
                 if not title or not video_id:
                     continue
+                if video_id in seen_video_ids:
+                    continue
+                seen_video_ids.add(video_id)
+                page_had_new_video = True
                 if title in ("Private video", "Deleted video"):
                     continue  # item retiré/privé dans une playlist par ailleurs publique
                 tracks.append(ExtractedTrack(
@@ -157,7 +166,7 @@ def fetch_tracks(url: str) -> List[ExtractedTrack]:
                 ))
 
             page_token = payload.get("nextPageToken")
-            if not page_token:
+            if not page_token or not page_had_new_video:
                 break
 
         if not tracks:

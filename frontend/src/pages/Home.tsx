@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { createGame, createBlindtestGame, storeHostToken, joinPublicQueue } from '../services/api'
 import { pluralJoueurs } from '../utils/pluralize'
+import type { BlindtestMode } from '../types'
 import { useDiscordAccount } from '../contexts/DiscordAccountContext'
 import quizclimbLogo from '../assets/quizclimb-logo.png'
 import DemoCarousel from '../components/DemoCarousel'
@@ -33,7 +34,7 @@ function Home() {
   const navigate = useNavigate()
   const [joinCode, setJoinCode] = useState('')
   const [blindtestCode, setBlindtestCode] = useState('')
-  const [isCreatingBlindtest, setIsCreatingBlindtest] = useState(false)
+  const [creatingBlindtestMode, setCreatingBlindtestMode] = useState<BlindtestMode | null>(null)
   const [blindtestCreateError, setBlindtestCreateError] = useState('')
   // Texte brut saisi (peut être vide/hors bornes pendant la frappe) ; le
   // nombre réellement utilisé (résumé, création) est toujours borné.
@@ -105,16 +106,16 @@ function Home() {
     }
   }
 
-  const handleCreateBlindtestGame = async () => {
-    setIsCreatingBlindtest(true)
+  const handleCreateBlindtestGame = async (mode: BlindtestMode) => {
+    setCreatingBlindtestMode(mode)
     setBlindtestCreateError('')
     try {
-      const result = await createBlindtestGame()
+      const result = await createBlindtestGame(mode)
       navigate(`/blindtest/${result.code}`)
     } catch (err) {
       setBlindtestCreateError(err instanceof Error ? err.message : 'Erreur lors de la création')
     } finally {
-      setIsCreatingBlindtest(false)
+      setCreatingBlindtestMode(null)
     }
   }
 
@@ -490,15 +491,25 @@ function Home() {
             </div>
             {/* Story 2 (spec-blindtest-integration-ui) : créer une partie
                 blindtest en self-serve, symétrique à handleCreateGame côté
-                quiz — sans champs de configuration (aucun réglage à la
-                création côté blindtest). */}
-            <button
-              onClick={handleCreateBlindtestGame}
-              disabled={isCreatingBlindtest}
-              className="btn-secondary w-full mt-3 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isCreatingBlindtest ? '⏳ Création...' : 'Créer une partie'}
-            </button>
+                quiz — sans champs de configuration : le seul choix est le
+                mode de jeu, le reste se règle dans le lobby. */}
+            <p className="text-sm text-text-muted mt-4 mb-2">Créer une partie :</p>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <button
+                onClick={() => handleCreateBlindtestGame('classic')}
+                disabled={creatingBlindtestMode !== null}
+                className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {creatingBlindtestMode === 'classic' ? '⏳ Création...' : 'Trouve le titre'}
+              </button>
+              <button
+                onClick={() => handleCreateBlindtestGame('owner')}
+                disabled={creatingBlindtestMode !== null}
+                className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {creatingBlindtestMode === 'owner' ? '⏳ Création...' : 'Devine la playlist'}
+              </button>
+            </div>
             {blindtestCreateError && (
               <div role="alert" className="text-danger text-sm text-center bg-danger/10 rounded-lg p-2 mt-3">
                 {blindtestCreateError}

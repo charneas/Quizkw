@@ -6,7 +6,9 @@ table, cf. Design Notes de spec-2-1-lobby-connexion-partie.md). Singleton
 au niveau module — acceptable car ce process est la seule instance serveur
 (AD, voir epic-2-context.md § Technical Decisions).
 """
-from typing import Dict, Optional
+import time
+from dataclasses import dataclass, field
+from typing import Any, Dict, Iterable, Optional, Set
 
 from fastapi import WebSocket
 
@@ -59,6 +61,17 @@ class ConnectionManager:
         if game_id is not None:
             payload["scores"] = score_store.snapshot(game_id)
         await self.broadcast(game_code, "game_state", payload)
+
+    async def send_to(self, game_code: str, pseudo: str, msg_type: str, payload: dict) -> None:
+        """Message privé à un joueur (retour d'une réponse, refus de départ).
+        Un joueur déjà parti est ignoré, comme dans `broadcast`."""
+        socket = self._games.get(game_code, {}).get(pseudo)
+        if socket is None:
+            return
+        try:
+            await socket.send_json(_envelope(msg_type, payload))
+        except Exception:
+            return
 
     async def broadcast(self, game_code: str, msg_type: str, payload: dict) -> None:
         """Envoie un message arbitraire à tous les sockets actuellement
@@ -226,3 +239,51 @@ class PlayedTracksStore:
 
 
 played_tracks_store = PlayedTracksStore()
+
+
+@dataclass
+class ClassicRound:
+    """Un round classique en cours. `reference` contient la réponse : rien de
+    ce qu'elle porte ne sort d'ici avant le reveal. `payload` est le
+    `round_started` diffusé, rejoué à un joueur qui arrive en cours de round.
+    `finds` donne `{pseudo: {élément: secondes écoulées}}`."""
+    track_id: int
+    reference: Any
+    payload: dict
+    started_at: float = field(default_factory=time.monotonic)
+    finds: Dict[str, Dict[str, float]] = field(default_factory=dict)
+    video_errors: Set[str] = field(default_factory=set)
+
+    def elapsed(self) -> float:
+        return time.monotonic() - self.started_at
+
+    def found_by(self, pseudo: str) -> Dict[str, float]:
+        return self.finds.get(pseudo, {})
+
+    def record(self, pseudo: str, elements: Iterable[str]) -> None:
+        """Horodaté par le serveur uniquement. Un élément déjà trouvé garde son
+        premier temps."""
+        now = self.elapsed()
+        player_finds = self.finds.setdefault(pseudo, {})
+        for element in elements:
+            player_finds.setdefault(element, now)
+
+
+class ClassicRoundStore:
+    """`{game_id: ClassicRound}` — le round classique en cours de chaque partie,
+    en mémoire comme `GuessStore`. Retiré à la clôture du round."""
+
+    def __init__(self) -> None:
+        self._rounds: Dict[int, ClassicRound] = {}
+
+    def begin(self, game_id: int, track_id: int, reference: Any, payload: dict) -> None:
+        self._rounds[game_id] = ClassicRound(track_id, reference, payload)
+
+    def get(self, game_id: int) -> Optional[ClassicRound]:
+        return self._rounds.get(game_id)
+
+    def finish(self, game_id: int) -> Optional[ClassicRound]:
+        return self._rounds.pop(game_id, None)
+
+
+classic_round_store = ClassicRoundStore()

@@ -176,6 +176,26 @@ de la DB quiz.
   sinon le démarrage échoue avec un `RuntimeError` listant les colonnes
   manquantes (restaurer une sauvegarde conforme ou recréer la DB).
 
+### Playlists préparées du blind test classique
+
+Les quatre presets du mode classique sont relus en direct sur YouTube à chaque
+sélection par l'hôte : les listes `RDCLAK...` de YouTube Music évoluent. Chaque
+`app/blindtest/presets/<slug>.json` sert de copie de secours si YouTube échoue
+ou renvoie moins de 10 morceaux, et ses noms relus priment pour ses vidéos. Un
+preset sans fichier n'est pas proposé aux joueurs. Pour rafraîchir cette copie
+(depuis `backend/`) :
+
+```bash
+YOUTUBE_API_KEY=... python scripts/snapshot_blindtest_presets.py [--only hits-80]
+```
+
+Le script ne garde que les vidéos intégrables, publiques et lisibles en France,
+avec leur durée. **Relire le JSON avant de le committer** : `title` et `artist`
+sont les réponses attendues des joueurs, déduites de `raw_title` et
+`raw_channel`, à corriger à la main si besoin. Chaque nom séparé par `,`, `&`,
+`x` ou `and` est accepté seul comme co-artiste : "fire" suffit pour "Earth, Wind
+& Fire". Quota : environ 2 unités par tranche de 50 vidéos.
+
 ## Tests
 
 ```bash

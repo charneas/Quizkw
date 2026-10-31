@@ -30,9 +30,23 @@ from sqlalchemy import or_
 
 from app.blindtest import cache
 from app.blindtest.database import SessionLocal
-from app.blindtest.models import Track
+from app.blindtest.models import Playlist, Track
 
 logger = logging.getLogger(__name__)
+
+# Playlists dont le matching de fond est planifié ou en cours. Même contrainte
+# que le reste de l'état blindtest : un seul worker gunicorn.
+_matching_playlist_ids: set = set()
+
+
+def mark_matching(playlist_id: int) -> None:
+    """À appeler avant de planifier `match_playlist_tracks`, pour que le client
+    ne voie pas une playlist "prête" dans l'intervalle."""
+    _matching_playlist_ids.add(playlist_id)
+
+
+def is_matching(playlist_id: int) -> bool:
+    return playlist_id in _matching_playlist_ids
 
 _YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
 _YOUTUBE_VIDEOS_URL = "https://www.googleapis.com/youtube/v3/videos"
@@ -255,7 +269,8 @@ def match_playlist_tracks(playlist_id: int) -> None:
     couvre aussi les imports YouTube directs, qui arrivent déjà avec un
     `youtube_video_id` mais sans durée). Ouvre sa propre session DB, itère
     et commit morceau par morceau ; l'échec d'un morceau n'interrompt
-    jamais les suivants."""
+    jamais les suivants. S'arrête si la playlist a été supprimée entre-temps
+    (source classique remplacée) : ses morceaux ne valent plus aucun quota."""
     db = SessionLocal()
     try:
         tracks = (
@@ -267,6 +282,8 @@ def match_playlist_tracks(playlist_id: int) -> None:
             .all()
         )
         for track in tracks:
+            if db.query(Playlist.id).filter(Playlist.id == playlist_id).first() is None:
+                break
             try:
                 if track.youtube_video_id is None:
                     video_id, duration = resolve_track_video_id(db, track)
@@ -289,4 +306,5 @@ def match_playlist_tracks(playlist_id: int) -> None:
                 logger.exception("Matching: échec inattendu pour le morceau %s (playlist %s)", track.id, playlist_id)
                 db.rollback()
     finally:
+        _matching_playlist_ids.discard(playlist_id)
         db.close()

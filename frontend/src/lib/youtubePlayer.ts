@@ -27,6 +27,7 @@ interface YouTubePlayerOptions {
   playerVars?: Record<string, number | string>
   events?: {
     onReady?: (event: { target: YouTubePlayer }) => void
+    onError?: (event: { target: YouTubePlayer; data: number }) => void
   }
 }
 
@@ -99,6 +100,9 @@ export function createHiddenPlayer(
   // `onReady`/`playVideo`, pour qu'aucune frame ne joue au volume par défaut
   // de l'API (100) le temps qu'un appelant rappelle `setVolume` après coup.
   initialVolume = 100,
+  // Vidéo non intégrable, supprimée ou bloquée : le lecteur reste muet sans
+  // autre signal. `code` est le code d'erreur de l'API IFrame.
+  onError?: (code: number) => void,
 ): Promise<YouTubePlayer> {
   return loadIframeApi().then(
     () =>
@@ -137,6 +141,12 @@ export function createHiddenPlayer(
               event.target.seekTo(startSeconds, true)
               event.target.playVideo()
               resolve(event.target)
+            },
+            onError: (event) => {
+              // Une erreur peut précéder `onReady` : résoudre quand même, pour
+              // que l'appelant puisse détruire ce lecteur.
+              resolve(event.target)
+              onError?.(event.data)
             },
           },
         })

@@ -97,6 +97,46 @@ describe('BlindtestSocket', () => {
     })
   })
 
+  it('sendAnswer envoie track_id et text, jamais de temps ni de verdict (contrat serveur)', () => {
+    const socket = new BlindtestSocket()
+    socket.connect('ABC123', 'Alice')
+
+    const ws = MockWebSocket.instances[0]
+    ws.triggerOpen()
+    socket.sendAnswer(7, 'daft punk')
+
+    expect(JSON.parse(ws.sent[1])).toEqual({
+      type: 'answer_submitted',
+      payload: { track_id: 7, text: 'daft punk' },
+    })
+  })
+
+  it('sendVideoError envoie le track_id et le code d’erreur (contrat serveur)', () => {
+    const socket = new BlindtestSocket()
+    socket.connect('ABC123', 'Alice')
+
+    const ws = MockWebSocket.instances[0]
+    ws.triggerOpen()
+    socket.sendVideoError(7, 150)
+
+    expect(JSON.parse(ws.sent[1])).toEqual({ type: 'video_error', payload: { track_id: 7, code: 150 } })
+  })
+
+  it.each([
+    ['answer_result', 'onAnswerResult', { track_id: 1, added: ['title'], found: ['title'], points: 100 }],
+    ['scores_updated', 'onScoresUpdated', { scores: { Alice: 100 } }],
+    ['round_voided', 'onRoundVoided', { scores: {} }],
+    ['start_refused', 'onStartRefused', { reason: 'pool_too_small', message: 'Trop peu de titres' }],
+  ])('route %s vers %s', (type, handlerName, payload) => {
+    const socket = new BlindtestSocket()
+    const handler = vi.fn()
+    socket.connect('ABC123', 'Alice', { [handlerName]: handler })
+
+    MockWebSocket.instances[0].triggerMessage({ type, payload })
+
+    expect(handler).toHaveBeenCalledWith(payload)
+  })
+
   it('appelle onClose avec le code et la raison de fermeture', () => {
     const socket = new BlindtestSocket()
     const onClose = vi.fn()

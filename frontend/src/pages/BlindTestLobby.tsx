@@ -1,11 +1,19 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { BlindtestSocket } from '../lib/blindtestSocket'
 import { createHiddenPlayer, type YouTubePlayer } from '../lib/youtubePlayer'
 import { importBlindtestPlaylist } from '../services/api'
 import Scoreboard from '../components/Scoreboard'
 import CopyInviteLinkButton from '../components/CopyInviteLinkButton'
-import type { BlindtestRevealPayload } from '../types'
+import ClassicLobbyPanel from '../components/ClassicLobbyPanel'
+import ClassicReveal from '../components/ClassicReveal'
+import ClassicRound from '../components/ClassicRound'
+import type {
+  BlindtestClassicRevealPayload,
+  BlindtestFoundElement,
+  BlindtestMode,
+  BlindtestRevealPayload,
+} from '../types'
 
 // Story 4 (spec-blindtest-integration-ui) : hash déterministe d'un pseudo,
 // utilisé comme `Team.id` (React key) pour le scoreboard réutilisé — stable
@@ -53,9 +61,29 @@ export default function BlindTestLobby() {
   const [roundTrack, setRoundTrack] = useState<{
     videoId: string
     startSeconds: number
-    title: string
-    artist: string
+    title?: string
+    artist?: string
+    trackId: number
   } | null>(null)
+
+  // Le mode vient de `game_state`. La référence sert aux handlers du socket,
+  // créés une seule fois au join.
+  const [mode, setMode] = useState<BlindtestMode>('owner')
+  const modeRef = useRef<BlindtestMode>('owner')
+  const [classicRound, setClassicRound] = useState<{
+    trackId: number
+    durationSeconds: number
+    elapsedSeconds: number
+  } | null>(null)
+  const classicTrackIdRef = useRef<number | null>(null)
+  const [classicFound, setClassicFound] = useState<BlindtestFoundElement[]>([])
+  // Compteur de réponses sans résultat : chaque raté doit relancer le retour
+  // visuel, même deux fois de suite.
+  const [classicMisses, setClassicMisses] = useState(0)
+  const [classicReveal, setClassicReveal] = useState<BlindtestClassicRevealPayload | null>(null)
+  const [roundVoided, setRoundVoided] = useState(false)
+  const [startRefused, setStartRefused] = useState<string | null>(null)
+  const clearStartRefused = useCallback(() => setStartRefused(null), [])
   // Id du morceau du round en cours, renvoyé dans chaque `guess_submitted`
   // (le serveur ignore une devinette arrivée au round suivant). État séparé
   // de `roundTrack`, qui est remis à `null` dès le reveal.
@@ -145,7 +173,10 @@ export default function BlindTestLobby() {
     // hors scope d'être garanti ici).
     let cancelled = false
     let player: YouTubePlayer | null = null
-    createHiddenPlayer(playerContainerId, roundTrack.videoId, roundTrack.startSeconds, volume)
+    const { trackId } = roundTrack
+    const onPlayerError =
+      modeRef.current === 'classic' ? (code: number) => socketRef.current?.sendVideoError(trackId, code) : undefined
+    createHiddenPlayer(playerContainerId, roundTrack.videoId, roundTrack.startSeconds, volume, onPlayerError)
       .then((createdPlayer) => {
         if (cancelled) {
           // Le round a déjà changé / le composant a démonté pendant que la
@@ -199,6 +230,14 @@ export default function BlindTestLobby() {
         setPlayers(payload.players)
         setPhase(payload.phase)
         setHostPseudo(payload.host_pseudo)
+        const nextMode = payload.mode ?? 'owner'
+        modeRef.current = nextMode
+        setMode(nextMode)
+        if (payload.phase === 'lobby') {
+          setClassicReveal(null)
+          setRoundVoided(false)
+          setStartRefused(null)
+        }
         // Story 2.7 : `final_scores` n'arrive que sur ce `game_state`-là
         // (fin de partie automatique, ou (re)join pendant `ended`) — ne
         // touche `finalScores` que lorsqu'il est réellement présent, pour
@@ -233,9 +272,44 @@ export default function BlindTestLobby() {
           startSeconds: payload.startSeconds,
           title: payload.title,
           artist: payload.artist,
+          trackId: payload.trackId,
         })
+        if (modeRef.current === 'classic') {
+          classicTrackIdRef.current = payload.trackId
+          setClassicRound({
+            trackId: payload.trackId,
+            durationSeconds: payload.durationSeconds ?? 20,
+            elapsedSeconds: payload.elapsedSeconds ?? 0,
+          })
+          setClassicFound([])
+          setClassicMisses(0)
+          setClassicReveal(null)
+          setRoundVoided(false)
+        }
       },
+      onAnswerResult: (payload) => {
+        if (payload.track_id !== classicTrackIdRef.current) return
+        setClassicFound(payload.found)
+        if (!payload.restored && payload.added.length === 0 && payload.found.length < 2) {
+          setClassicMisses((count) => count + 1)
+        }
+      },
+      onScoresUpdated: (payload) => setScores(payload.scores),
+      onRoundVoided: (payload) => {
+        setScores(payload.scores)
+        setClassicRound(null)
+        setRoundTrack(null)
+        setRoundVoided(true)
+      },
+      onStartRefused: (payload) => setStartRefused(payload.message),
       onReveal: (payload) => {
+        if ('title' in payload) {
+          setClassicReveal(payload)
+          setScores(payload.scores)
+          setClassicRound(null)
+          setRoundTrack(null)
+          return
+        }
         setReveal(payload)
         setRevealSeq((seq) => seq + 1)
         // Retour utilisateur (2026-09-14) : "laisser un peu de temps entre 2
@@ -267,6 +341,11 @@ export default function BlindTestLobby() {
 
   function handleStartGame() {
     socketRef.current?.sendStartGame(roundsCount)
+  }
+
+  function handleStartClassicGame(rounds: number) {
+    setStartRefused(null)
+    socketRef.current?.sendStartGame(rounds)
   }
 
   function handleRestartGame() {
@@ -318,6 +397,71 @@ export default function BlindTestLobby() {
       .finally(() => {
         setIsImporting(false)
       })
+  }
+
+  // Story 4 (spec-blindtest-integration-ui) : scoreboard visible pendant tout
+  // le round, pas seulement au reveal/ended. Merge du roster complet (`players`)
+  // avec les scores partiels connus (`score_store` n'a que les pseudos déjà
+  // scorés) pour que chaque joueur présent apparaisse, à 0 par défaut.
+  // `Scoreboard.tsx` ne lit que `.id`/`.name`/`.score` — les autres champs
+  // `Team` sont des valeurs de remplissage sans effet sur le rendu.
+  const liveScoreboard = (
+    <Scoreboard
+      teams={players.map((p) => ({
+        // `Team.id` sert de clé React dans `Scoreboard.tsx` (pas de vrai id
+        // numérique côté blindtest, pas de `Player` DB table). Dérivé du
+        // pseudo (hash stable), pas de l'index dans `players` : `players` vient
+        // de `Object.keys` du dict de connexions côté serveur, dont l'ordre
+        // bouge à chaque (re)connexion — un id basé sur l'index ferait remonter
+        // toute la liste sans raison à chaque reconnexion d'un tiers.
+        id: hashPseudo(p),
+        name: p,
+        score: scores[p] ?? 0,
+        game_session_id: 0,
+        players: [],
+      }))}
+    />
+  )
+
+  function renderClassicGame() {
+    if (phase === 'next_round') {
+      return <p className="text-text-muted">Round suivant...</p>
+    }
+    if (classicReveal) {
+      return <ClassicReveal reveal={classicReveal} myPseudo={pseudo.trim()} />
+    }
+    if (roundVoided) {
+      return <p className="text-text-muted">Cette vidéo est bloquée, on passe au titre suivant…</p>
+    }
+    if (phase === 'lobby') {
+      return (
+        <ClassicLobbyPanel
+          code={code}
+          pseudo={pseudo.trim()}
+          isHost={pseudo.trim() === hostPseudo}
+          players={players}
+          startRefused={startRefused}
+          onSourceChange={clearStartRefused}
+          onStart={handleStartClassicGame}
+        />
+      )
+    }
+    if (classicRound) {
+      return (
+        <div className="space-y-4 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-6 lg:items-start">
+          <ClassicRound
+            key={classicRound.trackId}
+            durationSeconds={classicRound.durationSeconds}
+            elapsedSeconds={classicRound.elapsedSeconds}
+            found={classicFound}
+            misses={classicMisses}
+            onSubmit={(text) => socketRef.current?.sendAnswer(classicRound.trackId, text)}
+          />
+          {liveScoreboard}
+        </div>
+      )
+    }
+    return <p className="text-text-muted">Round suivant...</p>
   }
 
   return (
@@ -435,6 +579,8 @@ export default function BlindTestLobby() {
               </button>
             )}
           </div>
+        ) : mode === 'classic' ? (
+          renderClassicGame()
         ) : phase === 'next_round' ? (
           // Story 2.7 : bref indicateur transitoire entre le `game_state
           // {phase: next_round}` et le `round_started` qui suit — purement
@@ -536,31 +682,9 @@ export default function BlindTestLobby() {
               </div>
             </div>
 
-            {/* Story 4 (spec-blindtest-integration-ui) : scoreboard visible
-                pendant tout le round, pas seulement au reveal/ended. Placé
-                en bas (retour utilisateur) : en haut, avant la devinette,
-                son rôle n'était pas clair. Merge du roster complet
-                (`players`) avec les scores partiels connus (`score_store`
-                n'a que les pseudos déjà scorés) pour que chaque joueur
-                présent apparaisse, à 0 par défaut. `Scoreboard.tsx` ne lit
-                que `.id`/`.name`/`.score` — les autres champs `Team` sont
-                des valeurs de remplissage sans effet sur le rendu. */}
-            <Scoreboard
-              teams={players.map((p) => ({
-                // `Team.id` sert de clé React dans `Scoreboard.tsx` (pas de
-                // vrai id numérique côté blindtest, pas de `Player` DB table).
-                // Dérivé du pseudo (hash stable), pas de l'index dans
-                // `players` : `players` vient de `Object.keys` du dict de
-                // connexions côté serveur, dont l'ordre bouge à chaque
-                // (re)connexion — un id basé sur l'index ferait remonter
-                // toute la liste sans raison à chaque reconnexion d'un tiers.
-                id: hashPseudo(p),
-                name: p,
-                score: scores[p] ?? 0,
-                game_session_id: 0,
-                players: [],
-              }))}
-            />
+            {/* Placé en bas (retour utilisateur) : en haut, avant la devinette,
+                son rôle n'était pas clair. */}
+            {liveScoreboard}
           </div>
         ) : (
           <div className="space-y-4">

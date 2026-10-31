@@ -8,6 +8,7 @@ import shutil
 from pathlib import Path
 
 import pytest
+from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
@@ -39,6 +40,19 @@ def engine(tmp_path):
     eng = _make_engine(tmp_path / "blindtest.db")
     yield eng
     eng.dispose()
+
+
+def _create_legacy_db(engine):
+    """Une DB d'avant Alembic : le schéma baseline, sans `alembic_version`.
+    `create_all` ne convient plus, les modèles ont évolué depuis."""
+    with engine.begin() as conn:
+        command.upgrade(migrations._alembic_config(conn), BASELINE_REVISION)
+        conn.execute(text("DROP TABLE alembic_version"))
+
+
+def _columns(engine):
+    inspector = inspect(engine)
+    return {t: [(c["name"], c["nullable"]) for c in inspector.get_columns(t)] for t in TABLES}
 
 
 def _head_revision(script_location=None):
@@ -101,30 +115,38 @@ def test_head_schema_matches_models(engine):
     assert diff == []
 
 
-def test_baseline_matches_create_all_schema(tmp_path, engine):
-    """La baseline reproduit exactement le schéma produit jusqu'ici par
-    `create_all` (tables, colonnes, FK, contraintes uniques, index)."""
+def test_head_columns_match_create_all(tmp_path, engine):
+    """Le texte SQL diffère depuis le premier `ADD COLUMN`, pas les colonnes."""
     upgrade_blindtest_db(engine)
 
-    legacy = _make_engine(tmp_path / "legacy.db")
-    Base.metadata.create_all(bind=legacy)
+    reference = _make_engine(tmp_path / "reference.db")
+    Base.metadata.create_all(bind=reference)
     try:
-        assert _schema(engine) == _schema(legacy)
+        assert _columns(engine) == _columns(reference)
     finally:
-        legacy.dispose()
+        reference.dispose()
 
 
 def test_legacy_db_is_stamped_without_touching_data(engine):
-    Base.metadata.create_all(bind=engine)
+    _create_legacy_db(engine)
     _seed(engine)
-    schema_before = _schema(engine)
     counts_before = _counts(engine)
 
     upgrade_blindtest_db(engine)
 
     assert _version(engine) == _head_revision()
     assert _counts(engine) == counts_before
-    assert _schema(engine) == schema_before
+
+
+def test_existing_games_stay_in_owner_mode(engine):
+    _create_legacy_db(engine)
+    _seed(engine)
+
+    upgrade_blindtest_db(engine)
+
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT mode FROM games")).scalars().all() == ["owner"]
+        assert conn.exec_driver_sql("PRAGMA foreign_key_check").all() == []
 
 
 def test_already_managed_db_second_run_is_noop(engine):
@@ -182,9 +204,10 @@ def test_future_revision_is_applied_on_restart(tmp_path, engine, monkeypatch):
     """Critère d'acceptation : une révision ajoutée plus tard est appliquée
     au redémarrage sur une DB existante, sans étape manuelle — y compris une
     opération batch qui recrée une table référencée par des FK."""
-    Base.metadata.create_all(bind=engine)  # DB legacy, comme la prod
+    _create_legacy_db(engine)  # comme la prod
     _seed(engine)
     upgrade_blindtest_db(engine)
+    previous_head = _head_revision()
 
     script_dir = tmp_path / "alembic_blindtest"
     shutil.copytree(migrations._SCRIPT_LOCATION, script_dir, ignore=shutil.ignore_patterns("__pycache__"))
@@ -194,7 +217,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "c0ffee000001"
-down_revision = "{BASELINE_REVISION}"
+down_revision = "{previous_head}"
 branch_labels = None
 depends_on = None
 

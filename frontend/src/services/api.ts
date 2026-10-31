@@ -6,8 +6,12 @@ import type {
   AnswerCellResponse,
   Theme,
   QualificationStatus,
+  BlindtestClassicPlaylistResponse,
+  BlindtestClassicSource,
   BlindtestGameCreateResponse,
+  BlindtestMode,
   BlindtestPlaylistResponse,
+  BlindtestPreset,
 } from '../types'
 
 const API_BASE = '/api'
@@ -965,8 +969,11 @@ export async function adminResolveBlindtestTrack(trackId: number, youtubeUrl: st
 
 // === Blind-test — lobby / connexion à une partie (Story 2.1) ===
 
-export async function createBlindtestGame() {
-  return fetchApi<BlindtestGameCreateResponse>('/blindtest/games', { method: 'POST' })
+export async function createBlindtestGame(mode: BlindtestMode = 'owner') {
+  return fetchApi<BlindtestGameCreateResponse>('/blindtest/games', {
+    method: 'POST',
+    body: JSON.stringify({ mode }),
+  })
 }
 
 // Story 2.2 : import scopé à une partie — gameCode/pseudo sont toujours
@@ -974,6 +981,30 @@ export async function createBlindtestGame() {
 // qu'une fois `joined`, pseudo/code donc toujours connus côté client).
 export async function importBlindtestPlaylist(url: string, gameCode: string, pseudo: string) {
   return fetchApi<BlindtestPlaylistResponse>('/blindtest/playlists', {
+    method: 'POST',
+    body: JSON.stringify({ url, game_code: gameCode, pseudo }),
+  })
+}
+
+// === Blind test classique (spec-blindtest-classique) ===
+
+export async function getBlindtestPresets() {
+  return fetchApi<BlindtestPreset[]>('/blindtest/presets')
+}
+
+export async function selectBlindtestPreset(gameCode: string, slug: string, pseudo: string) {
+  return fetchApi<BlindtestClassicSource>(`/blindtest/games/${encodeURIComponent(gameCode)}/preset`, {
+    method: 'POST',
+    body: JSON.stringify({ slug, pseudo }),
+  })
+}
+
+export async function getBlindtestSource(gameCode: string) {
+  return fetchApi<BlindtestClassicSource>(`/blindtest/games/${encodeURIComponent(gameCode)}/source`)
+}
+
+export async function importClassicPlaylist(url: string, gameCode: string, pseudo: string) {
+  return fetchApi<BlindtestClassicPlaylistResponse>('/blindtest/playlists', {
     method: 'POST',
     body: JSON.stringify({ url, game_code: gameCode, pseudo }),
   })

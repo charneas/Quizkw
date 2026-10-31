@@ -19,7 +19,7 @@ class Playlist(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     source_url = Column(String, nullable=False)
-    provider = Column(String, nullable=False)  # "deezer" | "youtube" (anciennes lignes : "spotify", provider retiré)
+    provider = Column(String, nullable=False)  # "deezer" | "youtube" | "preset" (anciennes lignes : "spotify", provider retiré)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     # Story 2.2 : scoping optionnel à une partie. `game_id` nul == pot
@@ -85,6 +85,9 @@ class Game(Base):
     cette partie, jamais réassigné ensuite — survit à une reconnexion sous
     le même pseudo puisque c'est une colonne DB, pas un état lié à un
     socket) et `current_track_id` (morceau tiré au dernier `start_game`).
+
+    `mode`, choisi à la création : "owner" (à qui appartient ce morceau ?) ou
+    "classic" (reconnaître le titre et l'artiste, spec-blindtest-classique).
     """
     __tablename__ = "games"
 
@@ -94,3 +97,4 @@ class Game(Base):
     host_pseudo = Column(String, nullable=True)
     current_track_id = Column(Integer, ForeignKey("tracks.id"), nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    mode = Column(String, nullable=False, default="owner", server_default="owner")

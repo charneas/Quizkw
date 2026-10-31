@@ -232,6 +232,34 @@ class TestYoutubeImport:
 
         assert len(tracks) == youtube._MAX_PAGES
 
+    def test_pagination_stops_when_a_page_brings_nothing_new(self):
+        """Les listes `RDCLAK...` de YouTube Music renvoient les mêmes pages en
+        boucle, avec toujours un `nextPageToken`."""
+        from app.blindtest.providers import youtube
+
+        resp = MagicMock(status_code=200)
+        resp.json.return_value = {
+            "items": [
+                {
+                    "snippet": {
+                        "title": "Song",
+                        "videoOwnerChannelTitle": "Channel",
+                        "resourceId": {"videoId": "vid-1"},
+                    }
+                }
+            ],
+            "nextPageToken": "always-another-page",
+        }
+
+        with patch("httpx.Client") as client_cls, \
+             patch.dict(os.environ, {"YOUTUBE_API_KEY": "fake-key"}):
+            client_get = client_cls.return_value.__enter__.return_value.get
+            client_get.return_value = resp
+            tracks = youtube.fetch_tracks("https://www.youtube.com/playlist?list=RDCLAK5uy_loop")
+
+        assert [track.youtube_video_id for track in tracks] == ["vid-1"]
+        assert client_get.call_count == 2
+
     def test_failure_after_first_track_cache_store_leaves_no_partial_write(self, blindtest_client, blindtest_engine):
         """`cache.store()` (appelé pour le premier morceau, déjà résolu en
         YouTube direct) ne doit plus commiter en interne : si la boucle

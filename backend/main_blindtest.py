@@ -6,14 +6,14 @@ branché sur la DB isolée `app.blindtest.database` (AD-7).
 import asyncio
 import logging
 import random
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app.auth import require_admin_session
-from app.blindtest import cache, matching, schemas
+from app.blindtest import cache, classic, matching, preset_tracks, presets, schemas
 from app.blindtest.database import SessionLocal, get_db
 from app.blindtest.errors import (
     PrivatePlaylistError,
@@ -21,7 +21,7 @@ from app.blindtest.errors import (
     ProviderUnavailableError,
     UnrecognizedUrlError,
 )
-from app.blindtest.game_connections import guess_store, played_tracks_store, score_store
+from app.blindtest.game_connections import classic_round_store, guess_store, played_tracks_store, score_store
 from app.blindtest.game_connections import manager as connection_manager
 from app.blindtest.import_pipeline import extract_tracks
 from app.blindtest.song_identity import SongTrack, group_songs
@@ -41,7 +41,7 @@ router = APIRouter()
 # Retour utilisateur (2026-09-14) : 30s jugé trop long pour un extrait —
 # raccourci à 20s (durée de l'extrait ET du round, les deux sont couplés
 # puisque l'audio joue pendant toute la fenêtre de devinette).
-ROUND_GUESS_SECONDS = 20
+ROUND_GUESS_SECONDS = classic.ROUND_SECONDS
 
 # Story 2.7 : nombre de rounds joués par défaut avant fin de partie
 # automatique (l'hôte peut désormais le personnaliser par partie, cf.
@@ -111,6 +111,18 @@ TRACK_POOL_RETRY_DELAY_SECONDS = 1.0
 # souvent sans jamais lui rapporter de points. Point fixe accordé à chaque
 # round, indépendamment de si les autres joueurs devinent juste ou pas.
 OWNER_ROUND_BONUS = 1
+
+CLASSIC_MODE = "classic"
+
+# Blind test classique (spec-blindtest-classique) : nombre de titres choisi par
+# l'hôte, validé côté serveur à chaque départ.
+MIN_CLASSIC_ROUNDS = 10
+MAX_CLASSIC_ROUNDS = 50
+# Une réponse plus longue n'a aucune chance d'être légitime et ferait travailler
+# la comparaison floue pour rien.
+MAX_ANSWER_CHARS = 200
+# Pause avant le titre suivant quand un round est annulé (vidéo bloquée).
+VOIDED_ROUND_DELAY_SECONDS = 2
 
 # Story 2.6 (revue de code) : référence forte vers la tâche `_round_timer` en
 # vol de chaque partie, indexée par `game_id`. `asyncio.create_task` ne garde
@@ -191,7 +203,43 @@ def _validate_scope(body: schemas.PlaylistImportRequest, db: Session) -> Game | 
     return game
 
 
-@router.post("/blindtest/playlists", response_model=schemas.PlaylistResponse, status_code=201)
+def _require_classic_host(game: Game, pseudo: str) -> None:
+    if pseudo.strip() != game.host_pseudo:
+        raise HTTPException(status_code=403, detail="Seul l'hôte choisit la playlist")
+
+
+def _replace_classic_source(db: Session, game: Game) -> None:
+    """Une partie classique joue une seule playlist : la nouvelle remplace
+    l'ancienne, dans la transaction de l'appelant (en lobby, aucun round ne
+    référence ces morceaux)."""
+    for playlist in db.query(Playlist).filter(Playlist.game_id == game.id).all():
+        db.delete(playlist)
+    db.flush()
+
+
+def _playlist_response(db: Session, playlist: Playlist):
+    """Les morceaux d'une partie classique sont les réponses du jeu : seuls les
+    comptes sortent."""
+    game = db.query(Game).filter(Game.id == playlist.game_id).first() if playlist.game_id else None
+    if game is None or game.mode != CLASSIC_MODE:
+        return playlist
+    full = schemas.PlaylistResponse.model_validate(playlist)
+    return schemas.RedactedPlaylistResponse(
+        id=full.id,
+        provider=full.provider,
+        game_id=full.game_id,
+        owner_pseudo=full.owner_pseudo,
+        track_count=len(full.tracks),
+        not_found_count=full.not_found_count,
+        truncated=full.truncated,
+    )
+
+
+@router.post(
+    "/blindtest/playlists",
+    response_model=Union[schemas.PlaylistResponse, schemas.RedactedPlaylistResponse],
+    status_code=201,
+)
 @limiter.limit("10/minute")
 def import_playlist(
     request: Request,
@@ -208,6 +256,8 @@ def import_playlist(
     provider inutile) puisqu'ils ne dépendent que de l'état DB/WS, jamais du
     contenu de la playlist."""
     game = _validate_scope(body, db)
+    if game and game.mode == CLASSIC_MODE:
+        _require_classic_host(game, body.pseudo)
 
     try:
         provider, extracted = extract_tracks(body.url)
@@ -231,6 +281,9 @@ def import_playlist(
     # déconnecter. Sans ce second contrôle, la playlist serait tout de même
     # committée et scopée à un game/pseudo devenu obsolète (revue de code).
     game = _validate_scope(body, db)
+    if game and game.mode == CLASSIC_MODE:
+        _require_classic_host(game, body.pseudo)
+        _replace_classic_source(db, game)
 
     playlist = Playlist(
         source_url=body.url,
@@ -270,19 +323,23 @@ def import_playlist(
     db.commit()
     db.refresh(playlist)
 
+    matching.mark_matching(playlist.id)
     background_tasks.add_task(matching.match_playlist_tracks, playlist.id)
 
-    return playlist
+    return _playlist_response(db, playlist)
 
 
-@router.get("/blindtest/playlists/{playlist_id}", response_model=schemas.PlaylistResponse)
+@router.get(
+    "/blindtest/playlists/{playlist_id}",
+    response_model=Union[schemas.PlaylistResponse, schemas.RedactedPlaylistResponse],
+)
 def get_playlist(playlist_id: int, db: Session = Depends(get_db)):
     """Permet au client de poller l'état de résolution (matching en tâche de
     fond) d'une playlist déjà importée."""
     playlist = db.query(Playlist).filter(Playlist.id == playlist_id).first()
     if not playlist:
         raise HTTPException(status_code=404, detail="Playlist introuvable")
-    return playlist
+    return _playlist_response(db, playlist)
 
 
 @admin_router.get("/tracks/unresolved", response_model=List[schemas.UnresolvedTrackResponse])
@@ -354,7 +411,11 @@ game_router = APIRouter()
 
 @game_router.post("/blindtest/games", response_model=schemas.GameCreateResponse, status_code=201)
 @limiter.limit("10/minute")
-def create_game(request: Request, db: Session = Depends(get_db)):
+def create_game(
+    request: Request,
+    body: Optional[schemas.GameCreateRequest] = None,
+    db: Session = Depends(get_db),
+):
     """Crée une partie de blind test avec un code unique à 6 caractères.
 
     Même boucle de génération-et-vérification de collision que
@@ -364,13 +425,16 @@ def create_game(request: Request, db: Session = Depends(get_db)):
     La vérification préalable (`filter(Game.code == code).first()`) laisse
     une fenêtre de course entre deux requêtes concurrentes : la contrainte
     unique sur `code` reste le garde-fou final, donc l'insertion elle-même
-    est protégée par une boucle de retry bornée sur `IntegrityError`."""
+    est protégée par une boucle de retry bornée sur `IntegrityError`.
+
+    Sans corps, la partie est en mode "owner"."""
+    mode = body.mode if body else "owner"
     for attempt in range(MAX_CODE_GENERATION_ATTEMPTS):
         code = generate_session_code()
         while db.query(Game).filter(Game.code == code).first():
             code = generate_session_code()
 
-        game = Game(code=code, phase="lobby")
+        game = Game(code=code, phase="lobby", mode=mode)
         db.add(game)
         try:
             db.commit()
@@ -381,6 +445,110 @@ def create_game(request: Request, db: Session = Depends(get_db)):
         return game
 
     raise HTTPException(status_code=500, detail="Impossible de générer un code de partie unique")
+
+
+def _classic_game_or_404(db: Session, code: str) -> Game:
+    game = db.query(Game).filter(Game.code == code.upper()).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Partie introuvable")
+    if game.mode != CLASSIC_MODE:
+        raise HTTPException(status_code=400, detail="Cette partie n'est pas en mode classique")
+    return game
+
+
+def _classic_playable_count(db: Session, game: Game) -> int:
+    """Nombre de chansons différentes prêtes à être jouées : un morceau reste
+    injouable tant que sa durée n'est pas connue."""
+    return sum(1 for copies in _unplayed_songs(db, game).values() if _drawable_tracks(game, copies))
+
+
+def _classic_source(db: Session, game: Game) -> schemas.ClassicSourceResponse:
+    playlist = db.query(Playlist).filter(Playlist.game_id == game.id).first()
+    if playlist is None:
+        return schemas.ClassicSourceResponse(name=None, playable_count=0)
+    preset = presets.preset_from_source_url(playlist.source_url)
+    return schemas.ClassicSourceResponse(
+        name=preset.name if preset else "Playlist importée",
+        playable_count=_classic_playable_count(db, game),
+        checking=matching.is_matching(playlist.id),
+    )
+
+
+@game_router.get("/blindtest/presets", response_model=List[schemas.PresetResponse])
+def list_presets():
+    return [
+        schemas.PresetResponse(slug=preset.slug, name=preset.name, track_count=len(presets.load_tracks(preset)))
+        for preset in presets.available_presets()
+    ]
+
+
+def _check_preset_selection(game: Game, pseudo: str) -> None:
+    if game.phase != "lobby":
+        raise HTTPException(status_code=400, detail="La partie n'est plus en phase de lobby")
+    _require_classic_host(game, pseudo)
+    if not connection_manager.has_pseudo(game.code, pseudo.strip()):
+        raise HTTPException(status_code=400, detail="Pseudo non connecté au lobby de cette partie")
+
+
+def _preset_tracks(preset: presets.Preset) -> List[dict]:
+    """La liste du moment, ou la copie locale si YouTube ne répond pas ou
+    renvoie trop peu de morceaux pour une partie."""
+    try:
+        tracks = preset_tracks.live_tracks(preset)
+    except Exception as exc:
+        # Le type seul : le message d'une erreur httpx contient l'URL, donc la
+        # clé API. Toute panne, même une réponse inattendue, doit se replier.
+        logger.warning("Preset %s lu depuis la copie locale : %s", preset.slug, type(exc).__name__)
+        return presets.load_tracks(preset)
+    if len(tracks) < MIN_CLASSIC_ROUNDS:
+        logger.warning("Preset %s lu depuis la copie locale : %s morceaux en direct", preset.slug, len(tracks))
+        return presets.load_tracks(preset)
+    return tracks
+
+
+@game_router.post("/blindtest/games/{code}/preset", response_model=schemas.ClassicSourceResponse)
+@limiter.limit("20/minute")
+def select_preset(request: Request, code: str, body: schemas.PresetSelectRequest, db: Session = Depends(get_db)):
+    """L'hôte joue une playlist préparée, relue en direct : ses durées arrivent
+    avec la liste, rien ne part en tâche de fond."""
+    game = _classic_game_or_404(db, code)
+    _check_preset_selection(game, body.pseudo)
+    preset = presets.find_preset(body.slug)
+    if preset is None:
+        raise HTTPException(status_code=404, detail="Playlist préparée introuvable")
+
+    # Avant toute écriture : l'aller-retour YouTube ne doit pas tenir une
+    # transaction ouverte, ni effacer la source actuelle s'il échoue. L'hôte ou
+    # la phase ont pu changer pendant l'attente.
+    db.rollback()
+    tracks = _preset_tracks(preset)
+    db.refresh(game)
+    _check_preset_selection(game, body.pseudo)
+
+    _replace_classic_source(db, game)
+    playlist = Playlist(
+        source_url=preset.source_url,
+        provider="preset",
+        game_id=game.id,
+        owner_pseudo=game.host_pseudo,
+    )
+    db.add(playlist)
+    db.flush()
+    for item in tracks:
+        db.add(Track(
+            playlist_id=playlist.id,
+            title=item["title"],
+            artist=item["artist"],
+            youtube_video_id=item["youtube_video_id"],
+            duration_seconds=item["duration_seconds"],
+        ))
+    db.commit()
+    return _classic_source(db, game)
+
+
+@game_router.get("/blindtest/games/{code}/source", response_model=schemas.ClassicSourceResponse)
+def get_classic_source(code: str, db: Session = Depends(get_db)):
+    return _classic_source(db, _classic_game_or_404(db, code))
 
 
 def _draw_eligible_track(db: Session, game: Game) -> Optional[Track]:
@@ -404,7 +572,11 @@ def _draw_eligible_track(db: Session, game: Game) -> Optional[Track]:
     morceaux d'un joueur au fil de ses déconnexions/reconnexions, sans état
     supplémentaire à gérer. `.in_([])` (aucun joueur connecté) est un SQL
     bien défini — contrairement au piège `notin_([])` documenté ci-dessus,
-    pas besoin de garde explicite ici."""
+    pas besoin de garde explicite ici.
+
+    En mode classique, personne ne possède les morceaux : la connexion des
+    joueurs n'entre pas en compte."""
+    is_classic = game.mode == CLASSIC_MODE
     connected_pseudos = set(connection_manager.players(game.code))
     # Tirage en deux temps : la chanson d'abord, la copie ensuite. Une chanson
     # présente dans trois playlists n'a pas trois fois plus de chances de
@@ -412,8 +584,8 @@ def _draw_eligible_track(db: Session, game: Game) -> Optional[Track]:
     # même si la copie jouable est celle d'un joueur déconnecté.
     drawable_songs = []
     for copies in _unplayed_songs(db, game).values():
-        playable = [track for track, _ in copies if _is_playable(track)]
-        if playable and any(playlist.owner_pseudo in connected_pseudos for _, playlist in copies):
+        playable = _drawable_tracks(game, copies)
+        if playable and (is_classic or any(playlist.owner_pseudo in connected_pseudos for _, playlist in copies)):
             drawable_songs.append(playable)
     if not drawable_songs:
         return None
@@ -422,6 +594,26 @@ def _draw_eligible_track(db: Session, game: Game) -> Optional[Track]:
 
 def _is_playable(track: Track) -> bool:
     return bool(track.youtube_video_id) and bool(track.duration_seconds) and track.duration_seconds > 0
+
+
+def _classic_reference(track: Track, playlist: Playlist) -> classic.Reference:
+    return classic.build_reference(track.title, track.artist, structured=playlist.provider != "youtube")
+
+
+def _drawable_tracks(game: Game, copies: list) -> list:
+    """Les copies jouables d'une chanson. En mode classique, il faut aussi que
+    le titre et l'artiste puissent être trouvés : une chaîne vide ne laisserait
+    aucune réponse possible pour l'artiste."""
+    tracks = []
+    for track, playlist in copies:
+        if not _is_playable(track):
+            continue
+        if game.mode == CLASSIC_MODE:
+            reference = _classic_reference(track, playlist)
+            if not reference.titles or not reference.artists:
+                continue
+        tracks.append(track)
+    return tracks
 
 
 def _game_tracks(db: Session, game: Game) -> list:
@@ -478,11 +670,61 @@ def _has_unplayed_track(db: Session, game: Game) -> bool:
     temporairement vide parce que les propriétaires restants sont
     déconnectés. `_advance_round` s'en sert pour décider si la fin de partie
     est définitive ou seulement transitoire."""
-    return any(
-        _is_playable(track)
-        for copies in _unplayed_songs(db, game).values()
-        for track, _ in copies
-    )
+    return any(_drawable_tracks(game, copies) for copies in _unplayed_songs(db, game).values())
+
+
+def _game_state_extra(game: Game) -> dict:
+    return {"phase": game.phase, "host_pseudo": game.host_pseudo, "mode": game.mode}
+
+
+def _round_payload(game: Game, track: Track, start_seconds: int) -> dict:
+    """Payload `round_started`. En mode classique, le titre et l'artiste sont la
+    réponse : ils restent côté serveur, et le chrono de la manche démarre ici,
+    juste avant la diffusion."""
+    if game.mode == CLASSIC_MODE:
+        payload = {
+            "videoId": track.youtube_video_id,
+            "startSeconds": start_seconds,
+            "trackId": track.id,
+            "durationSeconds": ROUND_GUESS_SECONDS,
+        }
+        classic_round_store.begin(game.id, track.id, _classic_reference(track, track.playlist), payload)
+        return payload
+    return {
+        "videoId": track.youtube_video_id,
+        "startSeconds": start_seconds,
+        "title": track.title,
+        "artist": track.artist,
+        # Identifiant du round renvoyé par le client dans chaque
+        # `guess_submitted` : une devinette en retard (round précédent) est
+        # ignorée par `_handle_guess_submitted`.
+        "trackId": track.id,
+    }
+
+
+def _classic_start_refusal(db: Session, game: Game, requesting_pseudo: str, payload: Optional[dict]) -> Optional[dict]:
+    """Motif du refus d'un `start_game` classique, à montrer à l'hôte. `None`
+    si le départ peut se faire, ou si ce message ne le concerne pas (autre mode,
+    non-hôte, mauvaise phase : `_handle_start_game` reste un no-op silencieux)."""
+    db.refresh(game)
+    if game.mode != CLASSIC_MODE or requesting_pseudo != game.host_pseudo or game.phase != "lobby":
+        return None
+
+    rounds = payload.get("rounds") if isinstance(payload, dict) else None
+    if not isinstance(rounds, int) or isinstance(rounds, bool) or not MIN_CLASSIC_ROUNDS <= rounds <= MAX_CLASSIC_ROUNDS:
+        return {
+            "reason": "invalid_rounds",
+            "message": f"Choisis entre {MIN_CLASSIC_ROUNDS} et {MAX_CLASSIC_ROUNDS} titres.",
+        }
+
+    playable = _classic_playable_count(db, game)
+    if playable < MIN_CLASSIC_ROUNDS:
+        return {
+            "reason": "pool_too_small",
+            "message": f"Seulement {playable} titre(s) jouable(s) : il en faut au moins {MIN_CLASSIC_ROUNDS}.",
+            "playable_count": playable,
+        }
+    return None
 
 
 def _handle_start_game(db: Session, game: Game, requesting_pseudo: str, payload: Optional[dict] = None) -> Optional[dict]:
@@ -511,7 +753,11 @@ def _handle_start_game(db: Session, game: Game, requesting_pseudo: str, payload:
         return None
 
     rounds = payload.get("rounds") if isinstance(payload, dict) else None
-    if isinstance(rounds, int) and not isinstance(rounds, bool) and MIN_ROUNDS_PER_GAME <= rounds <= MAX_ROUNDS_PER_GAME:
+    if game.mode == CLASSIC_MODE:
+        # Déjà validé par `_classic_start_refusal`. Plus de titres demandés que
+        # de jouables : la partie joue tout ce qu'il y a.
+        _rounds_target[game.id] = min(rounds, _classic_playable_count(db, game))
+    elif isinstance(rounds, int) and not isinstance(rounds, bool) and MIN_ROUNDS_PER_GAME <= rounds <= MAX_ROUNDS_PER_GAME:
         _rounds_target[game.id] = rounds
 
     track = _draw_eligible_track(db, game)
@@ -540,16 +786,7 @@ def _handle_start_game(db: Session, game: Game, requesting_pseudo: str, payload:
     # et serait scorée à tort par Story 2.6/2.7 (Boundaries de la spec).
     guess_store.reset_round(game.id)
 
-    return {
-        "videoId": track.youtube_video_id,
-        "startSeconds": start_seconds,
-        "title": track.title,
-        "artist": track.artist,
-        # Identifiant du round renvoyé par le client dans chaque
-        # `guess_submitted` : une devinette en retard (round précédent) est
-        # ignorée par `_handle_guess_submitted`.
-        "trackId": track.id,
-    }
+    return _round_payload(game, track, start_seconds)
 
 
 def _handle_restart_game(db: Session, game: Game, requesting_pseudo: str) -> bool:
@@ -582,6 +819,7 @@ def _handle_restart_game(db: Session, game: Game, requesting_pseudo: str) -> boo
     played_tracks_store.reset_game(game.id)
     score_store.reset_game(game.id)
     guess_store.reset_round(game.id)
+    classic_round_store.finish(game.id)
 
     return True
 
@@ -604,6 +842,31 @@ def _resolve_owner_pseudos(db: Session, game: Game) -> list[str]:
         if songs[track.id] == current_song and playlist.owner_pseudo
     } - {drawn_owner}
     return ([drawn_owner] if drawn_owner else []) + sorted(others)
+
+
+def _classic_round_points(finds: dict) -> int:
+    return classic.points(
+        classic.TITLE in finds,
+        classic.ARTIST in finds,
+        (finds.get(classic.TITLE, 0), finds.get(classic.ARTIST, 0)),
+    )
+
+
+def _close_classic_round(game: Game, game_code: str) -> dict:
+    """Payload `reveal` classique. Les points sont déjà dans `score_store`,
+    ajoutés à chaque découverte : il ne reste qu'à faire apparaître au classement
+    les joueurs qui n'ont rien trouvé."""
+    current = classic_round_store.finish(game.id)
+    deltas = {}
+    for pseudo in set(connection_manager.players(game_code)) | set(current.finds):
+        score_store.add(game.id, pseudo, 0)
+        deltas[pseudo] = _classic_round_points(current.found_by(pseudo))
+    return {
+        "title": current.reference.title,
+        "artist": current.reference.artist,
+        "deltas": deltas,
+        "scores": score_store.snapshot(game.id),
+    }
 
 
 def _close_round(db: Session, game: Game, game_code: str) -> Optional[dict]:
@@ -654,6 +917,9 @@ def _close_round(db: Session, game: Game, game_code: str) -> Optional[dict]:
     # que `round_started` — un second aller-retour DB ici n'apporterait rien
     # et ajoute une fenêtre de contention inutile avec l'autre session sur
     # la même connexion (StaticPool des tests).
+    if game.mode == CLASSIC_MODE:
+        return _close_classic_round(game, game_code)
+
     owner_pseudos = _resolve_owner_pseudos(db, game)
 
     # Union des joueurs actuellement présents et de ceux ayant une devinette
@@ -759,7 +1025,7 @@ async def _round_timer(game_id: int, game_code: str, track_id: int) -> None:
 _advance_round_tasks: dict = {}
 
 
-def _schedule_advance_round(game_id: int, game_code: str) -> None:
+def _schedule_advance_round(game_id: int, game_code: str, delay: Optional[float] = None) -> None:
     """Démarre `_advance_round` en tâche de fond détachée (Story 2.7, revue
     de code) et l'enregistre dans `_advance_round_tasks` — mirroir exact de
     `_schedule_round_timer`/`_round_timer_tasks`. Nécessaire car
@@ -768,7 +1034,7 @@ def _schedule_advance_round(game_id: int, game_code: str) -> None:
     cas avant cette revue), elle bloquerait cette connexion — traitement des
     messages suivants, détection de déconnexion — pendant toute la durée du
     sommeil."""
-    task = asyncio.create_task(_advance_round(game_id, game_code))
+    task = asyncio.create_task(_advance_round(game_id, game_code, delay))
     _advance_round_tasks[game_id] = task
     task.add_done_callback(
         lambda t, gid=game_id: (
@@ -779,7 +1045,7 @@ def _schedule_advance_round(game_id: int, game_code: str) -> None:
     )
 
 
-async def _advance_round(game_id: int, game_code: str) -> None:
+async def _advance_round(game_id: int, game_code: str, delay: Optional[float] = None) -> None:
     """Enchaînement automatique serveur après un `reveal` (Story 2.7) :
     laisse le reveal affiché `REVEAL_DISPLAY_SECONDS`, puis tire soit le
     round suivant (`game_state {phase: next_round}` puis `round_started`),
@@ -800,8 +1066,11 @@ async def _advance_round(game_id: int, game_code: str) -> None:
     revendication atomique de `_close_round` (jamais depuis le chemin
     perdant), donc ce guard ne devrait normalement jamais se déclencher — il
     reste néanmoins la même défense en profondeur que le reste de ce
-    module."""
-    await asyncio.sleep(REVEAL_DISPLAY_SECONDS)
+    module.
+
+    `delay` remplace `REVEAL_DISPLAY_SECONDS` quand il n'y a pas de reveal à
+    laisser affiché (round annulé)."""
+    await asyncio.sleep(REVEAL_DISPLAY_SECONDS if delay is None else delay)
 
     db = SessionLocal()
     try:
@@ -846,11 +1115,7 @@ async def _advance_round(game_id: int, game_code: str) -> None:
             # aucune divergence possible, les deux lisent `score_store.snapshot`.
             await connection_manager.broadcast_game_state(
                 game_code,
-                {
-                    "phase": "ended",
-                    "host_pseudo": game.host_pseudo,
-                    "final_scores": score_store.snapshot(game.id),
-                },
+                {**_game_state_extra(game), "final_scores": score_store.snapshot(game.id)},
                 game_id=game.id,
             )
             return
@@ -860,7 +1125,7 @@ async def _advance_round(game_id: int, game_code: str) -> None:
         # temps au client d'afficher un indicateur "round suivant..." (cf.
         # Code Map).
         await connection_manager.broadcast_game_state(
-            game_code, {"phase": "next_round", "host_pseudo": game.host_pseudo}, game_id=game.id
+            game_code, {**_game_state_extra(game), "phase": "next_round"}, game_id=game.id
         )
 
         start_seconds = _pick_start_seconds(track.duration_seconds)
@@ -882,19 +1147,9 @@ async def _advance_round(game_id: int, game_code: str) -> None:
         # sur celle de la devinette), rendant la partie injouable au-delà du
         # premier round.
         await connection_manager.broadcast_game_state(
-            game_code, {"phase": "round_started", "host_pseudo": game.host_pseudo}, game_id=game.id
+            game_code, _game_state_extra(game), game_id=game.id
         )
-        await connection_manager.broadcast(
-            game_code,
-            "round_started",
-            {
-                "videoId": track.youtube_video_id,
-                "startSeconds": start_seconds,
-                "title": track.title,
-                "artist": track.artist,
-                "trackId": track.id,
-            },
-        )
+        await connection_manager.broadcast(game_code, "round_started", _round_payload(game, track, start_seconds))
         _schedule_round_timer(game.id, game_code, track.id)
     except Exception:
         # Tâche de fond détachée : rien d'autre n'observe une exception levée
@@ -996,6 +1251,122 @@ async def _handle_guess_submitted(db: Session, game: Game, pseudo: str, payload:
     # normalement à la clôture par le minuteur.
 
 
+def _current_classic_round(db: Session, game: Game, payload: Optional[dict]):
+    """Le round classique visé par un message client, ou `None` s'il n'est plus
+    d'actualité : mauvais mode, round clos, ou `track_id` d'un round passé."""
+    db.refresh(game)
+    if game.mode != CLASSIC_MODE or game.phase != "round_started":
+        return None
+    track_id = payload.get("track_id") if isinstance(payload, dict) else None
+    if not isinstance(track_id, int) or isinstance(track_id, bool):
+        return None
+    current = classic_round_store.get(game.id)
+    if current is None or track_id != game.current_track_id or track_id != current.track_id:
+        return None
+    return current
+
+
+async def _handle_answer_submitted(db: Session, game: Game, pseudo: str, payload: dict, game_code: str) -> None:
+    """Juge une réponse tapée. Le texte est la seule donnée lue : le verdict et
+    le temps sont calculés ici, jamais reçus du client. `answer_result` est
+    privé et ne dit que ce qui est trouvé, pas ce qu'il fallait répondre.
+
+    Un round fermé, un élément déjà trouvé ou un texte invalide ne donnent lieu
+    à aucune réponse (no-op silencieux, cf. matrice I/O)."""
+    current = _current_classic_round(db, game, payload)
+    if current is None:
+        return
+    text = payload.get("text")
+    if not isinstance(text, str) or not text.strip() or len(text) > MAX_ANSWER_CHARS:
+        return
+
+    already_found = current.found_by(pseudo)
+    added = classic.match_answer(text, current.reference, skip=already_found)
+    if not added and classic.match_answer(text, current.reference):
+        return
+
+    points_before = _classic_round_points(already_found)
+    current.record(pseudo, added)
+    finds = current.found_by(pseudo)
+    gained = _classic_round_points(finds) - points_before
+    # Avant tout `await` : le score ne doit pas pouvoir manquer au reveal.
+    score_store.add(game.id, pseudo, gained)
+
+    await connection_manager.send_to(
+        game_code,
+        pseudo,
+        "answer_result",
+        {"track_id": current.track_id, "added": sorted(added), "found": sorted(finds), "points": gained},
+    )
+    if added:
+        await connection_manager.broadcast(game_code, "scores_updated", {"scores": score_store.snapshot(game.id)})
+
+
+async def _handle_video_error(db: Session, game: Game, pseudo: str, payload: dict, game_code: str) -> None:
+    """Un joueur signale que la vidéo ne se lance pas. Dès que la moitié des
+    joueurs connectés l'a signalé, le round est annulé : les points déjà marqués
+    sont retirés et le morceau reste écarté, mais le round ne compte pas."""
+    current = _current_classic_round(db, game, payload)
+    if current is None:
+        return
+    current.video_errors.add(pseudo)
+    connected = set(connection_manager.players(game_code))
+    if len(current.video_errors & connected) * 2 < len(connected):
+        return
+
+    # Même verrou que `_close_round` : un seul appelant clôt le round.
+    claimed = (
+        db.query(Game)
+        .filter(Game.id == game.id, Game.phase == "round_started")
+        .update({"phase": "reveal"})
+    )
+    db.commit()
+    if claimed == 0:
+        return
+    _cancel_round_timer(game.id)
+
+    voided = classic_round_store.finish(game.id)
+    for player, finds in voided.finds.items():
+        score_store.add(game.id, player, -_classic_round_points(finds))
+    _rounds_target[game.id] = _get_rounds_target(game.id) + 1
+
+    code = payload.get("code")
+    logger.warning(
+        "Round classique annulé (code=%s) : vidéo %s, erreur IFrame %s",
+        game_code, voided.payload["videoId"], code if isinstance(code, int) else None,
+    )
+
+    await connection_manager.broadcast(game_code, "round_voided", {"scores": score_store.snapshot(game.id)})
+    _schedule_advance_round(game.id, game_code, VOIDED_ROUND_DELAY_SECONDS)
+
+
+async def _send_classic_round_to_joiner(game: Game, game_code: str, pseudo: str) -> None:
+    """Un joueur qui arrive ou recharge la page en plein round reprend la
+    musique au bon endroit et retrouve ce qu'il avait déjà trouvé."""
+    current = classic_round_store.get(game.id)
+    if current is None:
+        return
+    elapsed = current.elapsed()
+    await connection_manager.send_to(
+        game_code,
+        pseudo,
+        "round_started",
+        {
+            **current.payload,
+            "startSeconds": current.payload["startSeconds"] + int(elapsed),
+            "elapsedSeconds": elapsed,
+        },
+    )
+    found = sorted(current.found_by(pseudo))
+    if found:
+        await connection_manager.send_to(
+            game_code,
+            pseudo,
+            "answer_result",
+            {"track_id": current.track_id, "added": [], "found": found, "points": 0, "restored": True},
+        )
+
+
 @game_router.websocket("/blindtest/games/{code}/ws")
 async def game_lobby_ws(websocket: WebSocket, code: str, db: Session = Depends(get_db)):
     """Canal WS de lobby : `join {pseudo}` -> diffusion `game_state
@@ -1066,7 +1437,7 @@ async def game_lobby_ws(websocket: WebSocket, code: str, db: Session = Depends(g
         # `ended` est un état terminal permanent, contrairement à
         # `round_started`/`reveal` qui restent sans rejeu pour un (re)joignant
         # (limitation acceptée, inchangée).
-        join_state_extra = {"phase": game.phase, "host_pseudo": game.host_pseudo}
+        join_state_extra = _game_state_extra(game)
         if game.phase == "ended":
             join_state_extra["final_scores"] = score_store.snapshot(game.id)
         elif game.phase == "round_started" and game.current_track_id is not None:
@@ -1075,6 +1446,8 @@ async def game_lobby_ws(websocket: WebSocket, code: str, db: Session = Depends(g
             join_state_extra["track_id"] = game.current_track_id
 
         await connection_manager.broadcast_game_state(game_code, join_state_extra, game_id=game.id)
+        if game.mode == CLASSIC_MODE and game.phase == "round_started":
+            await _send_classic_round_to_joiner(game, game_code, pseudo)
 
         while True:
             try:
@@ -1087,6 +1460,10 @@ async def game_lobby_ws(websocket: WebSocket, code: str, db: Session = Depends(g
             # pas `start_game` garde le comportement tolérant no-op de la
             # Story 2.1 (pas d'autre message client->serveur avant 2.5).
             if isinstance(raw, dict) and raw.get("type") == "start_game":
+                refusal = _classic_start_refusal(db, game, pseudo, raw.get("payload"))
+                if refusal is not None:
+                    await connection_manager.send_to(game_code, pseudo, "start_refused", refusal)
+                    continue
                 round_payload = _handle_start_game(db, game, pseudo, raw.get("payload"))
                 if round_payload is not None:
                     # Critique (revue de code, Story 2.7) : le client ne met
@@ -1097,7 +1474,7 @@ async def game_lobby_ws(websocket: WebSocket, code: str, db: Session = Depends(g
                     # tant qu'aucun round suivant n'existait ; désormais requis
                     # pour que l'UI de devinette apparaisse à chaque round.
                     await connection_manager.broadcast_game_state(
-                        game_code, {"phase": "round_started", "host_pseudo": game.host_pseudo}, game_id=game.id
+                        game_code, _game_state_extra(game), game_id=game.id
                     )
                     await connection_manager.broadcast(game_code, "round_started", round_payload)
                     # Story 2.6 : minuteur de clôture démarré en tâche de
@@ -1116,6 +1493,10 @@ async def game_lobby_ws(websocket: WebSocket, code: str, db: Session = Depends(g
                 # diffuse elle-même le `reveal` puis enchaîne (round suivant
                 # ou fin de partie) via `_close_round_and_advance`.
                 await _handle_guess_submitted(db, game, pseudo, raw.get("payload"), game_code)
+            elif isinstance(raw, dict) and raw.get("type") == "answer_submitted":
+                await _handle_answer_submitted(db, game, pseudo, raw.get("payload"), game_code)
+            elif isinstance(raw, dict) and raw.get("type") == "video_error":
+                await _handle_video_error(db, game, pseudo, raw.get("payload"), game_code)
             elif isinstance(raw, dict) and raw.get("type") == "restart_game":
                 # Retour utilisateur (2026-09-14) : "rejouer dans le même
                 # salon" — mêmes joueurs/playlists, nouveau `game_state
@@ -1123,7 +1504,7 @@ async def game_lobby_ws(websocket: WebSocket, code: str, db: Session = Depends(g
                 # lobby (dont le bouton "Démarrer la partie" pour l'hôte).
                 if _handle_restart_game(db, game, pseudo):
                     await connection_manager.broadcast_game_state(
-                        game_code, {"phase": "lobby", "host_pseudo": game.host_pseudo}, game_id=game.id
+                        game_code, _game_state_extra(game), game_id=game.id
                     )
     except WebSocketDisconnect:
         pass
@@ -1158,5 +1539,5 @@ async def game_lobby_ws(websocket: WebSocket, code: str, db: Session = Depends(g
                 )
 
             await connection_manager.broadcast_game_state(
-                game_code, {"phase": game.phase, "host_pseudo": game.host_pseudo}, game_id=game.id
+                game_code, _game_state_extra(game), game_id=game.id
             )
