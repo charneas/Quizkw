@@ -102,15 +102,15 @@ export default function ClassicLobbyPanel({
         </ul>
       </div>
 
-      <div className="card px-4 py-3" role="status">
+      <div role="status">
         {source?.name ? (
-          <>
-            <p className="font-semibold">{source.name}</p>
-            <p className="text-sm text-text-muted">
+          <p className="text-text-muted">
+            Playlist : <strong className="text-text">{source.name}</strong> —{' '}
+            <span>
               {playable} titre{playable > 1 ? 's' : ''} jouable{playable > 1 ? 's' : ''}
-              {stillLoading ? ' — vérification en cours…' : ''}
-            </p>
-          </>
+            </span>
+            {stillLoading ? ' — vérification en cours…' : ''}
+          </p>
         ) : (
           <p className="text-text-muted">
             {isHost ? 'Choisis une playlist pour commencer.' : "L'hôte choisit la playlist…"}
