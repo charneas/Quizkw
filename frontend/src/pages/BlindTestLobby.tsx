@@ -443,7 +443,14 @@ export default function BlindTestLobby() {
         ) : reveal ? (
           <div className="space-y-4">
             <p className="text-text-muted">
-              Le morceau avait été importé par <strong>{reveal.owner_pseudo}</strong>.
+              Le morceau avait été importé par{' '}
+              {(reveal.owner_pseudos ?? [reveal.owner_pseudo]).map((owner, index, owners) => (
+                <span key={owner}>
+                  {index > 0 && (index === owners.length - 1 ? ' et ' : ', ')}
+                  <strong>{owner}</strong>
+                </span>
+              ))}
+              .
             </p>
             <div className="space-y-2">
               <p className="text-text-muted">Scores cumulés :</p>

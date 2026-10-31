@@ -405,6 +405,9 @@ export interface BlindtestRoundStartedPayload {
 // de round (epic-2-context.md : convention "état complet" de `game_state`).
 export interface BlindtestRevealPayload {
   owner_pseudo: string
+  // Tous les joueurs qui ont cette chanson dans leur playlist, `owner_pseudo`
+  // en tête. Optionnel : un serveur pas encore à jour ne l'envoie pas.
+  owner_pseudos?: string[]
   scores: Record<string, number>
   // Story 5 (spec-blindtest-integration-ui) : différentiel de CE round par
   // joueur (nice-to-have, animation de fin de manche) — distinct de `scores`
