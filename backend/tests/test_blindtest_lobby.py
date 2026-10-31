@@ -292,27 +292,33 @@ class TestDisconnect:
         # que ce cas peut vérifier (aucun autre client à qui broadcaster).
 
 
-def _add_track(engine, game_code: str, *, youtube_video_id="abc123", duration_seconds=100, owner_pseudo="Alice") -> None:
+def _add_track(
+    engine, game_code: str, *, youtube_video_id="abc123", duration_seconds=100, owner_pseudo="Alice",
+    title=None, artist=None, provider="youtube",
+) -> None:
     """Insère directement une `Playlist`+`Track` scopées à `game_code`, sans
     passer par le pipeline d'import (hors scope de cette story) — juste ce
     qu'il faut pour rendre un morceau éligible (ou non) au tirage de round.
 
     `owner_pseudo` (Story 2.6) était jusqu'ici toujours "Alice" en dur —
     rendu surchargeable pour les tests de reveal/score qui ont besoin d'un
-    propriétaire distinct de l'hôte."""
+    propriétaire distinct de l'hôte.
+
+    Sans `title`, le titre dérive de `youtube_video_id` : deux vidéos
+    différentes sont alors deux chansons différentes (cf. `song_identity`)."""
     from app.blindtest.models import Game, Playlist, Track
 
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     db = SessionLocal()
     try:
         game = db.query(Game).filter(Game.code == game_code).first()
-        playlist = Playlist(source_url="https://example.com", provider="youtube", game_id=game.id, owner_pseudo=owner_pseudo)
+        playlist = Playlist(source_url="https://example.com", provider=provider, game_id=game.id, owner_pseudo=owner_pseudo)
         db.add(playlist)
         db.flush()
         db.add(Track(
             playlist_id=playlist.id,
-            title="Titre",
-            artist="Artiste",
+            title=title or f"Titre {youtube_video_id}",
+            artist=artist or "Artiste",
             youtube_video_id=youtube_video_id,
             duration_seconds=duration_seconds,
         ))
@@ -353,7 +359,7 @@ class TestStartGame:
                     assert msg["type"] == "round_started"
                     assert msg["payload"]["videoId"] == "abc123"
                     assert 0 <= msg["payload"]["startSeconds"] < 100
-                    assert msg["payload"]["title"] == "Titre"
+                    assert msg["payload"]["title"] == f"Titre {msg['payload']['videoId']}"
                     assert msg["payload"]["artist"] == "Artiste"
 
     def test_non_host_start_game_is_silently_ignored(self, blindtest_client, blindtest_engine):
@@ -1019,6 +1025,116 @@ class TestReveal:
                     # identique à `scores` ici puisque c'est le premier round.
                     assert reveal["payload"]["deltas"] == {"Bob": 2, "Alice": 1}
 
+    def _play_shared_song_round(self, client, engine, code, guess, carol_owner=False):
+        """Alice (Deezer) et Bob (YouTube) ont la même chanson sous deux vidéos
+        différentes ; Carol devine. Renvoie le payload du reveal et le message
+        suivant reçu par Carol."""
+        _add_track(
+            engine, code, youtube_video_id="deezer-match", owner_pseudo="Alice",
+            title="Get Lucky (feat. Pharrell Williams)", artist="Daft Punk", provider="deezer",
+        )
+        _add_track(
+            engine, code, youtube_video_id="youtube-copy", owner_pseudo="Bob",
+            title="Daft Punk - Get Lucky (Official Audio)", artist="SomeChannel",
+        )
+        if carol_owner:
+            _add_track(
+                engine, code, youtube_video_id=None, duration_seconds=None, owner_pseudo="Carol",
+                title="Get Lucky", artist="Daft Punk", provider="deezer",
+            )
+
+        with client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+            with client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
+                ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                ws2.receive_json()
+                ws1.receive_json()
+                with client.websocket_connect(f"/blindtest/games/{code}/ws") as ws3:
+                    ws3.send_json({"type": "join", "payload": {"pseudo": "Carol"}})
+                    ws3.receive_json()
+                    ws1.receive_json()
+                    ws2.receive_json()
+
+                    sockets = (ws1, ws2, ws3)
+
+                    def _next_on_all_sockets():
+                        return [ws.receive_json() for ws in sockets][-1]
+
+                    ws1.send_json({"type": "start_game", "payload": {}})
+                    _next_on_all_sockets()  # game_state {phase: round_started}
+                    round_started = _next_on_all_sockets()
+                    ws3.send_json({
+                        "type": "guess_submitted",
+                        "payload": {"track_id": round_started["payload"]["trackId"], "target_player_ids": guess},
+                    })
+                    reveal = _next_on_all_sockets()
+                    assert reveal["type"] == "reveal"
+                    return reveal["payload"], _next_on_all_sockets()
+
+    def test_shared_song_tags_every_owner_and_pays_per_owner_found(self, blindtest_client, blindtest_engine):
+        code = _create_game(blindtest_client)
+        payload, _ = self._play_shared_song_round(blindtest_client, blindtest_engine, code, ["Alice", "Bob"])
+
+        assert sorted(payload["owner_pseudos"]) == ["Alice", "Bob"]
+        assert payload["owner_pseudo"] == payload["owner_pseudos"][0]
+        assert payload["deltas"] == {"Alice": 1, "Bob": 1, "Carol": 4}
+
+    def test_shared_song_one_owner_found_pays_two_despite_wrong_name(self, blindtest_client, blindtest_engine):
+        code = _create_game(blindtest_client)
+        payload, _ = self._play_shared_song_round(blindtest_client, blindtest_engine, code, ["Alice", "Carol"])
+
+        assert payload["deltas"]["Carol"] == 2
+
+    def test_owner_with_unresolved_copy_is_tagged(self, blindtest_client, blindtest_engine):
+        code = _create_game(blindtest_client)
+        payload, _ = self._play_shared_song_round(
+            blindtest_client, blindtest_engine, code, ["Alice"], carol_owner=True
+        )
+
+        assert sorted(payload["owner_pseudos"]) == ["Alice", "Bob", "Carol"]
+        assert payload["deltas"] == {"Alice": 1, "Bob": 1, "Carol": 1}
+
+    def test_shared_song_is_not_drawn_again_under_its_other_video(self, blindtest_client, blindtest_engine):
+        code = _create_game(blindtest_client)
+        _, next_message = self._play_shared_song_round(blindtest_client, blindtest_engine, code, ["Alice"])
+
+        assert next_message["type"] == "game_state"
+        assert next_message["payload"]["phase"] == "ended"
+
+    def test_shared_song_stays_drawable_when_only_the_playable_copy_owner_left(self, blindtest_client, blindtest_engine):
+        """Bob, déconnecté, détient la seule copie jouable ; Alice, connectée,
+        a la même chanson sans vidéo résolue : la chanson reste tirable."""
+        code = _create_game(blindtest_client)
+        _add_track(blindtest_engine, code, youtube_video_id=None, duration_seconds=None, owner_pseudo="Alice", title="Get Lucky", artist="Daft Punk", provider="deezer")
+        _add_track(blindtest_engine, code, youtube_video_id="bob-copy", owner_pseudo="Bob", title="Get Lucky", artist="Daft Punk", provider="deezer")
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+            ws1.send_json({"type": "start_game", "payload": {}})
+            ws1.receive_json()
+            assert ws1.receive_json()["payload"]["videoId"] == "bob-copy"
+
+    def test_homonyms_keep_a_single_owner(self, blindtest_client, blindtest_engine):
+        code = _create_game(blindtest_client)
+        _add_track(blindtest_engine, code, youtube_video_id="adele", owner_pseudo="Alice", title="Hello", artist="Adele", provider="deezer")
+        _add_track(blindtest_engine, code, youtube_video_id="richie", owner_pseudo="Bob", title="Hello", artist="Lionel Richie", provider="deezer")
+
+        with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws1:
+            ws1.send_json({"type": "join", "payload": {"pseudo": "Alice"}})
+            ws1.receive_json()
+            with blindtest_client.websocket_connect(f"/blindtest/games/{code}/ws") as ws2:
+                ws2.send_json({"type": "join", "payload": {"pseudo": "Bob"}})
+                ws2.receive_json()
+                ws1.receive_json()
+                ws1.send_json({"type": "start_game", "payload": {}})
+                ws1.receive_json()
+                round_started = ws1.receive_json()
+                reveal = ws1.receive_json()
+                expected = "Alice" if round_started["payload"]["videoId"] == "adele" else "Bob"
+                assert reveal["payload"]["owner_pseudos"] == [expected]
+
     def test_deltas_differ_from_cumulative_scores_when_player_already_scored(
         self, blindtest_client, blindtest_engine
     ):
@@ -1385,7 +1501,7 @@ class TestRoundAdvancement:
                 # Ne rejoue jamais le morceau déjà tiré au round 1.
                 assert round2_1["payload"]["videoId"] != first_video_id
                 assert round2_1["payload"]["videoId"] in ("track-a", "track-b")
-                assert round2_1["payload"]["title"] == "Titre"
+                assert round2_1["payload"]["title"] == f"Titre {round2_1['payload']['videoId']}"
                 assert round2_1["payload"]["artist"] == "Artiste"
                 # Chaque round porte l'id de son propre morceau.
                 assert round2_1["payload"]["trackId"] == round2_2["payload"]["trackId"]

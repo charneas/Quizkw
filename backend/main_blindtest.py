@@ -24,6 +24,7 @@ from app.blindtest.errors import (
 from app.blindtest.game_connections import guess_store, played_tracks_store, score_store
 from app.blindtest.game_connections import manager as connection_manager
 from app.blindtest.import_pipeline import extract_tracks
+from app.blindtest.song_identity import SongTrack, group_songs
 from app.blindtest.text_cleanup import clean_title_artist
 from app.blindtest.models import Game, Playlist, Track
 from app.game_helpers import generate_session_code
@@ -404,32 +405,70 @@ def _draw_eligible_track(db: Session, game: Game) -> Optional[Track]:
     supplémentaire à gérer. `.in_([])` (aucun joueur connecté) est un SQL
     bien défini — contrairement au piège `notin_([])` documenté ci-dessus,
     pas besoin de garde explicite ici."""
-    connected_pseudos = connection_manager.players(game.code)
-    query = (
-        db.query(Track)
-        .join(Playlist, Track.playlist_id == Playlist.id)
-        .filter(
-            Playlist.game_id == game.id,
-            Playlist.owner_pseudo.in_(connected_pseudos),
-            Track.youtube_video_id.isnot(None),
-            Track.duration_seconds.isnot(None),
-            Track.duration_seconds > 0,
-        )
-    )
-    # Retour utilisateur (2026-09-14) : "même musique dans différentes
-    # playlists = même musique" — l'exclusion se fait désormais par
-    # `youtube_video_id` (la vraie chanson), pas par `Track.id` (une ligne
-    # d'import scopée à une playlist). Le même morceau importé par deux
-    # joueurs différents ne doit être tirable qu'une seule fois par partie,
-    # peu importe combien de lignes `Track` distinctes le représentent.
-    played_video_ids = played_tracks_store.played_ids(game.id)
-    if played_video_ids:
-        query = query.filter(Track.youtube_video_id.notin_(played_video_ids))
-
-    eligible_tracks = query.all()
-    if not eligible_tracks:
+    connected_pseudos = set(connection_manager.players(game.code))
+    # Tirage en deux temps : la chanson d'abord, la copie ensuite. Une chanson
+    # présente dans trois playlists n'a pas trois fois plus de chances de
+    # sortir, et reste tirable dès qu'un de ses propriétaires est connecté,
+    # même si la copie jouable est celle d'un joueur déconnecté.
+    drawable_songs = []
+    for copies in _unplayed_songs(db, game).values():
+        playable = [track for track, _ in copies if _is_playable(track)]
+        if playable and any(playlist.owner_pseudo in connected_pseudos for _, playlist in copies):
+            drawable_songs.append(playable)
+    if not drawable_songs:
         return None
-    return random.choice(eligible_tracks)
+    return random.choice(random.choice(drawable_songs))
+
+
+def _is_playable(track: Track) -> bool:
+    return bool(track.youtube_video_id) and bool(track.duration_seconds) and track.duration_seconds > 0
+
+
+def _game_tracks(db: Session, game: Game) -> list:
+    """Tous les morceaux de la partie avec leur playlist, y compris ceux pas
+    encore résolus : un joueur dont la copie n'a pas (encore) de vidéo possède
+    quand même la chanson."""
+    return (
+        db.query(Track, Playlist)
+        .join(Playlist, Track.playlist_id == Playlist.id)
+        .filter(Playlist.game_id == game.id)
+        .order_by(Track.id)
+        .all()
+    )
+
+
+def _song_of_each_track(rows: list) -> dict[int, int]:
+    return group_songs(
+        SongTrack(
+            id=track.id,
+            title=track.title,
+            artist=track.artist,
+            isrc=track.isrc,
+            youtube_video_id=track.youtube_video_id,
+            duration_seconds=track.duration_seconds,
+            structured=playlist.provider != "youtube",
+        )
+        for track, playlist in rows
+    )
+
+
+def _unplayed_songs(db: Session, game: Game) -> dict[int, list]:
+    """`{song_id: [(track, playlist), ...]}` des chansons pas encore tirées dans
+    cette partie. Retour utilisateur (2026-09-14) : "même musique dans
+    différentes playlists = même musique" — `played_tracks_store` retient des
+    `youtube_video_id`, mais une chanson est jouée dès qu'UNE de ses copies
+    l'est, y compris quand les playlists pointent vers des vidéos différentes
+    (cf. `song_identity`)."""
+    rows = _game_tracks(db, game)
+    songs = _song_of_each_track(rows)
+    played_video_ids = played_tracks_store.played_ids(game.id)
+    played_songs = {songs[track.id] for track, _ in rows if track.youtube_video_id in played_video_ids}
+
+    unplayed: dict[int, list] = {}
+    for track, playlist in rows:
+        if songs[track.id] not in played_songs:
+            unplayed.setdefault(songs[track.id], []).append((track, playlist))
+    return unplayed
 
 
 def _has_unplayed_track(db: Session, game: Game) -> bool:
@@ -439,20 +478,11 @@ def _has_unplayed_track(db: Session, game: Game) -> bool:
     temporairement vide parce que les propriétaires restants sont
     déconnectés. `_advance_round` s'en sert pour décider si la fin de partie
     est définitive ou seulement transitoire."""
-    query = (
-        db.query(Track)
-        .join(Playlist, Track.playlist_id == Playlist.id)
-        .filter(
-            Playlist.game_id == game.id,
-            Track.youtube_video_id.isnot(None),
-            Track.duration_seconds.isnot(None),
-            Track.duration_seconds > 0,
-        )
+    return any(
+        _is_playable(track)
+        for copies in _unplayed_songs(db, game).values()
+        for track, _ in copies
     )
-    played_video_ids = played_tracks_store.played_ids(game.id)
-    if played_video_ids:
-        query = query.filter(Track.youtube_video_id.notin_(played_video_ids))
-    return query.first() is not None
 
 
 def _handle_start_game(db: Session, game: Game, requesting_pseudo: str, payload: Optional[dict] = None) -> Optional[dict]:
@@ -556,30 +586,36 @@ def _handle_restart_game(db: Session, game: Game, requesting_pseudo: str) -> boo
     return True
 
 
-def _resolve_owner_pseudo(db: Session, game: Game) -> Optional[str]:
-    """Résout le vrai propriétaire du round en cours : `game.current_track_id`
-    -> `Track` -> `Track.playlist_id` -> `Playlist.owner_pseudo`. `None` si
-    `current_track_id` n'est pas renseigné (défensif, ne devrait pas arriver
-    une fois `phase == "round_started"`)."""
-    if game.current_track_id is None:
-        return None
-    track = db.query(Track).filter(Track.id == game.current_track_id).first()
-    if track is None:
-        return None
-    playlist = db.query(Playlist).filter(Playlist.id == track.playlist_id).first()
-    if playlist is None:
-        return None
-    return playlist.owner_pseudo
+def _resolve_owner_pseudos(db: Session, game: Game) -> list[str]:
+    """Tous les joueurs de la partie qui possèdent la chanson du round en
+    cours, connectés ou non : le propriétaire du morceau tiré d'abord, les
+    autres par ordre alphabétique. Vide si `current_track_id` n'est pas
+    renseigné (défensif, ne devrait pas arriver une fois `phase ==
+    "round_started"`)."""
+    rows = _game_tracks(db, game)
+    songs = _song_of_each_track(rows)
+    current_song = songs.get(game.current_track_id)
+    if current_song is None:
+        return []
+    drawn_owner = next(playlist.owner_pseudo for track, playlist in rows if track.id == game.current_track_id)
+    others = {
+        playlist.owner_pseudo
+        for track, playlist in rows
+        if songs[track.id] == current_song and playlist.owner_pseudo
+    } - {drawn_owner}
+    return ([drawn_owner] if drawn_owner else []) + sorted(others)
 
 
 def _close_round(db: Session, game: Game, game_code: str) -> Optional[dict]:
     """Clôture le round en cours (Story 2.6) : calcule et cumule le score de
     chaque joueur présent non-propriétaire à partir de sa devinette stockée
-    (`guess_store`), attribue OWNER_ROUND_BONUS au propriétaire (retour
+    (`guess_store`), attribue OWNER_ROUND_BONUS à chaque propriétaire (retour
     utilisateur, 2026-09-13 — sans ça, importer une grosse playlist désavantage
     son propriétaire : ses morceaux tournent plus souvent sans jamais lui
     rapporter de points), fait passer la partie en phase `reveal` et renvoie
-    le payload `reveal {owner_pseudo, scores, deltas}` à diffuser.
+    le payload `reveal {owner_pseudo, owner_pseudos, scores, deltas}` à
+    diffuser. `owner_pseudo` reste le propriétaire du morceau tiré ;
+    `owner_pseudos` les liste tous, quand plusieurs joueurs ont la chanson.
 
     Transition à usage unique (mirroir de `_handle_start_game`) : si la
     partie n'est plus en `round_started` au moment de l'appel (déjà clôturée
@@ -618,7 +654,7 @@ def _close_round(db: Session, game: Game, game_code: str) -> Optional[dict]:
     # que `round_started` — un second aller-retour DB ici n'apporterait rien
     # et ajoute une fenêtre de contention inutile avec l'autre session sur
     # la même connexion (StaticPool des tests).
-    owner_pseudo = _resolve_owner_pseudo(db, game)
+    owner_pseudos = _resolve_owner_pseudos(db, game)
 
     # Union des joueurs actuellement présents et de ceux ayant une devinette
     # stockée pour ce round (revue de code) : un joueur qui a soumis une
@@ -636,7 +672,7 @@ def _close_round(db: Session, game: Game, game_code: str) -> Optional[dict]:
     deltas: dict[str, int] = {}
 
     for pseudo in scoreable_pseudos:
-        if pseudo == owner_pseudo:
+        if pseudo in owner_pseudos:
             # Retour utilisateur (2026-09-13) : le propriétaire marque
             # désormais un point fixe (OWNER_ROUND_BONUS) sur son propre
             # round, peu importe si les autres devinent juste ou pas —
@@ -653,16 +689,23 @@ def _close_round(db: Session, game: Game, game_code: str) -> Optional[dict]:
         # le bon propriétaire rapporte +2 plein, point. Le malus -1/nom ne
         # s'applique que si le propriétaire n'a PAS été trouvé (chaque nom
         # incorrect coché compte alors pour -1, cumulable — cf. tests
-        # `test_owner_missed_wrong_names_nets_negative_no_floor`).
+        # `test_owner_missed_wrong_names_nets_negative_no_floor`). Avec
+        # plusieurs propriétaires, chacun trouvé rapporte +2.
         guess = guess_store.get_guess(game.id, pseudo) or []
-        if owner_pseudo in guess:
-            delta = 2
+        owners_found = sum(1 for name in guess if name in owner_pseudos)
+        if owners_found:
+            delta = 2 * owners_found
         else:
-            delta = -sum(1 for name in guess if name != owner_pseudo)
+            delta = -len(guess)
         score_store.add(game.id, pseudo, delta)
         deltas[pseudo] = delta
 
-    return {"owner_pseudo": owner_pseudo, "scores": score_store.snapshot(game.id), "deltas": deltas}
+    return {
+        "owner_pseudo": owner_pseudos[0] if owner_pseudos else None,
+        "owner_pseudos": owner_pseudos,
+        "scores": score_store.snapshot(game.id),
+        "deltas": deltas,
+    }
 
 
 def _schedule_round_timer(game_id: int, game_code: str, track_id: int) -> None:
