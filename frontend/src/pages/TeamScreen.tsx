@@ -282,10 +282,10 @@ function TeamScreen() {
   // Quand la question change (ou disparaît), effacer le résultat local de la question précédente
   // Mais ne PAS effacer duelResult (le duel est indépendant de la question courante)
   // BUG-110 : synchroniser le champ avec la réponse d'équipe soumise par un
-  // coéquipier (polling), sans écraser une saisie en cours de frappe. On ne
-  // suit que si le champ local n'a pas divergé depuis la dernière valeur
+  // coéquipier (polling), sans écraser un choix pas encore envoyé. On ne
+  // suit que si le choix local n'a pas divergé depuis la dernière valeur
   // reçue du serveur (lastSyncedAnswerRef) — sinon l'utilisateur est en
-  // train de taper sa propre correction, on ne l'écrase pas.
+  // train de choisir sa propre correction, on ne l'écrase pas.
   const lastQuestionIdRef = useRef<number | null>(null)
   const lastSyncedAnswerRef = useRef('')
   useEffect(() => {
@@ -293,7 +293,7 @@ function TeamScreen() {
     const q = state.current_question
 
     if (lastQuestionIdRef.current !== q.id) {
-      // Nouvelle question : repartir d'un champ propre (vidé, ou pré-rempli
+      // Nouvelle question : repartir d'un choix vide (ou pré-rempli
       // si un coéquipier a déjà répondu avant que ce joueur ne charge l'état).
       lastQuestionIdRef.current = q.id
       const initial = q.current_team_answer ?? ''
@@ -359,7 +359,7 @@ function TeamScreen() {
         player_answer: submitted,
       })
       // La réponse soumise reste affichée (modifiable) — pas de setAnswer(''),
-      // sinon le prochain poll écraserait le champ avec la valeur qu'on vient
+      // sinon le prochain poll écraserait le choix avec la valeur qu'on vient
       // nous-mêmes d'envoyer (cf. lastSyncedAnswerRef dans l'effet de sync).
       lastSyncedAnswerRef.current = submitted
       await loadState()
@@ -707,6 +707,7 @@ function TeamScreen() {
                 <button
                   key={index}
                   onClick={() => setAnswer(option)}
+                  aria-pressed={answer === option}
                   className={`w-full text-left p-3 rounded-lg border transition-colors ${
                     answer === option
                       ? 'border-brand bg-brand-muted/20 text-text'
@@ -718,23 +719,13 @@ function TeamScreen() {
               ))}
             </div>
 
-            <div className="flex gap-3">
-              <input
-                type="text"
-                value={answer}
-                onChange={(e) => setAnswer(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSubmitAnswer()}
-                placeholder="Ou tapez votre réponse..."
-                className="input-field flex-1"
-              />
-              <button
-                onClick={handleSubmitAnswer}
-                disabled={!answer.trim()}
-                className="btn-primary disabled:opacity-50"
-              >
-                Valider
-              </button>
-            </div>
+            <button
+              onClick={handleSubmitAnswer}
+              disabled={!answer.trim()}
+              className="btn-primary w-full disabled:opacity-50"
+            >
+              Valider
+            </button>
 
             {isHost && (
               <div className="mt-4 pt-4 border-t border-border">
