@@ -172,7 +172,7 @@ class TestCreate:
 class TestPresets:
     def test_list_gives_names_never_tracks(self, client, preset):
         resp = client.get("/blindtest/presets")
-        assert resp.json() == [{"slug": "hits-80", "name": "Hits années 80", "track_count": 12}]
+        assert resp.json() == [{"slug": "hits-60", "name": "Hits années 60", "track_count": 12}]
 
     def test_preset_without_snapshot_is_not_listed(self, client, tmp_path, monkeypatch):
         monkeypatch.setattr(presets, "_DIRECTORY", tmp_path)
@@ -184,7 +184,7 @@ class TestPresets:
         try:
             resp = _select_preset(client, code, preset)
             assert resp.status_code == 200
-            expected = {"name": "Hits années 80", "playable_count": 12, "checking": False}
+            expected = {"name": "Hits années 60", "playable_count": 12, "checking": False}
             assert resp.json() == expected
             assert client.get(f"/blindtest/games/{code}/source").json() == expected
         finally:
@@ -476,14 +476,14 @@ class TestRound:
         finally:
             ws.__exit__(None, None, None)
 
-    def test_title_alone_at_10s_gains_60(self, client, preset, engine):
+    def test_title_alone_at_15s_gains_60(self, client, preset, engine):
         code = _create_classic(client)
         ws = _join(client, code, "Alice")
         try:
             _select_preset(client, code, preset)
             payload = _start(ws)
             current = _make_current_answer_known(engine, _game(engine, code)[0])
-            current.started_at -= 10
+            current.started_at -= 15
             _answer(ws, payload["trackId"], SECRET_TITLE)
             result = _until(ws, "answer_result")["payload"]
             assert result["found"] == ["title"]
@@ -517,10 +517,10 @@ class TestRound:
             _select_preset(client, code, preset)
             payload = _start(ws)
             current = _make_current_answer_known(engine, _game(engine, code)[0])
-            current.started_at -= 10
+            current.started_at -= 15
             _answer(ws, payload["trackId"], SECRET_TITLE)
             assert _until(ws, "answer_result")["payload"]["points"] == 60
-            current.started_at -= 10
+            current.started_at -= 15
             _answer(ws, payload["trackId"], SECRET_ARTIST)
             result = _until(ws, "answer_result")["payload"]
             assert result["found"] == ["artist", "title"]
@@ -582,7 +582,7 @@ class TestRound:
             _select_preset(client, code, preset)
             payload = _start(ws)
             current = _make_current_answer_known(engine, _game(engine, code)[0])
-            current.started_at -= 10
+            current.started_at -= 15
             body = {k: payload["trackId"] if v == "CURRENT" else v for k, v in bad_payload.items()}
             ws.send_json({"type": "answer_submitted", "payload": body})
             reveal = _until(ws, "reveal", seen)["payload"]

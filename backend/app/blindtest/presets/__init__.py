@@ -29,8 +29,14 @@ class Preset:
 
 
 PRESETS: Tuple[Preset, ...] = (
+    Preset("hits-60", "Hits années 60", "RDCLAK5uy_nK5Gc1RXC3Qj5f6q2q8yKSNHP9bc-5td0"),
+    Preset("hits-70", "Hits années 70", "RDCLAK5uy_l9zGPtwEeIpwVXtBZ216yRhklsre5bbOM"),
     Preset("hits-80", "Hits années 80", "RDCLAK5uy_lMzHW51iFg1Kx0d_2EHpzbOgCrwtu8cgI"),
     Preset("hits-90", "Hits années 90", "RDCLAK5uy_nQkPLhMF6chdzKSlWdX8NHMrLVpdci-eU"),
+    Preset("classiques-intemporels", "Classiques intemporels", "RDCLAK5uy_mRnjSZUMjbxdR4MSK_YtcQU-A0-X-9chA"),
+    Preset("tubes-pop", "Meilleurs tubes pop", "RDCLAK5uy_nmS3YoxSwVVQk9lEQJ0UX4ZCjXsW_psU8"),
+    Preset("rock-hits", "Rock Hits", "RDCLAK5uy_lp8tPFzyN4a4WCduH0qFXPkKKCoToirTE"),
+    Preset("hip-hop-classics", "Hip-hop Classics", "RDCLAK5uy_kP2172rQNb3KFXz880xp6M98R_ME5CIKA"),
     Preset("tubes-francophones", "Tubes francophones", "RDCLAK5uy_mn6mX0GYERCgJxFbmlSXE8Vxqhafy1VoY"),
     Preset("rap-francais", "Classiques du rap français", "RDCLAK5uy_nwmU7GOH9bo9N3RB566bAfjrMTZHJ6AhY"),
 )

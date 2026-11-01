@@ -19,7 +19,7 @@ from app.blindtest.text_cleanup import _QUOTED_PREFIX_RE, clean_title_artist
 TITLE = "title"
 ARTIST = "artist"
 
-ROUND_SECONDS = 20
+ROUND_SECONDS = 30
 TITLE_POINTS = 100
 ARTIST_POINTS = 60
 # Valeur restante d'un élément trouvé à la dernière seconde : une découverte

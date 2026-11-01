@@ -178,7 +178,7 @@ de la DB quiz.
 
 ### Playlists préparées du blind test classique
 
-Les quatre presets du mode classique sont relus en direct sur YouTube à chaque
+Les presets du mode classique sont relus en direct sur YouTube à chaque
 sélection par l'hôte : les listes `RDCLAK...` de YouTube Music évoluent. Chaque
 `app/blindtest/presets/<slug>.json` sert de copie de secours si YouTube échoue
 ou renvoie moins de 10 morceaux, et ses noms relus priment pour ses vidéos. Un

@@ -23,13 +23,13 @@ class TestPoints:
     @pytest.mark.parametrize(
         "found_title, found_artist, elapsed, expected",
         [
-            (True, False, 10, 60),
+            (True, False, 15, 60),
             (True, True, 0, 200),
             (True, False, 0, 100),
             (False, True, 0, 60),
-            (True, False, 20, 20),
-            (False, True, 20, 12),
-            (True, True, 20, 40),
+            (True, False, 30, 20),
+            (False, True, 30, 12),
+            (True, True, 30, 40),
             (False, False, 3, 0),
         ],
     )
@@ -37,21 +37,21 @@ class TestPoints:
         assert points(found_title, found_artist, elapsed) == expected
 
     def test_each_element_is_timed_separately(self):
-        # Titre à 0 s (100) et artiste à 20 s (12), plus 25 % de la somme.
-        assert points(True, True, (0, 20)) == 140
+        # Titre à 0 s (100) et artiste à 30 s (12), plus 25 % de la somme.
+        assert points(True, True, (0, 30)) == 140
 
     def test_decay_is_continuous(self):
-        values = [points(True, False, tenth / 10) for tenth in range(0, 201)]
+        values = [points(True, False, tenth / 10) for tenth in range(0, 301)]
         assert all(a >= b for a, b in zip(values, values[1:]))
         assert all(a - b <= 1 for a, b in zip(values, values[1:]))
 
     def test_elapsed_outside_the_round_is_clamped(self):
         assert points(True, False, -5) == 100
-        assert points(True, False, 25) == 20
+        assert points(True, False, 35) == 20
 
     def test_second_find_never_lowers_the_score(self):
-        for title_elapsed in range(0, 21):
-            for artist_elapsed in range(title_elapsed, 21):
+        for title_elapsed in range(0, 31):
+            for artist_elapsed in range(title_elapsed, 31):
                 alone = points(True, False, (title_elapsed, 0))
                 assert points(True, True, (title_elapsed, artist_elapsed)) > alone
 

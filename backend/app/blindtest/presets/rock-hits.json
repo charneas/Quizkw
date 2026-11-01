@@ -1,0 +1,408 @@
+{
+  "slug": "rock-hits",
+  "name": "Rock Hits",
+  "playlist_id": "RDCLAK5uy_lp8tPFzyN4a4WCduH0qFXPkKKCoToirTE",
+  "fetched_at": "2026-11-01T09:45:56+00:00",
+  "tracks": [
+    {
+      "youtube_video_id": "f3Pw36EFRV0",
+      "title": "Nos célébrations",
+      "artist": "Indochine",
+      "duration_seconds": 312,
+      "raw_title": "Indochine - Nos célébrations (Clip officiel)",
+      "raw_channel": "Indochine"
+    },
+    {
+      "youtube_video_id": "7wtfhZwyrcc",
+      "title": "Believer",
+      "artist": "Imagine Dragons",
+      "duration_seconds": 217,
+      "raw_title": "Imagine Dragons - Believer (Official Music Video)",
+      "raw_channel": "ImagineDragons"
+    },
+    {
+      "youtube_video_id": "IPXIgEAGe4U",
+      "title": "High Hopes",
+      "artist": "Panic! At The Disco",
+      "duration_seconds": 197,
+      "raw_title": "Panic! At The Disco - High Hopes (Official Video)",
+      "raw_channel": "Panic! At The Disco"
+    },
+    {
+      "youtube_video_id": "Te3_VlimRw0",
+      "title": "Sharks",
+      "artist": "Imagine Dragons",
+      "duration_seconds": 217,
+      "raw_title": "Imagine Dragons - Sharks (Official Music Video)",
+      "raw_channel": "ImagineDragons"
+    },
+    {
+      "youtube_video_id": "odWKEfp2QMY",
+      "title": "THE LONELIEST",
+      "artist": "Måneskin",
+      "duration_seconds": 288,
+      "raw_title": "Måneskin - THE LONELIEST (Official Video)",
+      "raw_channel": "Måneskin Official"
+    },
+    {
+      "youtube_video_id": "VpATBBRajP8",
+      "title": "Unsainted",
+      "artist": "Slipknot",
+      "duration_seconds": 286,
+      "raw_title": "Slipknot - Unsainted [OFFICIAL VIDEO]",
+      "raw_channel": "Slipknot"
+    },
+    {
+      "youtube_video_id": "BilaShsQphM",
+      "title": "Low",
+      "artist": "Lenny Kravitz",
+      "duration_seconds": 286,
+      "raw_title": "Lenny Kravitz - Low (Official Video)",
+      "raw_channel": "Lenny Kravitz"
+    },
+    {
+      "youtube_video_id": "aJ5IzGBnWAc",
+      "title": "Born For This",
+      "artist": "The Score",
+      "duration_seconds": 239,
+      "raw_title": "The Score - Born For This (Official Audio)",
+      "raw_channel": "The Score"
+    },
+    {
+      "youtube_video_id": "hBTNyJ33LWI",
+      "title": "Zick Zack",
+      "artist": "Rammstein",
+      "duration_seconds": 275,
+      "raw_title": "Rammstein - Zick Zack (Official Video)",
+      "raw_channel": "Rammstein Official"
+    },
+    {
+      "youtube_video_id": "loOWKm8GW6A",
+      "title": "Level of Concern",
+      "artist": "twenty one pilots",
+      "duration_seconds": 233,
+      "raw_title": "twenty one pilots - Level of Concern (Official Video)",
+      "raw_channel": "twenty one pilots"
+    },
+    {
+      "youtube_video_id": "ewOPQZZn4SY",
+      "title": "The Adults Are Talking",
+      "artist": "The Strokes",
+      "duration_seconds": 288,
+      "raw_title": "The Strokes - The Adults Are Talking (Official Video)",
+      "raw_channel": "The Strokes"
+    },
+    {
+      "youtube_video_id": "OS8taasZl8k",
+      "title": "Black Summer",
+      "artist": "Red Hot Chili Peppers",
+      "duration_seconds": 234,
+      "raw_title": "Red Hot Chili Peppers - Black Summer (Official Music Video)",
+      "raw_channel": "Red Hot Chili Peppers"
+    },
+    {
+      "youtube_video_id": "jODrVofka54",
+      "title": "SUPERMODEL",
+      "artist": "Måneskin",
+      "duration_seconds": 186,
+      "raw_title": "Måneskin - SUPERMODEL (Official Video)",
+      "raw_channel": "Måneskin Official"
+    },
+    {
+      "youtube_video_id": "racmy7Y9P4M",
+      "title": "Parasite Eve",
+      "artist": "Bring Me The Horizon",
+      "duration_seconds": 296,
+      "raw_title": "Bring Me The Horizon - Parasite Eve (Official Video)",
+      "raw_channel": "Bring Me The Horizon"
+    },
+    {
+      "youtube_video_id": "9xht4JIOfjU",
+      "title": "maybe",
+      "artist": "Machine Gun Kelly",
+      "duration_seconds": 172,
+      "raw_title": "Machine Gun Kelly - maybe feat. Bring Me The Horizon (Official Music Video)",
+      "raw_channel": "mgk"
+    },
+    {
+      "youtube_video_id": "B3faYe5V4Sk",
+      "title": "Voices",
+      "artist": "Motionless In White",
+      "duration_seconds": 223,
+      "raw_title": "Motionless In White - Voices [OFFICIAL VIDEO]",
+      "raw_channel": "Motionless In White"
+    },
+    {
+      "youtube_video_id": "5hDZbroaQDc",
+      "title": "The Phoenix",
+      "artist": "Fall Out Boy",
+      "duration_seconds": 263,
+      "raw_title": "Fall Out Boy - The Phoenix (Official Video) - Part 2 of 11",
+      "raw_channel": "Fall Out Boy"
+    },
+    {
+      "youtube_video_id": "54LEywabkl4",
+      "title": "Shot In The Dark",
+      "artist": "AC/DC",
+      "duration_seconds": 196,
+      "raw_title": "AC/DC - Shot In The Dark (Official Video)",
+      "raw_channel": "AC/DC"
+    },
+    {
+      "youtube_video_id": "ciqUEV9F0OY",
+      "title": "Bite Me",
+      "artist": "Avril Lavigne",
+      "duration_seconds": 195,
+      "raw_title": "Avril Lavigne - Bite Me (Official Video)",
+      "raw_channel": "Avril Lavigne"
+    },
+    {
+      "youtube_video_id": "7Gr63DiEUxw",
+      "title": "Dance Macabre",
+      "artist": "Ghost",
+      "duration_seconds": 319,
+      "raw_title": "Ghost - Dance Macabre (Official Music Video)",
+      "raw_channel": "Ghost"
+    },
+    {
+      "youtube_video_id": "ifwc5xgI3QM",
+      "title": "Run",
+      "artist": "Foo Fighters",
+      "duration_seconds": 382,
+      "raw_title": "Foo Fighters - Run (Official Music Video)",
+      "raw_channel": "Foo Fighters"
+    },
+    {
+      "youtube_video_id": "71Es-8FfATo",
+      "title": "Four Out Of Five",
+      "artist": "Arctic Monkeys",
+      "duration_seconds": 329,
+      "raw_title": "Arctic Monkeys - Four Out Of Five (Official Video)",
+      "raw_channel": "Official Arctic Monkeys"
+    },
+    {
+      "youtube_video_id": "PJ7H-INlclg",
+      "title": "3SEX",
+      "artist": "Indochine & Christine and the Queens",
+      "duration_seconds": 263,
+      "raw_title": "Indochine & Christine and the Queens - 3SEX (Clip officiel)",
+      "raw_channel": "Indochine"
+    },
+    {
+      "youtube_video_id": "FsNGxsrcZas",
+      "title": "sTraNgeRs",
+      "artist": "Bring Me The Horizon",
+      "duration_seconds": 205,
+      "raw_title": "Bring Me The Horizon - sTraNgeRs (Official Video)",
+      "raw_channel": "Bring Me The Horizon"
+    },
+    {
+      "youtube_video_id": "BokDch3_g-Y",
+      "title": "more than life",
+      "artist": "Machine Gun Kelly",
+      "duration_seconds": 196,
+      "raw_title": "Machine Gun Kelly - more than life ft. glaive (Official Music Video)",
+      "raw_channel": "mgk"
+    },
+    {
+      "youtube_video_id": "xIYJ7VaSxYY",
+      "title": "This Is Why",
+      "artist": "Paramore",
+      "duration_seconds": 238,
+      "raw_title": "Paramore: This Is Why [OFFICIAL VIDEO]",
+      "raw_channel": "Paramore"
+    },
+    {
+      "youtube_video_id": "HqFVdz9GpwE",
+      "title": "Me Myself & I",
+      "artist": "5 Seconds of Summer",
+      "duration_seconds": 173,
+      "raw_title": "5 Seconds of Summer - Me Myself & I (Official Music Video)",
+      "raw_channel": "5SOS"
+    },
+    {
+      "youtube_video_id": "d55ELY17CFM",
+      "title": "WON'T STAND DOWN",
+      "artist": "Muse",
+      "duration_seconds": 241,
+      "raw_title": "Muse - WON'T STAND DOWN (Official Video)",
+      "raw_channel": "Muse"
+    },
+    {
+      "youtube_video_id": "02T6xLNXEE0",
+      "title": "The Funeral",
+      "artist": "YUNGBLUD",
+      "duration_seconds": 233,
+      "raw_title": "YUNGBLUD - The Funeral (Official Video)",
+      "raw_channel": "YUNGBLUD"
+    },
+    {
+      "youtube_video_id": "V2kWUJkRvVs",
+      "title": "The Foundations of Decay",
+      "artist": "My Chemical Romance",
+      "duration_seconds": 361,
+      "raw_title": "My Chemical Romance - The Foundations of Decay",
+      "raw_channel": "My Chemical Romance"
+    },
+    {
+      "youtube_video_id": "XDnw808NKXY",
+      "title": "gfy",
+      "artist": "blackbear, Machine Gun Kelly",
+      "duration_seconds": 208,
+      "raw_title": "blackbear, Machine Gun Kelly - gfy (Official Video)",
+      "raw_channel": "blackbear"
+    },
+    {
+      "youtube_video_id": "wxCsQsKn7O8",
+      "title": "Break My Baby",
+      "artist": "KALEO",
+      "duration_seconds": 263,
+      "raw_title": "KALEO - Break My Baby [OFFICIAL LYRIC VIDEO]",
+      "raw_channel": "KALEO"
+    },
+    {
+      "youtube_video_id": "LNNPNweSbp8",
+      "title": "Living In A Ghost Town",
+      "artist": "The Rolling Stones",
+      "duration_seconds": 240,
+      "raw_title": "The Rolling Stones - Living In A Ghost Town",
+      "raw_channel": "The Rolling Stones"
+    },
+    {
+      "youtube_video_id": "MVh6XTwWhMY",
+      "title": "I Don't Live Here Anymore",
+      "artist": "The War On Drugs",
+      "duration_seconds": 328,
+      "raw_title": "The War On Drugs - I Don't Live Here Anymore (feat. Lucius) [Official Music Video]",
+      "raw_channel": "The War On Drugs"
+    },
+    {
+      "youtube_video_id": "55SwKPVMVM4",
+      "title": "Monde Nouveau",
+      "artist": "Feu! Chatterton",
+      "duration_seconds": 215,
+      "raw_title": "Feu! Chatterton - Monde Nouveau (Clip)",
+      "raw_channel": "FeuChatterton"
+    },
+    {
+      "youtube_video_id": "KKSmHOUaqaQ",
+      "title": "Wild Child",
+      "artist": "The Black Keys",
+      "duration_seconds": 270,
+      "raw_title": "The Black Keys - Wild Child (Official Music Video)",
+      "raw_channel": "The Black Keys"
+    },
+    {
+      "youtube_video_id": "zuFflKF6GuQ",
+      "title": "HOLD YOU DOWN",
+      "artist": "X Ambassadors",
+      "duration_seconds": 231,
+      "raw_title": "X Ambassadors - HOLD YOU DOWN (Official Video)",
+      "raw_channel": "X Ambassadors"
+    },
+    {
+      "youtube_video_id": "xIuke4iTaBU",
+      "title": "P'tite pute",
+      "artist": "Damien Saez",
+      "duration_seconds": 268,
+      "raw_title": "P'tite pute",
+      "raw_channel": "Damien Saez"
+    },
+    {
+      "youtube_video_id": "_yJBd99tLdU",
+      "title": "Face It Alone",
+      "artist": "Queen",
+      "duration_seconds": 256,
+      "raw_title": "Queen - Face It Alone (Official Video)",
+      "raw_channel": "Queen Official"
+    },
+    {
+      "youtube_video_id": "p-nYliG8MRs",
+      "title": "boy",
+      "artist": "The Killers",
+      "duration_seconds": 222,
+      "raw_title": "The Killers - boy (Official Music Video)",
+      "raw_channel": "TheKillersMusic"
+    },
+    {
+      "youtube_video_id": "uURsMKMloM8",
+      "title": "Trouble's Coming",
+      "artist": "Royal Blood",
+      "duration_seconds": 232,
+      "raw_title": "Royal Blood - Trouble's Coming (Official Video)",
+      "raw_channel": "Royal Blood"
+    },
+    {
+      "youtube_video_id": "pCCiSILIci0",
+      "title": "Mort aux cons",
+      "artist": "Tagada Jones",
+      "duration_seconds": 242,
+      "raw_title": "TAGADA JONES - Mort aux cons - Officiel",
+      "raw_channel": "TAGADA JONES"
+    },
+    {
+      "youtube_video_id": "LICLY1c7c6o",
+      "title": "Out Of My System",
+      "artist": "Louis Tomlinson",
+      "duration_seconds": 140,
+      "raw_title": "Louis Tomlinson - Out Of My System (Official Video)",
+      "raw_channel": "Louis Tomlinson"
+    },
+    {
+      "youtube_video_id": "U3cpdkhtGx0",
+      "title": "Oh Yeah!",
+      "artist": "Green Day",
+      "duration_seconds": 192,
+      "raw_title": "Green Day - Oh Yeah! [Official Music Video]",
+      "raw_channel": "Green Day"
+    },
+    {
+      "youtube_video_id": "h8xZje1jbI0",
+      "title": "The Runner",
+      "artist": "Foals",
+      "duration_seconds": 272,
+      "raw_title": "FOALS - The Runner [Official Music Video]",
+      "raw_channel": "Foals"
+    },
+    {
+      "youtube_video_id": "ilWMxOA9bd8",
+      "title": "Amazonia",
+      "artist": "Gojira",
+      "duration_seconds": 301,
+      "raw_title": "Amazonia",
+      "raw_channel": "Gojira"
+    },
+    {
+      "youtube_video_id": "yLNIRTKxwJU",
+      "title": "Je me jette à ton cou",
+      "artist": "Gaëtan Roussel",
+      "duration_seconds": 190,
+      "raw_title": "Gaëtan Roussel - Je me jette à ton cou (Clip Officiel)",
+      "raw_channel": "Gaëtan Roussel"
+    },
+    {
+      "youtube_video_id": "ZgRBtBUoDsQ",
+      "title": "Dad'Algorhythm",
+      "artist": "Shaka Ponk",
+      "duration_seconds": 169,
+      "raw_title": "Shaka Ponk :  Dad'Algorhythm [Clip officiel]",
+      "raw_channel": "Shaka Ponk"
+    },
+    {
+      "youtube_video_id": "eT_FJHM-Qhs",
+      "title": "Love Dies Young",
+      "artist": "Foo Fighters",
+      "duration_seconds": 454,
+      "raw_title": "Foo Fighters - Love Dies Young (Official Video)",
+      "raw_channel": "Foo Fighters"
+    },
+    {
+      "youtube_video_id": "nEhHYRRnK4o",
+      "title": "La belle au bois",
+      "artist": "Damien Saez",
+      "duration_seconds": 313,
+      "raw_title": "La belle au bois",
+      "raw_channel": "Damien Saez"
+    }
+  ]
+}

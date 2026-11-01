@@ -278,7 +278,7 @@ export default function BlindTestLobby() {
           classicTrackIdRef.current = payload.trackId
           setClassicRound({
             trackId: payload.trackId,
-            durationSeconds: payload.durationSeconds ?? 20,
+            durationSeconds: payload.durationSeconds ?? 30,
             elapsedSeconds: payload.elapsedSeconds ?? 0,
           })
           setClassicFound([])

@@ -41,6 +41,8 @@ router = APIRouter()
 # Retour utilisateur (2026-09-14) : 30s jugé trop long pour un extrait —
 # raccourci à 20s (durée de l'extrait ET du round, les deux sont couplés
 # puisque l'audio joue pendant toute la fenêtre de devinette).
+# Retour utilisateur (2026-11-01) : après essais, 20s jugé trop court —
+# remonté à 30s.
 ROUND_GUESS_SECONDS = classic.ROUND_SECONDS
 
 # Story 2.7 : nombre de rounds joués par défaut avant fin de partie
@@ -77,9 +79,9 @@ def _get_rounds_target(game_id: int) -> int:
 # fade-out, générique) — l'extrait doit rester "de la musique" jusqu'au bout.
 # On borne donc le dernier départ possible pour laisser au moins
 # `MIN_SNIPPET_SECONDS` de lecture avant la fin du morceau — alignée sur
-# `ROUND_GUESS_SECONDS` (20s) : pas besoin de garantir plus de musique
+# `ROUND_GUESS_SECONDS` : pas besoin de garantir plus de musique
 # restante que ce que le round laisse le temps d'écouter.
-MIN_SNIPPET_SECONDS = 20
+MIN_SNIPPET_SECONDS = ROUND_GUESS_SECONDS
 
 
 def _pick_start_seconds(duration_seconds: int) -> int:
